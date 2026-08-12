@@ -1,0 +1,10 @@
+{
+  "id": "lingua-study",
+  "name": "Lingua Study",
+  "version": "1.0.0",
+  "minAppVersion": "1.11.4",
+  "description": "Study languages with timestamped YouTube transcripts, playback controls, and on-demand AI translation.",
+  "author": "xiaobai",
+  "authorUrl": "https://github.com/ObsidianRelay",
+  "isDesktopOnly": true
+}

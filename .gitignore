@@ -1,0 +1,11 @@
+node_modules/
+.test-dist/
+main.js
+*.map
+data.json
+*.zh-CN.translations.json
+.DS_Store
+.idea/
+.vscode/
+release/
+*.zip

@@ -1,0 +1,217 @@
+.evs-root {
+  --evs-accent-soft: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-primary);
+  overflow: hidden;
+  box-shadow: var(--shadow-s);
+}
+
+.evs-player-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.evs-player-host,
+.evs-player-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.evs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.evs-button,
+.evs-timestamp {
+  min-height: 34px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.evs-button {
+  padding: 5px 10px;
+}
+
+.evs-button:hover:not(:disabled),
+.evs-timestamp:hover:not(:disabled) {
+  background: var(--interactive-hover);
+}
+
+.evs-button:disabled,
+.evs-timestamp:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.evs-speed-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.evs-speed-button.is-active {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.evs-status {
+  padding: 8px 14px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.evs-runtime-error,
+.evs-fatal-error {
+  margin: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--background-modifier-error);
+  border-radius: 8px;
+  background: var(--background-modifier-error);
+  color: var(--text-error);
+}
+
+.evs-cache-warning {
+  margin: 10px 12px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  background: var(--background-secondary);
+  color: var(--text-warning);
+  font-size: var(--font-ui-smaller);
+}
+
+.evs-fatal-error strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.evs-transcript {
+  max-height: 460px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.evs-segment {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 2px 8px;
+  padding: 10px;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.evs-segment.is-active {
+  border-left-color: var(--interactive-accent);
+  background: var(--evs-accent-soft);
+}
+
+.evs-timestamp {
+  padding: 4px 7px;
+  color: var(--text-accent);
+  font-family: var(--font-monospace);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.evs-segment-content {
+  min-width: 0;
+}
+
+.evs-segment-text {
+  padding-top: 5px;
+  color: var(--text-normal);
+  line-height: 1.62;
+}
+
+.evs-translation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.evs-translation-button {
+  min-height: 28px;
+  padding: 3px 9px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--interactive-normal);
+  color: var(--text-accent);
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+}
+
+.evs-translation-button-secondary {
+  color: var(--text-muted);
+}
+
+.evs-translation-button:hover:not(:disabled) {
+  background: var(--interactive-hover);
+}
+
+.evs-translation-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.evs-translation-text {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  line-height: 1.62;
+}
+
+.evs-translation-status {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.evs-translation-status.is-error {
+  color: var(--text-error);
+}
+
+.evs-settings-footnote {
+  margin-top: 20px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--interactive-accent);
+  background: var(--background-secondary);
+}
+
+@media (max-width: 600px) {
+  .evs-speed-group {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .evs-segment {
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 8px;
+    margin-inline: 4px;
+    padding-inline: 7px;
+  }
+}
