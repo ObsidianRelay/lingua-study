@@ -45,13 +45,6 @@ interface YouTubeMessagePayload {
   data?: unknown;
 }
 
-interface YouTubeInfoDelivery {
-  currentTime?: number;
-  duration?: number;
-  playbackRate?: number;
-  playerState?: number;
-}
-
 interface SegmentTranslationView {
   fingerprint: string;
   primaryButton: HTMLButtonElement;
@@ -676,23 +669,39 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
 
     if (payload.event === "infoDelivery" && payload.info && typeof payload.info === "object") {
-      this.applyInfoDelivery(payload.info as YouTubeInfoDelivery);
+      this.applyInfoDelivery(payload.info);
     }
   }
 
-  private applyInfoDelivery(info: YouTubeInfoDelivery): void {
-    if (typeof info.currentTime === "number" && Number.isFinite(info.currentTime)) {
+  private applyInfoDelivery(info: object): void {
+    if (
+      "currentTime" in info &&
+      typeof info.currentTime === "number" &&
+      Number.isFinite(info.currentTime)
+    ) {
       this.currentTime = Math.max(0, info.currentTime);
       this.lastTimeUpdateAt = Date.now();
     }
-    if (typeof info.duration === "number" && Number.isFinite(info.duration)) {
+    if (
+      "duration" in info &&
+      typeof info.duration === "number" &&
+      Number.isFinite(info.duration)
+    ) {
       this.duration = Math.max(0, info.duration);
     }
-    if (typeof info.playbackRate === "number" && Number.isFinite(info.playbackRate)) {
+    if (
+      "playbackRate" in info &&
+      typeof info.playbackRate === "number" &&
+      Number.isFinite(info.playbackRate)
+    ) {
       this.playbackRate = info.playbackRate;
       this.updateSpeedButtons(info.playbackRate);
     }
-    if (typeof info.playerState === "number" && Number.isFinite(info.playerState)) {
+    if (
+      "playerState" in info &&
+      typeof info.playerState === "number" &&
+      Number.isFinite(info.playerState)
+    ) {
       this.onPlayerStateChange(info.playerState);
     }
   }
@@ -877,7 +886,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.containerEl.empty();
     const error = this.containerEl.createDiv({ cls: "evs-fatal-error" });
     error.setAttribute("role", "alert");
-    error.createEl("strong", { text: "Lingua Study 无法加载" });
+    error.createEl("strong", { text: "无法加载插件" });
     error.createDiv({ text: message });
   }
 }

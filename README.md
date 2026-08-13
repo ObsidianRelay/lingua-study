@@ -3,7 +3,7 @@
 Learn languages in Obsidian with timestamped YouTube transcripts, playback controls, and on-demand AI translation.
 
 > [!IMPORTANT]
-> Lingua Study 1.0.0 is a desktop-only first release. It currently focuses on English YouTube transcripts translated into Simplified Chinese. It does not download subtitles or bypass YouTube login, region, embedding, or anti-bot restrictions.
+> Lingua Study 1.0.1 is a desktop-only first release. It currently focuses on English YouTube transcripts translated into Simplified Chinese. It does not download subtitles or bypass YouTube login, region, embedding, or anti-bot restrictions.
 
 ## Features
 
@@ -18,7 +18,7 @@ Learn languages in Obsidian with timestamped YouTube transcripts, playback contr
 
 ## Requirements
 
-- Obsidian 1.11.4 or later
+- Obsidian 1.13.0 or later
 - Obsidian desktop app
 - A YouTube video that allows embedded playback in your current network environment
 - A local transcript JSON file
@@ -85,7 +85,7 @@ Provide:
 - The exact model ID supported by the provider
 - A Bearer API key selected through Obsidian SecretStorage
 
-Custom headers, Anthropic-compatible endpoints, Ollama, bulk translation, and additional target languages are not supported in 1.0.0.
+Custom headers, Anthropic-compatible endpoints, Ollama, bulk translation, and additional target languages are not supported in 1.0.1.
 
 ## Translation controls
 
@@ -143,7 +143,7 @@ Maintainer instructions are available in [RELEASING.md](./RELEASING.md).
 
 ## 中文说明
 
-Lingua Study 是一款桌面端 Obsidian 外语学习插件。当前 1.0.0 版本主要支持 YouTube 英语视频、本地时间戳字幕、播放控制、逐句高亮，以及翻译为简体中文。
+Lingua Study 是一款桌面端 Obsidian 外语学习插件。当前 1.0.1 版本主要支持 YouTube 英语视频、本地时间戳字幕、播放控制、逐句高亮，以及翻译为简体中文。
 
 插件不会自动抓取 YouTube 字幕，也不会绕过登录、地区、嵌入或反机器人限制。只有点击某句话的翻译按钮后，该句英文才会发送给你选择的 DeepSeek 或 OpenAI Chat Completions 兼容服务；API Key 通过 Obsidian SecretStorage 选择，翻译服务可能产生费用。
 

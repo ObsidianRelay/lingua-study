@@ -7,6 +7,7 @@ This document is for the project maintainer.
 ```bash
 npm ci
 npm audit --audit-level=high
+npm run lint
 npm test
 npm run build
 npm run check:release
@@ -25,9 +26,9 @@ Push the local `main` branch to:
 https://github.com/ObsidianRelay/lingua-study
 ```
 
-## 3. Create version 1.0.0
+## 3. Create a release version
 
-The release tag must exactly match `manifest.json`. Use `1.0.0`, without a `v` prefix.
+The release tag must exactly match `manifest.json`. For example, use `1.0.1`, without a `v` prefix.
 
 Pushing the tag starts `.github/workflows/release.yml`. The workflow runs the tests, builds the production bundle, and creates a GitHub release containing exactly:
 

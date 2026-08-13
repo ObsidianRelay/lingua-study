@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { webcrypto } from "node:crypto";
 import test from "node:test";
 import {
   buildTranslationRequestBody,
@@ -111,9 +112,25 @@ test("HTTP 错误映射不暴露服务端响应正文", () => {
 });
 
 test("字幕指纹稳定且会随时间或原文变化", async () => {
-  const first = await createSegmentFingerprint(4, 13, "Thank you for using Lingua Study.");
-  const same = await createSegmentFingerprint(4, 13, "Thank you for using Lingua Study.");
-  const changed = await createSegmentFingerprint(4, 14, "Thank you for using Lingua Study.");
+  const cryptoProvider = webcrypto as Crypto;
+  const first = await createSegmentFingerprint(
+    4,
+    13,
+    "Thank you for using Lingua Study.",
+    cryptoProvider
+  );
+  const same = await createSegmentFingerprint(
+    4,
+    13,
+    "Thank you for using Lingua Study.",
+    cryptoProvider
+  );
+  const changed = await createSegmentFingerprint(
+    4,
+    14,
+    "Thank you for using Lingua Study.",
+    cryptoProvider
+  );
 
   assert.match(first, /^[a-f0-9]{64}$/);
   assert.equal(first, same);

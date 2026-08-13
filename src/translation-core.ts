@@ -40,6 +40,11 @@ const TRANSLATION_SYSTEM_PROMPT = [
   "保留人名、数字和必要的专业术语，不要解释，不要加引号，只输出翻译结果。"
 ].join("");
 
+/** Array.isArray 默认会把元素收窄为 any；这个守卫保留 unknown，便于安全解析外部响应。 */
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
 /**
  * 把用户填写的 API 地址转换为 OpenAI Chat Completions 完整地址。
  * 第一版只接受 HTTPS，并拒绝容易造成误配置的账号、查询参数和锚点。
@@ -145,7 +150,7 @@ export function parseTranslationResponse(value: unknown): string {
   }
 
   const choices = (value as Record<string, unknown>).choices;
-  if (!Array.isArray(choices) || choices.length === 0) {
+  if (!isUnknownArray(choices) || choices.length === 0) {
     throw new Error("翻译服务没有返回翻译结果。");
   }
 
@@ -164,7 +169,7 @@ export function parseTranslationResponse(value: unknown): string {
 
   if (typeof content === "string") {
     text = content.trim();
-  } else if (Array.isArray(content)) {
+  } else if (isUnknownArray(content)) {
     text = content
       .map((part) => {
         if (!part || typeof part !== "object") {
@@ -222,11 +227,12 @@ export function getTranslationCachePath(transcriptPath: string): string {
 export async function createSegmentFingerprint(
   start: number,
   end: number,
-  text: string
+  text: string,
+  cryptoProvider: Crypto = window.crypto
 ): Promise<string> {
   const input = JSON.stringify([start, end, text]);
   const bytes = new TextEncoder().encode(input);
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  const digest = await cryptoProvider.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
