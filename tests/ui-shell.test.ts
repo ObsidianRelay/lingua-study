@@ -184,6 +184,16 @@ test("Whisper Worker 构建时固定使用 Web ONNX 后端", async () => {
   assert.match(build, /entryPoints: \["src\/whisper-worker\.ts"\][\s\S]*?define: \{ process: "undefined" \}/u);
 });
 
+test("DOCX 运行时不再注入动态脚本或执行字符串代码", async () => {
+  const build = await readFile("esbuild.config.mjs", "utf8");
+  const immediate = await readFile("build-shims/immediate.cjs", "utf8");
+  const setImmediate = await readFile("build-shims/setimmediate.cjs", "utf8");
+  assert.match(build, /safeMammothRuntimePlugin/u);
+  assert.match(build, /require\.resolve\("mammoth\/lib\/index\.js"\)/u);
+  assert.match(build, /require\.resolve\("jszip\/lib\/index\.js"\)/u);
+  assert.doesNotMatch(`${immediate}\n${setImmediate}`, /createElement|new Function|\beval\s*\(/u);
+});
+
 test("播放器铺满阅读视图并完整释放观察器", async () => {
   const source = await readFile("src/main.ts", "utf8");
   const youtubeImport = await readFile("src/youtube-import.ts", "utf8");

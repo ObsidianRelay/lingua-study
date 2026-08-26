@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { get as httpsGet } from "node:https";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +18,7 @@ const SOURCE_URL =
   `https://raw.githubusercontent.com/skywind3000/ECDICT/${SOURCE_REVISION}/ecdict.csv`;
 const MAX_SOURCE_BYTES = 90 * 1024 * 1024;
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
+const DICTIONARY_INDEX_FILENAME = "dictionary-index.json";
 const SHARD_KEYS = [..."abcdefghijklmnopqrstuvwxyz", "other"] as const;
 const gzipAsync = promisify(gzip);
 
@@ -304,20 +305,60 @@ export async function buildFullDictionaryPackage(
     compressedBytes,
     installedAt: new Date().toISOString()
   };
-  await writeFile(join(outputFolder, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeFile(
+    join(outputFolder, DICTIONARY_INDEX_FILENAME),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    "utf8"
+  );
   await rm(workingFolder, { recursive: true, force: true });
   return manifest;
 }
 
-async function verifyPackage(folder: string): Promise<FullDictionaryManifest | null> {
+async function readDictionaryIndex(folder: string): Promise<{
+  fileName: string;
+  manifest: FullDictionaryManifest;
+} | null> {
+  const fileNames = await readdir(folder);
+  const candidates = [
+    DICTIONARY_INDEX_FILENAME,
+    ...fileNames.filter((fileName) =>
+      fileName.endsWith(".json") && fileName !== DICTIONARY_INDEX_FILENAME
+    )
+  ];
+  for (const fileName of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(join(folder, fileName), "utf8"));
+      const manifest = validateFullDictionaryManifest(parsed);
+      if (manifest) {
+        return { fileName, manifest };
+      }
+    } catch {
+      // 继续检查其他 JSON 文件；旧版缓存索引会在验证成功后自动迁移。
+    }
+  }
+  return null;
+}
+
+export async function verifyFullDictionaryPackage(
+  folder: string
+): Promise<FullDictionaryManifest | null> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(join(folder, "manifest.json"), "utf8"));
-    const manifest = validateFullDictionaryManifest(parsed);
-    if (!manifest) {
+    const index = await readDictionaryIndex(folder);
+    if (!index) {
       return null;
     }
     await Promise.all(SHARD_KEYS.map((key) => stat(join(folder, `${key}.json.gz`))));
-    return manifest;
+    if (index.fileName !== DICTIONARY_INDEX_FILENAME) {
+      try {
+        await rename(
+          join(folder, index.fileName),
+          join(folder, DICTIONARY_INDEX_FILENAME)
+        );
+      } catch {
+        // 只读缓存仍然可以继续使用；下次重新安装时会生成新的专用索引名。
+      }
+    }
+    return index.manifest;
   } catch {
     return null;
   }
@@ -329,7 +370,7 @@ export class FullDictionaryService {
   private activeInstall: Promise<FullDictionaryInstallResult> | null = null;
 
   async initialize(): Promise<FullDictionaryStatus> {
-    this.manifest = await verifyPackage(this.cacheFolder);
+    this.manifest = await verifyFullDictionaryPackage(this.cacheFolder);
     return this.getStatus();
   }
 

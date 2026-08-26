@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,7 +7,8 @@ import { gunzipSync } from "node:zlib";
 import {
   buildFullDictionaryPackage,
   getFullDictionaryCacheFolder,
-  validateFullDictionaryManifest
+  validateFullDictionaryManifest,
+  verifyFullDictionaryPackage
 } from "../src/full-dictionary";
 
 test("完整版词典缓存目录位于系统缓存而不是笔记库", () => {
@@ -53,6 +54,20 @@ test("官方 CSV 可以生成按首字母加载的压缩分片", async () => {
     assert.ok(constructorShard.entries.constructor);
     assert.equal(constructorShard.aliases.constructors, "constructor");
     assert.ok(validateFullDictionaryManifest(manifest));
+    const index = JSON.parse(
+      await readFile(join(output, "dictionary-index.json"), "utf8")
+    ) as { entryCount: number };
+    assert.equal(index.entryCount, manifest.entryCount);
+    await assert.rejects(readFile(join(output, "manifest.json"), "utf8"));
+
+    // 旧版缓存无需重新下载：发现合法的旧索引后会改成专用文件名。
+    await rename(
+      join(output, "dictionary-index.json"),
+      join(output, "manifest.json")
+    );
+    assert.ok(await verifyFullDictionaryPackage(output));
+    await readFile(join(output, "dictionary-index.json"), "utf8");
+    await assert.rejects(readFile(join(output, "manifest.json"), "utf8"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

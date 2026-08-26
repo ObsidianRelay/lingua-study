@@ -1,5 +1,6 @@
 import esbuild from "esbuild";
-import { builtinModules } from "node:module";
+import { builtinModules, createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import process from "process";
 
 const production = process.argv[2] === "production";
@@ -31,6 +32,28 @@ const builtins = [
     .filter((moduleName) => !moduleName.startsWith("node:"))
     .map((moduleName) => `node:${moduleName}`)
 ];
+
+const require = createRequire(import.meta.url);
+const mammothSourceEntry = require.resolve("mammoth/lib/index.js");
+const jsZipSourceEntry = require.resolve("jszip/lib/index.js");
+const safeSchedulerEntries = new Map([
+  ["immediate", fileURLToPath(new URL("./build-shims/immediate.cjs", import.meta.url))],
+  ["setimmediate", fileURLToPath(new URL("./build-shims/setimmediate.cjs", import.meta.url))]
+]);
+
+// Mammoth 与 JSZip 的预构建浏览器文件内嵌了两个面向旧版 IE 的调度器。它们会
+// 动态创建 <script> 并使用 new Function，触发 Obsidian 的安全审查。改用官方
+// 源码入口，再把这两个纯调度依赖替换为不执行动态代码的等价实现。
+const safeMammothRuntimePlugin = {
+  name: "safe-mammoth-runtime",
+  setup(build) {
+    build.onResolve({ filter: /^mammoth$/ }, () => ({ path: mammothSourceEntry }));
+    build.onResolve({ filter: /^jszip$/ }, () => ({ path: jsZipSourceEntry }));
+    build.onResolve({ filter: /^(?:immediate|setimmediate)$/ }, (args) => ({
+      path: safeSchedulerEntries.get(args.path)
+    }));
+  }
+};
 
 const inlineWhisperWorkerPlugin = {
   name: "inline-whisper-worker",
@@ -116,7 +139,7 @@ const context = await esbuild.context({
   loader: {
     ".png": "dataurl"
   },
-  plugins: [inlineWhisperWorkerPlugin, inlinePdfWorkerPlugin],
+  plugins: [safeMammothRuntimePlugin, inlineWhisperWorkerPlugin, inlinePdfWorkerPlugin],
   outfile: "main.js"
 });
 
