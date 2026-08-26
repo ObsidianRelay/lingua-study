@@ -1,11 +1,22 @@
+# Dependencies and generated test output
 node_modules/
 .test-dist/
+coverage/
+
+# Local build and release output
 main.js
 *.map
+release/
+*.zip
+
+# Local plugin settings and user-generated data
 data.json
+document-import-drafts.json
+backups/
 *.zh-CN.translations.json
+*.zh-CN.study.json
+
+# Operating-system and editor files
 .DS_Store
 .idea/
 .vscode/
-release/
-*.zip

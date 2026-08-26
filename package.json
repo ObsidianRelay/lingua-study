@@ -1,7 +1,7 @@
 {
   "name": "obsidian-lingua-study",
-  "version": "1.0.1",
-  "description": "Study languages in Obsidian with timestamped YouTube transcripts and on-demand AI translation.",
+  "version": "1.2.0",
+  "description": "Study languages in Obsidian with YouTube and Bilibili transcripts, cached playback, and on-demand translation.",
   "private": true,
   "license": "MIT",
   "author": "xiaobai",
@@ -15,7 +15,8 @@
   "homepage": "https://github.com/ObsidianRelay/lingua-study#readme",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "test": "node esbuild.test.mjs && node --test .test-dist/translation-core.test.cjs",
+    "test": "node esbuild.test.mjs",
+    "test:ui": "node scripts/test-ui-layout.mjs",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "lint": "eslint src",
     "build": "npm run typecheck && node esbuild.config.mjs production",
@@ -35,5 +36,13 @@
     "tslib": "^2.8.1",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.67.0"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1",
+    "mammoth": "^1.12.1",
+    "pdfjs-dist": "^6.2.108"
+  },
+  "overrides": {
+    "sharp": "0.35.3"
   }
 }

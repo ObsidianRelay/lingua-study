@@ -5,8 +5,16 @@ import {
   parseTranslationResponse,
   translationHttpError,
   validateTranslationConfiguration,
+  type TranslationRequestBody,
   type TranslationProvider
 } from "./translation-core";
+import {
+  buildStudyAnalysisRequestBody,
+  parseStudyAnalysisResult,
+  type SentenceStudyAnalysis,
+  type StudyDictionaryHint,
+  type StudyProfile
+} from "./study-core";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -23,6 +31,14 @@ export interface TranslationResult {
   model: string;
 }
 
+export interface StudyAnalysisResult {
+  translation: string;
+  analysis: SentenceStudyAnalysis | null;
+  warning: string | null;
+  provider: Exclude<TranslationProvider, "disabled">;
+  model: string;
+}
+
 export class TranslationService {
   constructor(
     private readonly app: App,
@@ -32,6 +48,42 @@ export class TranslationService {
   async translate(sourceText: string): Promise<TranslationResult> {
     const config = this.resolveConfig();
     const body = buildTranslationRequestBody(config.provider, config.model, sourceText);
+    const payload = await this.request(config, body, "翻译");
+
+    return {
+      text: parseTranslationResponse(payload),
+      provider: config.provider,
+      model: config.model
+    };
+  }
+
+  async analyzeSentence(
+    sourceText: string,
+    profile: StudyProfile,
+    dictionaryHints: readonly StudyDictionaryHint[]
+  ): Promise<StudyAnalysisResult> {
+    const config = this.resolveConfig();
+    const body = buildStudyAnalysisRequestBody(
+      config.provider,
+      config.model,
+      sourceText,
+      profile,
+      dictionaryHints
+    );
+    const payload = await this.request(config, body, "知识卡");
+    const parsed = parseStudyAnalysisResult(payload, sourceText);
+    return {
+      ...parsed,
+      provider: config.provider,
+      model: config.model
+    };
+  }
+
+  private async request(
+    config: ResolvedTranslationConfig,
+    body: TranslationRequestBody,
+    operationLabel: string
+  ): Promise<unknown> {
 
     const responsePromise = requestUrl({
       url: config.endpoint,
@@ -47,7 +99,7 @@ export class TranslationService {
     let timeoutId: number | null = null;
     const timeoutPromise = new Promise<never>((_resolve, reject) => {
       timeoutId = window.setTimeout(() => {
-        reject(new Error("翻译请求超过 30 秒，请检查网络或稍后重试。"));
+        reject(new Error(`${operationLabel}请求超过 30 秒，请检查网络或稍后重试。`));
       }, REQUEST_TIMEOUT_MS);
     });
 
@@ -58,7 +110,7 @@ export class TranslationService {
       if (error instanceof Error && error.message.includes("超过 30 秒")) {
         throw error;
       }
-      throw new Error("无法连接翻译服务，请检查网络、API 地址或代理节点。", {
+      throw new Error(`无法连接${operationLabel}服务，请检查网络、API 地址或代理节点。`, {
         cause: error
       });
     } finally {
@@ -71,18 +123,11 @@ export class TranslationService {
       throw new Error(translationHttpError(response.status));
     }
 
-    let payload: unknown;
     try {
-      payload = response.json;
+      return response.json as unknown;
     } catch {
-      throw new Error("翻译服务返回的内容不是有效 JSON。");
+      throw new Error(`${operationLabel}服务返回的内容不是有效 JSON。`);
     }
-
-    return {
-      text: parseTranslationResponse(payload),
-      provider: config.provider,
-      model: config.model
-    };
   }
 
   private resolveConfig(): ResolvedTranslationConfig {

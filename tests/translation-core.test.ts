@@ -7,6 +7,7 @@ import {
   getTranslationCachePath,
   normalizeChatCompletionsUrl,
   parseTranslationResponse,
+  readCompletionFinishReason,
   translationHttpError,
   validateTranslationConfiguration
 } from "../src/translation-core";
@@ -34,6 +35,8 @@ test("校验 DeepSeek 和中转站配置", () => {
       translationProvider: "disabled",
       deepSeekModel: "deepseek-v4-flash",
       deepSeekSecretId: "",
+      kimiModel: "kimi-k2.6",
+      kimiSecretId: "",
       customBaseUrl: "",
       customModel: "",
       customSecretId: ""
@@ -45,6 +48,8 @@ test("校验 DeepSeek 和中转站配置", () => {
     translationProvider: "deepseek",
     deepSeekModel: "deepseek-v4-flash",
     deepSeekSecretId: "evs-deepseek",
+    kimiModel: "kimi-k2.6",
+    kimiSecretId: "",
     customBaseUrl: "",
     customModel: "",
     customSecretId: ""
@@ -52,11 +57,37 @@ test("校验 DeepSeek 和中转站配置", () => {
   assert.equal(deepSeek.endpoint, "https://api.deepseek.com/chat/completions");
   assert.equal(deepSeek.secretId, "evs-deepseek");
 
+  const kimi = validateTranslationConfiguration({
+    translationProvider: "kimi",
+    deepSeekModel: "deepseek-v4-flash",
+    deepSeekSecretId: "",
+    kimiModel: "kimi-k2.6",
+    kimiSecretId: "evs-kimi",
+    customBaseUrl: "",
+    customModel: "",
+    customSecretId: ""
+  });
+  assert.equal(kimi.endpoint, "https://api.moonshot.cn/v1/chat/completions");
+  assert.equal(kimi.model, "kimi-k2.6");
+  assert.equal(kimi.secretId, "evs-kimi");
+  assert.throws(() => validateTranslationConfiguration({
+    translationProvider: "kimi",
+    deepSeekModel: "deepseek-v4-flash",
+    deepSeekSecretId: "",
+    kimiModel: "kimi-k2.6",
+    kimiSecretId: "",
+    customBaseUrl: "",
+    customModel: "",
+    customSecretId: ""
+  }), /Kimi API Key/u);
+
   assert.throws(
     () => validateTranslationConfiguration({
       translationProvider: "openai-compatible",
       deepSeekModel: "deepseek-v4-flash",
       deepSeekSecretId: "",
+      kimiModel: "kimi-k2.6",
+      kimiSecretId: "",
       customBaseUrl: "https://relay.example/v1",
       customModel: "",
       customSecretId: "relay-key"
@@ -68,6 +99,8 @@ test("校验 DeepSeek 和中转站配置", () => {
     translationProvider: "openai-compatible",
     deepSeekModel: "deepseek-v4-flash",
     deepSeekSecretId: "",
+    kimiModel: "kimi-k2.6",
+    kimiSecretId: "",
     customBaseUrl: "https://relay.example/v1",
     customModel: "relay-model",
     customSecretId: "relay-key"
@@ -76,11 +109,13 @@ test("校验 DeepSeek 和中转站配置", () => {
   assert.equal(relay.model, "relay-model");
 });
 
-test("DeepSeek 请求关闭思考模式，中转站请求不携带专属参数", () => {
+test("DeepSeek 与 Kimi 请求关闭思考模式，中转站请求不携带专属参数", () => {
   const deepSeek = buildTranslationRequestBody("deepseek", "deepseek-v4-flash", "Hello.");
+  const kimi = buildTranslationRequestBody("kimi", "kimi-k2.6", "Hello.");
   const relay = buildTranslationRequestBody("openai-compatible", "relay-model", "Hello.");
 
   assert.deepEqual(deepSeek.thinking, { type: "disabled" });
+  assert.deepEqual(kimi.thinking, { type: "disabled" });
   assert.equal("thinking" in relay, false);
   assert.equal(deepSeek.messages[1]?.content, "Hello.");
   assert.equal(deepSeek.stream, false);
@@ -104,7 +139,16 @@ test("解析字符串和文本分段格式的 OpenAI 兼容响应", () => {
   );
 });
 
+test("读取模型结束原因以识别输出截断", () => {
+  assert.equal(
+    readCompletionFinishReason({ choices: [{ finish_reason: "length", message: { content: "x" } }] }),
+    "length"
+  );
+  assert.equal(readCompletionFinishReason({ choices: [] }), null);
+});
+
 test("HTTP 错误映射不暴露服务端响应正文", () => {
+  assert.match(translationHttpError(408), /HTTP 408/u);
   assert.match(translationHttpError(401), /API Key/);
   assert.match(translationHttpError(402), /余额不足/);
   assert.match(translationHttpError(429), /请求过于频繁/);

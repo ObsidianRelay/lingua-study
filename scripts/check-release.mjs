@@ -8,6 +8,7 @@ const failures = [];
 const requiredFiles = [
   "README.md",
   "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
   "manifest.json",
   "versions.json",
   "package.json",
@@ -51,7 +52,6 @@ if (versions[manifest.version] !== manifest.minAppVersion) {
 if (fs.existsSync(path.join(root, "data.json"))) {
   failures.push("data.json is local configuration and must not be included");
 }
-
 if (failures.length > 0) {
   for (const failure of failures) {
     console.error(`- ${failure}`);

@@ -7,7 +7,7 @@ import {
 export interface TranslationCacheEntry {
   sourceText: string;
   text: string;
-  provider: Exclude<TranslationProvider, "disabled">;
+  provider: Exclude<TranslationProvider, "disabled"> | "imported-document";
   model: string;
   updatedAt: string;
 }
@@ -60,7 +60,7 @@ function validateCache(value: unknown, videoId: string): TranslationCacheFile {
     if (
       typeof entry.sourceText !== "string" || entry.sourceText.trim() === "" ||
       typeof entry.text !== "string" || entry.text.trim() === "" ||
-      (provider !== "deepseek" && provider !== "openai-compatible") ||
+      (provider !== "deepseek" && provider !== "kimi" && provider !== "openai-compatible" && provider !== "imported-document") ||
       typeof entry.model !== "string" || entry.model.trim() === "" ||
       typeof entry.updatedAt !== "string" || entry.updatedAt.trim() === ""
     ) {
@@ -130,6 +130,47 @@ export class TranslationCacheStore {
       .catch(() => undefined)
       .then(() => this.upsertNow(path, videoId, fingerprint, entry));
 
+    this.writeQueues.set(path, current);
+    try {
+      await current;
+    } finally {
+      if (this.writeQueues.get(path) === current) {
+        this.writeQueues.delete(path);
+      }
+    }
+  }
+
+  async upsertMany(
+    transcriptPath: string,
+    videoId: string,
+    entries: Readonly<Record<string, TranslationCacheEntry>>
+  ): Promise<void> {
+    const path = normalizePath(getTranslationCachePath(transcriptPath));
+    const previous = this.writeQueues.get(path) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(async () => {
+      const abstractFile = this.app.vault.getAbstractFileByPath(path);
+      if (abstractFile !== null && !(abstractFile instanceof TFile)) {
+        throw new Error(`翻译缓存路径不是文件：${path}`);
+      }
+      const applyEntries = (cache: TranslationCacheFile): TranslationCacheFile => {
+        Object.assign(cache.translations, entries);
+        return cache;
+      };
+      if (abstractFile instanceof TFile) {
+        await this.app.vault.process(abstractFile, (raw) => {
+          let cache = createEmptyCache(videoId);
+          try {
+            cache = validateCache(JSON.parse(raw) as unknown, videoId);
+          } catch {
+            // 损坏或过期缓存只在本次成功批量导入时重建。
+          }
+          return `${JSON.stringify(applyEntries(cache), null, 2)}\n`;
+        });
+      } else {
+        const cache = applyEntries(createEmptyCache(videoId));
+        await this.app.vault.create(path, `${JSON.stringify(cache, null, 2)}\n`);
+      }
+    });
     this.writeQueues.set(path, current);
     try {
       await current;

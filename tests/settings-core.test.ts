@@ -1,0 +1,81 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { sanitizeSettings } from "../src/settings-core";
+
+test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
+  const settings = sanitizeSettings({
+    transcriptFolder: " Study/Transcripts ",
+    ytDlpPath: " /opt/homebrew/bin/yt-dlp ",
+    whisperModel: "small.en",
+    translationProvider: "disabled",
+    cacheTranslations: false
+  });
+  assert.equal("whisperModel" in settings, false);
+  assert.equal(settings.transcriptFolder, "Study/Transcripts");
+  assert.equal(settings.ytDlpPath, "/opt/homebrew/bin/yt-dlp");
+  assert.equal(settings.autoImportPastedVideoLinks, false);
+  assert.equal(settings.translateWholeTranscript, false);
+  assert.equal(settings.cacheTranslations, false);
+  assert.equal(settings.studyProfile, "cet4");
+  assert.equal(settings.dailyNewWordLimit, 10);
+  assert.equal("speechCloudBaseUrl" in settings, false);
+  assert.equal("speechCloudModel" in settings, false);
+  assert.equal("speechCloudSecretId" in settings, false);
+});
+
+test("整篇文稿翻译默认关闭并保留用户选择", () => {
+  assert.equal(sanitizeSettings({}).translateWholeTranscript, false);
+  assert.equal(
+    sanitizeSettings({ translateWholeTranscript: true }).translateWholeTranscript,
+    true
+  );
+  assert.equal(
+    sanitizeSettings({ translateWholeTranscript: "true" }).translateWholeTranscript,
+    false
+  );
+});
+
+test("Kimi 使用独立模型与安全凭据并兼容旧设置", () => {
+  const defaults = sanitizeSettings({ translationProvider: "kimi" });
+  assert.equal(defaults.translationProvider, "kimi");
+  assert.equal(defaults.kimiModel, "kimi-k2.6");
+  assert.equal(defaults.kimiSecretId, "");
+
+  const configured = sanitizeSettings({
+    translationProvider: "kimi",
+    kimiModel: "kimi-k2.6",
+    kimiSecretId: "evs-kimi",
+    deepSeekSecretId: "evs-deepseek"
+  });
+  assert.equal(configured.kimiSecretId, "evs-kimi");
+  assert.equal(configured.deepSeekSecretId, "evs-deepseek");
+  assert.equal(sanitizeSettings({ kimiModel: "unknown" }).kimiModel, "kimi-k2.6");
+});
+
+test("每日新词数量固定限制在 1 到 50", () => {
+  assert.equal(sanitizeSettings({ dailyNewWordLimit: 20 }).dailyNewWordLimit, 20);
+  assert.equal(sanitizeSettings({ dailyNewWordLimit: 0 }).dailyNewWordLimit, 1);
+  assert.equal(sanitizeSettings({ dailyNewWordLimit: 200 }).dailyNewWordLimit, 50);
+  assert.equal(sanitizeSettings({ dailyNewWordLimit: 9.6 }).dailyNewWordLimit, 10);
+  assert.equal(sanitizeSettings({ dailyNewWordLimit: "20" }).dailyNewWordLimit, 10);
+});
+
+test("学习目标默认四级并保留全部六种备考选择", () => {
+  assert.equal(sanitizeSettings({}).studyProfile, "cet4");
+  for (const profile of ["cet4", "cet6", "tem4", "tem8", "ielts", "toefl"] as const) {
+    assert.equal(sanitizeSettings({ studyProfile: profile }).studyProfile, profile);
+  }
+  assert.equal(sanitizeSettings({ studyProfile: "gre" }).studyProfile, "cet4");
+});
+
+test("粘贴自动导入默认关闭且会保留用户的明确选择", () => {
+  assert.equal(sanitizeSettings({}).autoImportPastedVideoLinks, false);
+  assert.equal(
+    sanitizeSettings({ autoImportPastedVideoLinks: false }).autoImportPastedVideoLinks,
+    false
+  );
+  assert.equal(
+    sanitizeSettings({ autoImportPastedVideoLinks: true }).autoImportPastedVideoLinks,
+    true
+  );
+});

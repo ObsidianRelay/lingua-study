@@ -1,13 +1,17 @@
-export type TranslationProvider = "disabled" | "deepseek" | "openai-compatible";
+export type TranslationProvider = "disabled" | "deepseek" | "kimi" | "openai-compatible";
 
 export type DeepSeekModel = "deepseek-v4-flash" | "deepseek-v4-pro";
+export type KimiModel = "kimi-k2.6";
 
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+export const KIMI_BASE_URL = "https://api.moonshot.cn/v1";
 
 export interface TranslationConfigurationInput {
   translationProvider: TranslationProvider;
   deepSeekModel: DeepSeekModel;
   deepSeekSecretId: string;
+  kimiModel: KimiModel;
+  kimiSecretId: string;
   customBaseUrl: string;
   customModel: string;
   customSecretId: string;
@@ -102,6 +106,20 @@ export function validateTranslationConfiguration(
     };
   }
 
+  if (settings.translationProvider === "kimi") {
+    if (settings.kimiSecretId.trim() === "") {
+      throw new Error("请先在插件设置中选择或创建 Kimi API Key 安全凭据。");
+    }
+
+    return {
+      provider: "kimi",
+      endpoint: normalizeChatCompletionsUrl(KIMI_BASE_URL),
+      model: settings.kimiModel,
+      secretId: settings.kimiSecretId,
+      secretLabel: "Kimi"
+    };
+  }
+
   const model = settings.customModel.trim();
   if (model === "") {
     throw new Error("请先在插件设置中填写中转站模型名称。");
@@ -135,62 +153,90 @@ export function buildTranslationRequestBody(
     max_tokens: 512
   };
 
-  // DeepSeek V4 默认可能启用思考模式。逐句翻译无需思考过程，显式关闭可减少等待和费用。
-  if (provider === "deepseek") {
+  // 翻译与知识卡需要直接、稳定的结构化结果；关闭可选思考过程可减少等待和输出干扰。
+  if (provider === "deepseek" || provider === "kimi") {
     body.thinking = { type: "disabled" };
   }
 
   return body;
 }
 
-/** 从 OpenAI 兼容响应中安全提取最终文本。 */
-export function parseTranslationResponse(value: unknown): string {
+function parseResponseText(
+  value: unknown,
+  missingMessage: string,
+  emptyMessage: string
+): string {
   if (!value || typeof value !== "object") {
-    throw new Error("翻译服务返回了无法识别的数据。");
+    throw new Error("AI 服务返回了无法识别的数据。");
   }
 
   const choices = (value as Record<string, unknown>).choices;
   if (!isUnknownArray(choices) || choices.length === 0) {
-    throw new Error("翻译服务没有返回翻译结果。");
+    throw new Error(missingMessage);
   }
 
   const firstChoice = choices[0];
   if (!firstChoice || typeof firstChoice !== "object") {
-    throw new Error("翻译服务返回了无法识别的数据。");
+    throw new Error("AI 服务返回了无法识别的数据。");
   }
 
   const message = (firstChoice as Record<string, unknown>).message;
   if (!message || typeof message !== "object") {
-    throw new Error("翻译服务没有返回翻译结果。");
+    throw new Error(missingMessage);
   }
 
   const content = (message as Record<string, unknown>).content;
-  let text = "";
-
-  if (typeof content === "string") {
-    text = content.trim();
-  } else if (isUnknownArray(content)) {
-    text = content
-      .map((part) => {
+  const text = typeof content === "string"
+    ? content.trim()
+    : isUnknownArray(content)
+      ? content.map((part) => {
         if (!part || typeof part !== "object") {
           return "";
         }
         const partText = (part as Record<string, unknown>).text;
         return typeof partText === "string" ? partText : "";
-      })
-      .join("")
-      .trim();
-  }
+      }).join("").trim()
+      : "";
 
   if (text === "") {
-    throw new Error("翻译服务返回了空内容，请稍后重试。");
+    throw new Error(emptyMessage);
   }
-
   return text;
+}
+
+/** 从 OpenAI 兼容响应中安全提取最终文本。 */
+export function parseTranslationResponse(value: unknown): string {
+  return parseResponseText(
+    value,
+    "翻译服务没有返回翻译结果。",
+    "翻译服务返回了空内容，请稍后重试。"
+  );
+}
+
+/** 读取 OpenAI Chat Completions 的结束原因，用于区分正常结束和输出截断。 */
+export function readCompletionFinishReason(value: unknown): string | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const choices = (value as Record<string, unknown>).choices;
+  if (!isUnknownArray(choices) || choices.length === 0) {
+    return null;
+  }
+  const firstChoice = choices[0];
+  if (!firstChoice || typeof firstChoice !== "object") {
+    return null;
+  }
+  const finishReason = (firstChoice as Record<string, unknown>).finish_reason;
+  return typeof finishReason === "string" && finishReason.trim() !== ""
+    ? finishReason.trim()
+    : null;
 }
 
 /** 把常见 HTTP 状态转换成不会泄露服务端原文的中文提示。 */
 export function translationHttpError(status: number): string {
+  if (status === 408) {
+    return "翻译服务提前终止了请求（HTTP 408），请稍后重试。";
+  }
   if (status === 400) {
     return "请求格式不兼容，请检查模型名称和中转站接口类型。";
   }

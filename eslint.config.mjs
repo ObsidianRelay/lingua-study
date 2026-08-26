@@ -11,6 +11,7 @@ export default defineConfig(
     "node_modules",
     ".test-dist",
     "main.js",
+    "src/vendor",
     "esbuild.config.mjs",
     "esbuild.test.mjs",
     "scripts",
@@ -32,5 +33,23 @@ export default defineConfig(
       }
     }
   },
-  ...obsidianmd.configs.recommended
+  ...obsidianmd.configs.recommended,
+  {
+    files: ["src/**/*.ts"],
+    rules: {
+      // Electron 模块在不同 Obsidian 桌面版本中的可用位置不同，必须运行时逐一探测。
+      "@typescript-eslint/no-require-imports": [
+        "error",
+        { allow: ["^electron$", "^@electron/remote$"] }
+      ],
+      "obsidianmd/ui/sentence-case": [
+        "warn",
+        {
+          // 保留插件名和第三方项目的正式大小写。
+          ignoreRegex: ["B站|Chrome|Lingua Study|Whisper|ECDICT"],
+          enforceCamelCaseLower: true
+        }
+      ]
+    }
+  }
 );

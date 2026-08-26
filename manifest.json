@@ -1,9 +1,9 @@
 {
   "id": "lingua-study",
   "name": "Lingua Study",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "minAppVersion": "1.13.0",
-  "description": "Study languages with timestamped YouTube transcripts, playback controls, and on-demand AI translation.",
+  "description": "Import YouTube and Bilibili transcripts with cached video playback and on-demand translation.",
   "author": "xiaobai",
   "authorUrl": "https://github.com/ObsidianRelay",
   "isDesktopOnly": true
