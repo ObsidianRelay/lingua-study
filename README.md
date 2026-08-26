@@ -1,9 +1,11 @@
 # Lingua Study
 
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
 Learn languages in Obsidian with timestamped YouTube and Bilibili transcripts, local Bilibili playback, and on-demand AI translation.
 
 > [!IMPORTANT]
-> Lingua Study 1.2.0 is desktop-only and focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.2.1 is desktop-only and focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
 ## Features
 
@@ -44,7 +46,7 @@ Learn languages in Obsidian with timestamped YouTube and Bilibili transcripts, l
 
 ### Community plugins
 
-Lingua Study has an existing entry in the Obsidian Community directory. The latest release may remain unavailable until its repository and release assets pass automated checks and manual review. After the reviewed release becomes available, install or update it from **Settings → Community plugins → Browse**.
+The Lingua Study project page may become visible on the Obsidian community website before the plugin is included in the official in-app directory. After the reviewed release becomes searchable in Obsidian, install or update it from **Settings → Community plugins → Browse**. Until then, use the manual installation steps below.
 
 ### Manual installation
 
@@ -150,7 +152,7 @@ Provide:
 - The exact model ID supported by the provider
 - A Bearer API key selected through Obsidian SecretStorage
 
-Custom headers, Anthropic-compatible endpoints, Ollama, bulk translation, and additional target languages are not supported in 1.2.0.
+Custom headers, Anthropic-compatible endpoints, Ollama, and additional target languages are not supported in 1.2.1. Optional whole-transcript translation is available, runs sequentially, and skips segments that already have results.
 
 ## Translation controls
 
@@ -230,17 +232,3 @@ Maintainer instructions are available in [RELEASING.md](./RELEASING.md).
 ## License
 
 [MIT](./LICENSE) © 2026 xiaobai. See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for bundled and optional third-party components.
-
----
-
-## 中文说明
-
-Lingua Study 是一款桌面端 Obsidian 外语学习插件。当前版本默认采用手动创建：在 Markdown 笔记中粘贴 YouTube 或B站链接，再点击 Obsidian 左侧栏中的 Lingua Study 线条 Logo，插件会准备播放器、英文文字稿、时间戳高亮与按句翻译界面。设置中仍保留“粘贴链接后自动创建”开关，用户可以按需重新开启。
-
-普通公开视频字幕会依次尝试现有公开接口、无需固定 API Key 的 YouTube 移动端接口，以及电脑上已经安装的 `yt-dlp`。这里的“移动端接口”只是一种运行在桌面版 Obsidian 中的字幕请求格式，不表示插件支持手机。插件不会自动安装或打包 `yt-dlp`，也不使用 Cookie、Google 登录、用户 API Key、作者服务器或遥测；这些方法仍不能保证绕过登录、地区、嵌入或反机器人限制。全部自动方式失败时，可以选择本机 SRT/VTT 文件继续，文件不会上传。
-
-B站导入会先匿名读取平台的独立英文字幕，优先人工英文、其次自动英文，不再需要 Chrome 扩展。如果 B站明确要求登录，插件会在 Obsidian 内打开独立登录窗口，登录成功后自动重试。该登录状态与 Chrome 分开，只保存在这台电脑的 Electron 会话中，不写入笔记、字幕、插件设置或 Obsidian Sync。
-
-无独立英文字幕时，可以导入 SRT/VTT，也可以先只创建播放器，随后通过字幕图标粘贴文字或导入 PDF、DOCX、TXT、MD 文稿。文稿可使用固定版本的本地 Whisper Base English 在设备上完成对齐；中文对照会直接写入本地译文缓存。升级清理只匹配 Lingua Study 曾管理的旧 Whisper 缓存，不删除B站视频、笔记、字幕 JSON、翻译缓存或其他模型。
-
-只有点击某句话的翻译、补充知识点或明确启用整篇翻译后，相关英文才会发送给所选服务。逐句编辑不会改变时间轴，首次生成的原文会保留并可恢复。翻译凭据保存在 Obsidian SecretStorage 中；第三方翻译调用可能产生费用。
