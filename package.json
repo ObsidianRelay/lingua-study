@@ -1,6 +1,6 @@
 {
   "name": "obsidian-lingua-study",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Study languages in Obsidian with YouTube and Bilibili transcripts, cached playback, and on-demand translation.",
   "private": true,
   "license": "MIT",
