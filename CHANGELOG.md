@@ -4,6 +4,18 @@ All notable changes to Lingua Study are documented in this file.
 
 ## Unreleased
 
+## 1.2.2 - 2026-08-28
+
+### Changed
+
+- The full ECDICT installer now prefers a prebuilt 24.4 MB ZIP package and automatically falls back to the official CSV source when the package is unavailable
+- Added resumable downloads, up to three attempts, and live progress with download speed and estimated remaining time
+- Added SHA-256 verification for the downloaded package and kept the previously installed dictionary available until the replacement is fully verified
+
+### Fixed
+
+- Hid the full-dictionary download button correctly after installation, including when Obsidian styles override the browser's default `hidden` behavior
+
 ## 1.2.0 - 2026-08-25
 
 ### Added

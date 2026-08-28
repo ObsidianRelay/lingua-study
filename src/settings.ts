@@ -286,7 +286,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "ECDICT 完整版",
-              desc: "按需从 ECDICT 官方 GitHub 下载并在本机生成索引。文件保存在系统缓存目录，不写入笔记库、不参与 Obsidian Sync；安装后查不到精简版词条时会自动使用完整版。",
+              desc: "点击下载后优先安装已生成的压缩词典包，不可用时自动回退到 ECDICT 官方 CSV；支持断点续传和自动重试。文件保存在系统缓存目录，不写入笔记库、不参与 Obsidian Sync。",
               render: (setting) => {
                 const status = setting.controlEl.createSpan({
                   cls: "lingua-study-settings-status"

@@ -1859,6 +1859,11 @@
   white-space: nowrap;
 }
 
+/* Obsidian 的按钮样式会覆盖浏览器默认的 hidden 规则。 */
+:is(.lingua-study-settings, .setting-page:has(.lingua-study-settings-section)) [hidden] {
+  display: none !important;
+}
+
 .lingua-study-settings-status {
   display: inline-flex;
   min-height: 26px;

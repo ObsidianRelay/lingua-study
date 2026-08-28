@@ -166,7 +166,7 @@ Custom headers, Anthropic-compatible endpoints, Ollama, and additional target la
 
 Manual edits store the first version in an optional `originalText` field in the same version 1 transcript JSON. Existing files remain compatible.
 
-Double-clicking one English word performs a fully offline lookup. It does not call the configured AI provider. The compressed exam-and-frequency subset of ECDICT remains inside `main.js`. An optional full ECDICT download is available under **Settings → Lingua Study → Learning and dictionary**; it is verified, indexed locally, and stored in the operating-system cache rather than the vault. The pronunciation button uses an installed operating-system English voice.
+Double-clicking one English word performs a fully offline lookup. It does not call the configured AI provider. The compressed exam-and-frequency subset of ECDICT remains inside `main.js`. The optional full ECDICT installer under **Settings → Lingua Study → Learning and dictionary** prefers a prebuilt 24.4 MB ZIP and falls back to the official ECDICT CSV when needed. Downloads support resume and up to three attempts. The installed dictionary stays in the operating-system cache rather than the vault or Obsidian Sync. The pronunciation button uses an installed operating-system English voice.
 
 When caching is enabled, Lingua Study creates a separate file beside the transcript:
 

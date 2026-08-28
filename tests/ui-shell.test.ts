@@ -110,6 +110,8 @@ test("设置首页使用六个原生分类并保留全部设置项", async () =>
   assert.match(source, /text: "下载完整版"/u);
   assert.match(source, /installFullDictionary/u);
   assert.match(source, /ClearFullDictionaryModal/u);
+  assert.match(source, /支持断点续传和自动重试/u);
+  assert.doesNotMatch(source, /从本地文件安装|installFullDictionaryFromLocalFile/u);
   assert.doesNotMatch(source, /this\.display\(\)/u);
 });
 
@@ -157,6 +159,7 @@ test("设置页样式统一导航卡片、状态和窄窗口布局", async () =>
   assert.match(css, /\.lingua-study-settings-section \.setting-item-description \{[\s\S]*?overflow-wrap: anywhere;/u);
   assert.match(css, /background: var\(--interactive-hover\);/u);
   assert.match(css, /\.lingua-study-settings-section \.setting-item-control \{[\s\S]*?flex-wrap: wrap;/u);
+  assert.match(css, /\.setting-page:has\(\.lingua-study-settings-section\)\) \[hidden\] \{[\s\S]*?display: none !important;/u);
   assert.match(css, /@media \(max-width: 700px\) \{[\s\S]*?flex-direction: column;/u);
 });
 

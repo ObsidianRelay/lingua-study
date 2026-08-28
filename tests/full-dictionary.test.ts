@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
 import {
   buildFullDictionaryPackage,
+  createFullDictionaryArchive,
+  downloadFileWithResume,
+  extractFullDictionaryArchive,
   getFullDictionaryCacheFolder,
   validateFullDictionaryManifest,
   verifyFullDictionaryPackage
@@ -68,7 +73,67 @@ test("官方 CSV 可以生成按首字母加载的压缩分片", async () => {
     assert.ok(await verifyFullDictionaryPackage(output));
     await readFile(join(output, "dictionary-index.json"), "utf8");
     await assert.rejects(readFile(join(output, "manifest.json"), "utf8"));
+
+    const firstArchive = join(root, "dictionary-1.zip");
+    const secondArchive = join(root, "dictionary-2.zip");
+    const firstArchiveResult = await createFullDictionaryArchive(output, firstArchive);
+    const secondArchiveResult = await createFullDictionaryArchive(output, secondArchive);
+    assert.equal(firstArchiveResult.sha256, secondArchiveResult.sha256);
+    assert.equal(firstArchiveResult.bytes, secondArchiveResult.bytes);
+    const extracted = join(root, "extracted");
+    const extractedManifest = await extractFullDictionaryArchive(firstArchive, extracted);
+    assert.equal(extractedManifest.entryCount, manifest.entryCount);
+    assert.ok(await verifyFullDictionaryPackage(extracted));
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("词典下载中断后保留进度并使用 Range 续传", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lingua-dictionary-download-"));
+  const target = join(root, "dictionary.part");
+  const payload = Buffer.alloc(512 * 1024);
+  for (let index = 0; index < payload.length; index += 1) {
+    payload[index] = index % 251;
+  }
+  const expectedSha256 = createHash("sha256").update(payload).digest("hex");
+  let firstRequest = true;
+  let resumedAt = 0;
+  const server = createServer((request, response) => {
+    const range = request.headers.range;
+    if (firstRequest && !range) {
+      firstRequest = false;
+      response.writeHead(200, { "Content-Length": payload.byteLength });
+      response.write(payload.subarray(0, 128 * 1024));
+      setImmediate(() => response.destroy());
+      return;
+    }
+    const match = typeof range === "string" ? /^bytes=(\d+)-$/u.exec(range) : null;
+    resumedAt = match?.[1] ? Number.parseInt(match[1], 10) : 0;
+    response.writeHead(206, {
+      "Content-Length": payload.byteLength - resumedAt,
+      "Content-Range": `bytes ${resumedAt}-${payload.byteLength - 1}/${payload.byteLength}`
+    });
+    response.end(payload.subarray(resumedAt));
+  });
+
+  try {
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const result = await downloadFileWithResume({
+      url: `http://127.0.0.1:${address.port}/dictionary`,
+      targetPath: target,
+      maxBytes: 1024 * 1024,
+      expectedSha256,
+      attempts: 3,
+      retryBaseDelayMs: 5
+    });
+    assert.ok(resumedAt > 0);
+    assert.equal(result.sha256, expectedSha256);
+    assert.deepEqual(await readFile(target), payload);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await rm(root, { recursive: true, force: true });
   }
 });

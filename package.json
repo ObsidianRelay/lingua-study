@@ -1,6 +1,6 @@
 {
   "name": "obsidian-lingua-study",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Study languages in Obsidian with YouTube and Bilibili transcripts, cached playback, and on-demand translation.",
   "private": true,
   "license": "MIT",
@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit --skipLibCheck",
     "lint": "eslint src",
     "build": "npm run typecheck && node esbuild.config.mjs production",
+    "build:dictionary-release": "node scripts/build-dictionary-release.mjs",
     "check:release": "node scripts/check-release.mjs"
   },
   "engines": {
@@ -39,6 +40,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "3.8.1",
+    "jszip": "3.10.1",
     "mammoth": "^1.12.1",
     "pdfjs-dist": "^6.2.108"
   },
