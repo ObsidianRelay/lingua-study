@@ -1,6 +1,7 @@
 import {
   App,
   Editor,
+  getFrontMatterInfo,
   MarkdownView,
   Modal,
   normalizePath,
@@ -22,6 +23,7 @@ import {
   groupTranscriptSegmentsIntoSentences,
   mapHttpFailure,
   mapPlayerFailure,
+  planStudyBlockAppend,
   parseJson3Captions,
   parseSubtitleFile,
   parseTimedTextXml,
@@ -29,6 +31,7 @@ import {
   removeMatchingVideoLinkFromLine,
   sanitizeTranscriptFolder,
   selectEnglishCaptionTrack,
+  startsWithFrontmatterFence,
   type CaptionTrackDescriptor,
   type InnerTubeConfig,
   type YouTubeImportErrorCode,
@@ -757,27 +760,14 @@ export class YouTubeImportController {
     }
 
     const block = addStudyBlockExitLine(buildStudyBlock(transcriptPath));
-    const lines = editor.getValue().split("\n");
-    const linkLine = lines.findIndex((line) =>
-      extractYouTubeLinks(line).some((candidate) => candidate.videoId === link.videoId)
-    );
-    if (linkLine >= 0) {
-      const originalLine = lines[linkLine] ?? "";
-      const cleaned = removeMatchingVideoLinkFromLine(
-        originalLine,
-        (url) => parseYouTubeLink(url)?.videoId === link.videoId
-      ).line;
-      const replacement = cleaned.trim() === "" ? block : `${cleaned}\n\n${block}`;
-      editor.replaceRange(
-        replacement,
-        { line: linkLine, ch: 0 },
-        { line: linkLine, ch: originalLine.length }
-      );
-    } else {
-      const cursor = editor.getCursor();
-      const prefix = cursor.ch === 0 ? "" : "\n";
-      editor.replaceRange(`${prefix}${block}`, cursor);
+    const markdown = editor.getValue();
+    const frontmatter = getFrontMatterInfo(markdown);
+    if (!frontmatter.exists && startsWithFrontmatterFence(markdown)) {
+      throw new Error("当前笔记的 YAML 属性区没有正确闭合，已停止插入学习内容。请先修复属性区。");
     }
+
+    const appendPlan = planStudyBlockAppend(markdown, block);
+    editor.replaceRange(appendPlan.text, editor.offsetToPos(appendPlan.offset));
     await this.switchToReadingView(view);
   }
 

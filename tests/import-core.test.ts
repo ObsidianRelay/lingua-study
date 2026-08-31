@@ -27,10 +27,12 @@ import {
   parseSubtitleFile,
   parseTimedTextXml,
   parseYouTubeLink,
+  planStudyBlockAppend,
   removeMatchingVideoLinkFromLine,
   removeVisibleBilibiliLinksFromMarkdown,
   sanitizeTranscriptFolder,
-  selectEnglishCaptionTrack
+  selectEnglishCaptionTrack,
+  startsWithFrontmatterFence
 } from "../src/import-core";
 import { validateTranscript } from "../src/transcript-core";
 
@@ -86,6 +88,41 @@ test("链接识别去重并遵循选区、当前行、全文优先级", () => {
       .map((link) => link.videoId),
     [VIDEO_ID, secondId]
   );
+});
+
+test("RSS 学习代码块统一追加到笔记最末尾并保留原文链接", () => {
+  const markdown = [
+    "---",
+    `link: https://youtu.be/${VIDEO_ID}`,
+    'feedTitle: "TED"',
+    "---",
+    "",
+    "# Video",
+    "",
+    `[Source](https://www.youtube.com/shorts/${VIDEO_ID})`
+  ].join("\n");
+  const block = "```lingua-study\ntranscript: Lingua Study/Transcripts/test.json\n```\n";
+  const plan = planStudyBlockAppend(markdown, block);
+  const result = `${markdown.slice(0, plan.offset)}${plan.text}`;
+
+  assert.equal(plan.offset, markdown.length);
+  assert.ok(result.includes(`[Source](https://www.youtube.com/shorts/${VIDEO_ID})`));
+  assert.ok(result.endsWith(block));
+  assert.ok(result.indexOf("[Source]") < result.indexOf("```lingua-study"));
+});
+
+test("追加学习代码块时统一保留一个空行", () => {
+  const block = "```lingua-study\ntranscript: test.json\n```\n";
+  assert.equal(planStudyBlockAppend("正文", block).text, `\n\n${block}`);
+  assert.equal(planStudyBlockAppend("正文\n", block).text, `\n${block}`);
+  assert.equal(planStudyBlockAppend("正文\n\n", block).text, block);
+  assert.equal(planStudyBlockAppend("", block).text, block);
+});
+
+test("识别 YAML 属性区起始分隔线和 BOM", () => {
+  assert.equal(startsWithFrontmatterFence("---\ntitle: test\n---\n"), true);
+  assert.equal(startsWithFrontmatterFence("\uFEFF---\r\ntitle: test\r\n---\r\n"), true);
+  assert.equal(startsWithFrontmatterFence("# ---\n正文"), false);
 });
 
 test("识别 B站 BV、av、多 P 和 b23.tv 链接", () => {
