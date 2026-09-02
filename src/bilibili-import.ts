@@ -27,9 +27,7 @@ import {
   type BilibiliLink,
   type BilibiliVideoLink
 } from "./import-core";
-import {
-  BilibiliCacheService
-} from "./bilibili-cache";
+import type { BilibiliCacheService } from "./bilibili-cache";
 import type {
   BilibiliSubtitleErrorResult,
   BilibiliSubtitleSuccessResult
@@ -263,10 +261,11 @@ export class BilibiliImportController {
 
   constructor(
     private readonly app: App,
-    private readonly cacheService: BilibiliCacheService,
+    private readonly cacheService: BilibiliCacheService | null,
     private readonly bilibiliSession: BilibiliSessionService,
     private readonly getSettings: () => LinguaStudySettings,
-    private readonly localWhisper: LocalWhisperService,
+    private readonly localWhisper: LocalWhisperService | null,
+    private readonly supportsBilibiliLogin: boolean,
     private readonly saveImportedTranslations: (
       transcriptPath: string,
       videoId: string,
@@ -315,11 +314,19 @@ export class BilibiliImportController {
       return new DocumentTranscriptImportModal(this.app, {
         initialDraft: loadedDraft.draft,
         getCachedVideo: async (onProgress) => {
+          if (!this.cacheService) {
+            throw new Error("移动端第一阶段暂不支持 B站视频缓存和本地自动对齐。");
+          }
           const result = await this.cacheService.cacheVideo(link, onProgress);
           return result.cached;
         },
-        localModelCached: () => this.localWhisper.hasCachedModel(),
-        transcribeLocal: (cached, onProgress) => this.localWhisper.transcribe(cached, onProgress),
+        localModelCached: () => this.localWhisper?.hasCachedModel() ?? Promise.resolve(false),
+        transcribeLocal: (cached, onProgress) => {
+          if (!this.localWhisper) {
+            return Promise.reject(new Error("本地 Whisper 自动对齐仅支持电脑端。"));
+          }
+          return this.localWhisper.transcribe(cached, onProgress);
+        },
         apply: (segments, chinese, sourceLabel) =>
           this.applyImportedTranscript(sourcePath, link, segments, chinese, sourceLabel),
         saveDraft: (draft) => this.documentImportDraftStore.save(draftKey, draft),
@@ -386,6 +393,9 @@ export class BilibiliImportController {
       let link = resolvedLink;
       let cacheWarning: string | null = null;
       if (link.idType === "aid") {
+        if (!this.cacheService) {
+          throw new Error("移动端第一阶段请使用包含 BV 号的 B站完整链接。");
+        }
         const cacheResult = await this.cacheService.cacheVideo(
           link,
           (message) => progress.setMessage(message)
@@ -395,22 +405,26 @@ export class BilibiliImportController {
       const reusablePath = await this.findReusableTranscript(editor.getValue(), link);
       if (reusablePath) {
         await this.completeEditorImport(editor, view, link, reusablePath);
-        progress.setMessage("已显示文字稿，正在准备 B站视频缓存…");
-        try {
-          const cacheResult = await this.cacheService.cacheVideo(
-            link,
-            (message) => progress.setMessage(message)
-          );
-          link = cacheResult.link;
-          await this.switchToReadingView(view);
-        } catch (error) {
-          cacheWarning = errorMessage(error);
+        if (this.cacheService) {
+          progress.setMessage("已显示文字稿，正在准备 B站视频缓存…");
+          try {
+            const cacheResult = await this.cacheService.cacheVideo(
+              link,
+              (message) => progress.setMessage(message)
+            );
+            link = cacheResult.link;
+            await this.switchToReadingView(view);
+          } catch (error) {
+            cacheWarning = errorMessage(error);
+          }
         }
         progress.hide();
         new Notice(
           cacheWarning
             ? `已复用本地文字稿；视频缓存失败，将使用在线播放器。${cacheWarning}`
-            : "已复用本地文字稿并创建 B站学习内容。",
+            : this.cacheService
+              ? "已复用本地文字稿并创建 B站学习内容。"
+              : "已复用文字稿并创建在线 B站学习内容。",
           8_000
         );
         return;
@@ -429,7 +443,7 @@ export class BilibiliImportController {
         progress.hide();
         const fallback = await this.chooseSubtitleFallback(subtitleResult.error.message, {
           allowRetry: this.isRetryableSubtitleError(subtitleResult),
-          allowLogin: subtitleResult.error.kind === "login-required"
+          allowLogin: this.supportsBilibiliLogin && subtitleResult.error.kind === "login-required"
         });
         if (!fallback) {
           return;
@@ -457,6 +471,11 @@ export class BilibiliImportController {
         }
         if (fallback.kind === "player-only") {
           await this.completeEditorImport(editor, view, link, null);
+          if (!this.cacheService) {
+            progress.hide();
+            new Notice("已创建在线 B站播放器；移动端暂不缓存视频。", 7_000);
+            return;
+          }
           progress = new Notice("已显示 B站播放器，正在准备视频缓存…", 0);
           let reused = false;
           try {
@@ -503,22 +522,26 @@ export class BilibiliImportController {
       progress.setMessage("正在保存英文文字稿并更新当前笔记…");
       const transcriptPath = await this.saveTranscript(link, segments);
       await this.completeEditorImport(editor, view, link, transcriptPath);
-      progress.setMessage("英文文字稿已显示，正在准备 B站视频缓存…");
-      try {
-        const cacheResult = await this.cacheService.cacheVideo(
-          link,
-          (message) => progress.setMessage(message)
-        );
-        link = cacheResult.link;
-        await this.switchToReadingView(view);
-      } catch (error) {
-        cacheWarning = errorMessage(error);
+      if (this.cacheService) {
+        progress.setMessage("英文文字稿已显示，正在准备 B站视频缓存…");
+        try {
+          const cacheResult = await this.cacheService.cacheVideo(
+            link,
+            (message) => progress.setMessage(message)
+          );
+          link = cacheResult.link;
+          await this.switchToReadingView(view);
+        } catch (error) {
+          cacheWarning = errorMessage(error);
+        }
       }
       progress.hide();
       new Notice(
         cacheWarning
           ? `已通过${sourceLabel}创建 ${segments.length} 条英文字幕；视频缓存失败，将使用在线播放器。${cacheWarning}`
-          : `已通过${sourceLabel}创建学习内容，共 ${segments.length} 条英文字幕。`,
+          : this.cacheService
+            ? `已通过${sourceLabel}创建学习内容，共 ${segments.length} 条英文字幕。`
+            : `已通过${sourceLabel}创建移动端学习内容，共 ${segments.length} 条英文字幕；视频使用在线播放器。`,
         9_000
       );
     } catch (error) {

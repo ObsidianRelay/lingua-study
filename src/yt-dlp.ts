@@ -8,7 +8,8 @@ import type { TranscriptSegment } from "./transcript-core";
 import {
   buildYtDlpCandidates,
   mapYtDlpFailure,
-  selectGeneratedSubtitleFile
+  selectGeneratedSubtitleFile,
+  type YtDlpTranscriptResult
 } from "./yt-dlp-core";
 
 const MAX_SUBTITLE_BYTES = 10 * 1024 * 1024;
@@ -23,11 +24,6 @@ interface ProcessResult {
   stderr: string;
   timedOut: boolean;
 }
-
-export type YtDlpTranscriptResult =
-  | { status: "success"; segments: TranscriptSegment[] }
-  | { status: "unavailable"; message: string }
-  | { status: "failed"; message: string };
 
 /**
  * 在电脑本机运行 yt-dlp。所有参数都以数组传给程序，不经过 shell，避免链接或路径被当成命令执行。

@@ -5,7 +5,7 @@
 Learn languages in Obsidian with timestamped YouTube and Bilibili transcripts, local Bilibili playback, and on-demand AI translation.
 
 > [!IMPORTANT]
-> Lingua Study 1.2.1 is desktop-only and focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.3.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
 ## Features
 
@@ -30,6 +30,9 @@ Learn languages in Obsidian with timestamped YouTube and Bilibili transcripts, l
 - A bundled offline English-Chinese dictionary opened by double-clicking a transcript word
 - A dedicated right-sidebar dictionary view with phonetics, definitions, inflections, exam tags, context, and system pronunciation
 - Per-segment transcript editing and one-click restoration of the original text
+- Inline single-sentence dictation with two-second replay controls and word-level comparison
+- Temporary single-sentence recording with synchronized shadowing, pause/resume, waveform, and playback comparison
+- One-click vocabulary-book export to an Obsidian note or paginated desktop PNG images
 - DeepSeek, Kimi, and HTTPS OpenAI Chat Completions-compatible providers
 - Translation cache stored beside the transcript file
 - API keys selected through Obsidian SecretStorage

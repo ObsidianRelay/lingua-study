@@ -1,6 +1,7 @@
 import {
   App,
   Editor,
+  getFrontMatterInfo,
   MarkdownView,
   Modal,
   normalizePath,
@@ -22,6 +23,7 @@ import {
   groupTranscriptSegmentsIntoSentences,
   mapHttpFailure,
   mapPlayerFailure,
+  planStudyBlockAppend,
   parseJson3Captions,
   parseSubtitleFile,
   parseTimedTextXml,
@@ -29,6 +31,7 @@ import {
   removeMatchingVideoLinkFromLine,
   sanitizeTranscriptFolder,
   selectEnglishCaptionTrack,
+  startsWithFrontmatterFence,
   type CaptionTrackDescriptor,
   type InnerTubeConfig,
   type YouTubeImportErrorCode,
@@ -36,8 +39,8 @@ import {
 } from "./import-core";
 import type { LinguaStudySettings } from "./settings";
 import { validateTranscript, type TranscriptFile, type TranscriptSegment } from "./transcript-core";
-import { fetchTranscriptWithYtDlp } from "./yt-dlp";
 import { addStudyBlockExitLine } from "./live-preview-core";
+import type { YtDlpTranscriptFetcher } from "./yt-dlp-core";
 
 const MAX_LOCAL_SUBTITLE_BYTES = 10 * 1024 * 1024;
 const IOS_CLIENT_VERSION = "20.10.38";
@@ -220,7 +223,8 @@ export class YouTubeImportController {
 
   constructor(
     private readonly app: App,
-    private readonly getSettings: () => LinguaStudySettings
+    private readonly getSettings: () => LinguaStudySettings,
+    private readonly fetchWithYtDlp: YtDlpTranscriptFetcher | null
   ) {}
 
   async importFromEditor(editor: Editor, view: MarkdownView): Promise<void> {
@@ -263,18 +267,29 @@ export class YouTubeImportController {
         segments = await this.fetchPublicEnglishTranscript(link);
       } catch (error) {
         const directReason = errorMessage(error);
-        progress.setMessage("YouTube 直接获取失败，正在尝试本机 yt-dlp…");
-        const ytDlpResult = await fetchTranscriptWithYtDlp(
-          link.canonicalUrl,
-          this.getSettings().ytDlpPath
-        );
-        if (ytDlpResult.status === "success") {
-          segments = ytDlpResult.segments;
-          usedYtDlp = true;
+        if (this.fetchWithYtDlp) {
+          progress.setMessage("YouTube 直接获取失败，正在尝试本机 yt-dlp…");
+          const ytDlpResult = await this.fetchWithYtDlp(
+            link.canonicalUrl,
+            this.getSettings().ytDlpPath
+          );
+          if (ytDlpResult.status === "success") {
+            segments = ytDlpResult.segments;
+            usedYtDlp = true;
+          } else {
+            progress.hide();
+            const fallback = await this.chooseLocalSubtitle(
+              `${directReason}\n\n${ytDlpResult.message}`
+            );
+            if (!fallback) {
+              return;
+            }
+            segments = parseSubtitleFile(fallback.text);
+          }
         } else {
           progress.hide();
           const fallback = await this.chooseLocalSubtitle(
-            `${directReason}\n\n${ytDlpResult.message}`
+            `${directReason}\n\n当前设备不支持本机 yt-dlp，可手动选择 SRT 或 VTT 字幕继续。`
           );
           if (!fallback) {
             return;
@@ -757,27 +772,14 @@ export class YouTubeImportController {
     }
 
     const block = addStudyBlockExitLine(buildStudyBlock(transcriptPath));
-    const lines = editor.getValue().split("\n");
-    const linkLine = lines.findIndex((line) =>
-      extractYouTubeLinks(line).some((candidate) => candidate.videoId === link.videoId)
-    );
-    if (linkLine >= 0) {
-      const originalLine = lines[linkLine] ?? "";
-      const cleaned = removeMatchingVideoLinkFromLine(
-        originalLine,
-        (url) => parseYouTubeLink(url)?.videoId === link.videoId
-      ).line;
-      const replacement = cleaned.trim() === "" ? block : `${cleaned}\n\n${block}`;
-      editor.replaceRange(
-        replacement,
-        { line: linkLine, ch: 0 },
-        { line: linkLine, ch: originalLine.length }
-      );
-    } else {
-      const cursor = editor.getCursor();
-      const prefix = cursor.ch === 0 ? "" : "\n";
-      editor.replaceRange(`${prefix}${block}`, cursor);
+    const markdown = editor.getValue();
+    const frontmatter = getFrontMatterInfo(markdown);
+    if (!frontmatter.exists && startsWithFrontmatterFence(markdown)) {
+      throw new Error("当前笔记的 YAML 属性区没有正确闭合，已停止插入学习内容。请先修复属性区。");
     }
+
+    const appendPlan = planStudyBlockAppend(markdown, block);
+    editor.replaceRange(appendPlan.text, editor.offsetToPos(appendPlan.offset));
     await this.switchToReadingView(view);
   }
 

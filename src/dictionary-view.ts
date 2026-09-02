@@ -132,6 +132,8 @@ export class LinguaDictionaryView extends ItemView {
   private reviewEntryId: string | null = null;
   private reviewRevealed = false;
   private reviewRefreshTimer: number | null = null;
+  private vocabularyExporting = false;
+  private vocabularyImageExporting = false;
   private unsubscribeVocabulary: (() => void) | null = null;
   private opened = false;
 
@@ -531,13 +533,136 @@ export class LinguaDictionaryView extends ItemView {
   private renderVocabularyResults(parent: HTMLElement, book: VocabularyBookFile): void {
     parent.empty();
     const entries = this.filteredVocabularyEntries(book);
+    const totalCount = Object.keys(book.entries).length;
     const stats = parent.createDiv({ cls: "lingua-vocabulary-stats" });
-    stats.createSpan({ text: `共 ${Object.keys(book.entries).length} 个生词` });
-    stats.createSpan({ text: `当前显示 ${entries.length} 个` });
+    const counts = stats.createDiv({ cls: "lingua-vocabulary-stats-counts" });
+    counts.createSpan({ text: `共 ${totalCount} 个生词` });
+    counts.createSpan({ text: `当前显示 ${entries.length} 个` });
+    const exportActions = stats.createDiv({ cls: "lingua-vocabulary-export-actions" });
+    const anyExporting = this.vocabularyExporting || this.vocabularyImageExporting;
+    const exportButton = exportActions.createEl("button", {
+      cls: "lingua-vocabulary-export-button",
+      attr: {
+        "aria-label": "导出生词本到笔记",
+        title: "导出生词本到笔记"
+      }
+    });
+    exportButton.type = "button";
+    const exportIcon = exportButton.createSpan({ cls: "lingua-vocabulary-export-icon" });
+    setIcon(exportIcon, "download");
+    if (this.vocabularyExporting) {
+      setIcon(exportIcon, "loader-circle");
+      exportButton.addClass("is-loading");
+      exportButton.setAttribute("aria-label", "正在导出生词本笔记");
+      exportButton.title = "正在导出生词本笔记";
+    }
+    exportButton.disabled = totalCount === 0
+      || this.vocabularyWarning !== null
+      || anyExporting;
+    exportButton.addEventListener("click", () => {
+      if (
+        this.vocabularyExporting ||
+        this.vocabularyImageExporting ||
+        totalCount === 0 ||
+        this.vocabularyWarning !== null
+      ) {
+        return;
+      }
+      this.vocabularyExporting = true;
+      exportButton.disabled = true;
+      imageExportButton.disabled = true;
+      setIcon(exportIcon, "loader-circle");
+      exportButton.addClass("is-loading");
+      exportButton.setAttribute("aria-label", "正在导出生词本笔记");
+      exportButton.title = "正在导出生词本笔记";
+      void this.plugin.exportVocabularyBookToNote().then((result) => {
+        new Notice(`已导出 ${result.count} 个生词，并打开生词本笔记。`, 4_000);
+      }).catch((caught) => {
+        new Notice(caught instanceof Error ? caught.message : "生词本导出失败，请重试。", 6_000);
+      }).finally(() => {
+        this.vocabularyExporting = false;
+        if (exportButton.isConnected) {
+          exportButton.disabled = totalCount === 0 || this.vocabularyWarning !== null;
+          imageExportButton.disabled = totalCount === 0
+            || this.vocabularyWarning !== null
+            || !this.plugin.capabilities.desktop;
+          setIcon(exportIcon, "download");
+          exportButton.removeClass("is-loading");
+          exportButton.setAttribute("aria-label", "导出生词本到笔记");
+          exportButton.title = "导出生词本到笔记";
+        }
+      });
+    });
+    const imageUnsupportedReason = "移动端暂不支持生词本长图导出，请在电脑端使用";
+    const imageExportButton = exportActions.createEl("button", {
+      cls: "lingua-vocabulary-export-button lingua-vocabulary-image-export-button",
+      attr: {
+        "aria-label": "将全部生词导出为长图",
+        title: this.plugin.capabilities.desktop
+          ? "将全部生词导出为长图"
+          : imageUnsupportedReason
+      }
+    });
+    imageExportButton.type = "button";
+    const imageExportIcon = imageExportButton.createSpan({ cls: "lingua-vocabulary-export-icon" });
+    setIcon(imageExportIcon, "image");
+    if (this.vocabularyImageExporting) {
+      setIcon(imageExportIcon, "loader-circle");
+      imageExportButton.addClass("is-loading");
+      imageExportButton.setAttribute("aria-label", "正在生成生词本长图");
+      imageExportButton.title = "正在生成生词本长图";
+    }
+    imageExportButton.disabled = totalCount === 0
+      || this.vocabularyWarning !== null
+      || anyExporting
+      || !this.plugin.capabilities.desktop;
+    imageExportButton.addEventListener("click", () => {
+      if (
+        this.vocabularyExporting ||
+        this.vocabularyImageExporting ||
+        totalCount === 0 ||
+        this.vocabularyWarning !== null ||
+        !this.plugin.capabilities.desktop
+      ) {
+        return;
+      }
+      this.vocabularyImageExporting = true;
+      exportButton.disabled = true;
+      imageExportButton.disabled = true;
+      setIcon(imageExportIcon, "loader-circle");
+      imageExportButton.addClass("is-loading");
+      imageExportButton.setAttribute("aria-label", "正在生成生词本长图");
+      imageExportButton.title = "正在生成生词本长图";
+      void this.plugin.exportVocabularyBookToImages().then((result) => {
+        const warning = result.cleanupWarnings.length > 0
+          ? ` ${result.cleanupWarnings.join("；")}`
+          : "";
+        new Notice(
+          `已导出 ${result.wordCount} 个生词，共 ${result.pageCount} 张图片，并打开第一张长图。${warning}`,
+          warning === "" ? 5_000 : 8_000
+        );
+      }).catch((caught) => {
+        new Notice(caught instanceof Error ? caught.message : "生词本长图生成失败，请重试。", 7_000);
+      }).finally(() => {
+        this.vocabularyImageExporting = false;
+        if (imageExportButton.isConnected) {
+          exportButton.disabled = totalCount === 0 || this.vocabularyWarning !== null;
+          imageExportButton.disabled = totalCount === 0
+            || this.vocabularyWarning !== null
+            || !this.plugin.capabilities.desktop;
+          setIcon(imageExportIcon, "image");
+          imageExportButton.removeClass("is-loading");
+          imageExportButton.setAttribute("aria-label", "将全部生词导出为长图");
+          imageExportButton.title = this.plugin.capabilities.desktop
+            ? "将全部生词导出为长图"
+            : imageUnsupportedReason;
+        }
+      });
+    });
     if (entries.length === 0) {
       parent.createDiv({
         cls: "lingua-dictionary-empty",
-        text: Object.keys(book.entries).length === 0
+        text: totalCount === 0
           ? "还没有生词。双击字幕单词查词后，点击书签即可收藏。"
           : "没有符合当前条件的生词。"
       });

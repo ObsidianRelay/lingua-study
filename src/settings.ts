@@ -106,7 +106,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return {
       type: "page",
       name: "YouTube 字幕",
-      desc: "管理字幕保存位置、yt-dlp 回退和网络说明。",
+      desc: "管理字幕保存位置、在线获取和电脑端 yt-dlp 回退。",
       displayValue: "字幕获取与保存",
       items: [
         {
@@ -134,6 +134,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             {
               name: "yt-dlp 程序路径（可选）",
               desc: "直接获取失败时，插件会先自动寻找电脑上的 yt-dlp。只有自动找不到时才需要填写完整路径，例如 /opt/homebrew/bin/yt-dlp 或 C:\\Tools\\yt-dlp.exe。",
+              visible: () => this.plugin.capabilities.ytDlp,
               control: {
                 type: "text",
                 key: "ytDlpPath",
@@ -142,8 +143,15 @@ export class LinguaStudySettingTab extends PluginSettingTab {
               }
             },
             {
+              name: "移动端获取方式",
+              desc: "手机和平板使用 YouTube 在线字幕接口；如果在线获取失败，可手动选择 SRT 或 VTT 字幕。yt-dlp 仅在电脑端启用。",
+              visible: () => this.plugin.capabilities.mobile
+            },
+            {
               name: "网络与隐私",
-              desc: "插件和本机 yt-dlp 只向 YouTube 获取字幕，不使用 Cookie、Google 登录、用户 API Key、作者服务器或遥测。普通公开视频使用非官方公开字幕接口，可能随 YouTube 更新而失效。"
+              desc: this.plugin.capabilities.mobile
+                ? "移动端只通过 YouTube 在线字幕接口获取公开字幕，不使用 Cookie、Google 登录、用户 API Key、作者服务器或遥测。该接口并非官方稳定 API，可能随 YouTube 更新而失效。"
+                : "插件和本机 yt-dlp 只向 YouTube 获取字幕，不使用 Cookie、Google 登录、用户 API Key、作者服务器或遥测。普通公开视频使用非官方公开字幕接口，可能随 YouTube 更新而失效。"
             }
           ]
         }
@@ -152,16 +160,20 @@ export class LinguaStudySettingTab extends PluginSettingTab {
   }
 
   private bilibiliPage(): SettingDefinitionPage {
+    const mobile = this.plugin.capabilities.mobile;
     return {
       type: "page",
-      name: "B站视频与登录",
-      desc: "管理视频缓存、插件内登录和字幕获取限制。",
-      displayValue: "匿名优先 · 需要时登录",
+      name: mobile ? "B站视频与字幕" : "B站视频与登录",
+      desc: mobile
+        ? "管理 B站字幕与在线播放。"
+        : "管理 B站字幕、在线播放和电脑端专用功能。",
+      displayValue: mobile ? "在线播放 · 匿名字幕" : "匿名优先 · 需要时登录",
       items: [
         {
           type: "group",
           heading: "视频缓存",
           cls: "lingua-study-settings-section",
+          visible: () => this.plugin.capabilities.bilibiliVideoCache,
           items: [
             {
               name: "缓存位置",
@@ -191,6 +203,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           type: "group",
           heading: "B站账号",
           cls: "lingua-study-settings-section",
+          visible: () => this.plugin.capabilities.bilibiliLogin,
           items: [
             {
               name: "插件内登录状态",
@@ -238,12 +251,26 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         },
         {
           type: "group",
+          heading: "移动端能力",
+          cls: "lingua-study-settings-section",
+          visible: () => this.plugin.capabilities.mobile,
+          items: [
+            {
+              name: "在线播放与匿名字幕",
+              desc: "手机和平板可使用 B站在线播放器并尝试匿名读取英文字幕。插件内登录、本地视频缓存和 Whisper 自动对齐仅支持电脑端。"
+            }
+          ]
+        },
+        {
+          type: "group",
           heading: "使用说明",
           cls: "lingua-study-settings-section",
           items: [
             {
               name: "网络与空间限制",
-              desc: "视频缓存仍来自 B站公开接口，通常最高为 480P，单个视频缓存上限 2 GB。英文字幕直接从 B站接口读取，不需要 Chrome 扩展，也不使用 Whisper；接口或平台规则变化仍可能导致获取失败。"
+              desc: mobile
+                ? "在线播放器和英文字幕直接使用 B站公开接口，不会在手机或平板缓存视频，也不使用插件内登录或 Whisper。接口或平台规则变化仍可能导致播放或字幕获取失败。"
+                : "视频缓存仍来自 B站公开接口，通常最高为 480P，单个视频缓存上限 2 GB。英文字幕直接从 B站接口读取，不需要 Chrome 扩展，也不使用 Whisper；接口或平台规则变化仍可能导致获取失败。"
             }
           ]
         }
@@ -287,6 +314,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             {
               name: "ECDICT 完整版",
               desc: "点击下载后优先安装已生成的压缩词典包，不可用时自动回退到 ECDICT 官方 CSV；支持断点续传和自动重试。文件保存在系统缓存目录，不写入笔记库、不参与 Obsidian Sync。",
+              visible: () => this.plugin.capabilities.fullDictionary,
               render: (setting) => {
                 const status = setting.controlEl.createSpan({
                   cls: "lingua-study-settings-status"
@@ -313,26 +341,30 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                   open.hidden = !current.installed;
                   remove.hidden = !current.installed;
                 };
+                const setBusy = (busy: boolean): void => {
+                  download.disabled = busy;
+                  open.disabled = busy;
+                  remove.disabled = busy;
+                };
+                const showInstallError = (error: unknown): void => {
+                  const message = error instanceof Error
+                    ? error.message
+                    : "完整版词典安装失败，请稍后重试。";
+                  status.setText(`安装失败：${message}`);
+                  status.classList.add("is-error");
+                  new Notice(message, 8_000);
+                };
+                const showInstallSuccess = (result: { manifest: { entryCount: number } }): void => {
+                  new Notice(`ECDICT 完整版已安装，共 ${result.manifest.entryCount.toLocaleString()} 个词条。`, 7_000);
+                  refresh();
+                };
                 download.addEventListener("click", () => {
-                  download.disabled = true;
-                  open.disabled = true;
-                  remove.disabled = true;
+                  setBusy(true);
                   status.classList.remove("is-success", "is-warning", "is-error");
-                  void this.plugin.installFullDictionary((message) => status.setText(message)).then((result) => {
-                    new Notice(`ECDICT 完整版已安装，共 ${result.manifest.entryCount.toLocaleString()} 个词条。`, 7_000);
-                    refresh();
-                  }).catch((error) => {
-                    const message = error instanceof Error
-                      ? error.message
-                      : "完整版词典安装失败，请稍后重试。";
-                    status.setText(`安装失败：${message}`);
-                    status.classList.add("is-error");
-                    new Notice(message, 8_000);
-                  }).finally(() => {
-                    download.disabled = false;
-                    open.disabled = false;
-                    remove.disabled = false;
-                  });
+                  void this.plugin.installFullDictionary((message) => status.setText(message))
+                    .then(showInstallSuccess)
+                    .catch(showInstallError)
+                    .finally(() => setBusy(false));
                 });
                 open.addEventListener("click", () => {
                   void this.plugin.openFullDictionaryFolder().catch(() => {
@@ -348,6 +380,11 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                 });
                 refresh();
               }
+            },
+            {
+              name: "移动端词典",
+              desc: "手机和平板继续使用内置 ECDICT 精简版。完整版词典的下载和系统缓存管理暂仅支持电脑端。",
+              visible: () => this.plugin.capabilities.mobile
             },
             {
               name: "每日新词数量",
@@ -382,6 +419,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           type: "group",
           heading: "本地文稿对齐",
           cls: "lingua-study-settings-section",
+          visible: () => this.plugin.capabilities.localWhisper,
           items: [
             {
               name: "Whisper Base English 模型",
@@ -421,6 +459,18 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                   });
                 });
               }
+            }
+          ]
+        },
+        {
+          type: "group",
+          heading: "移动端对齐",
+          cls: "lingua-study-settings-section",
+          visible: () => this.plugin.capabilities.mobile,
+          items: [
+            {
+              name: "手动时间轴",
+              desc: "手机和平板可以导入已带时间轴的 SRT/VTT 字幕。需要本地视频缓存的 Whisper 自动对齐暂仅支持电脑端。"
             }
           ]
         },

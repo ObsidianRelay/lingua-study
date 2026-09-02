@@ -453,10 +453,29 @@
 .evs-fatal-error {
   margin: 12px;
   padding: 12px 14px;
-  border: 1px solid var(--background-modifier-error);
+  border: 1px solid color-mix(in srgb, var(--text-error) 42%, transparent);
   border-radius: 8px;
-  background: var(--background-modifier-error);
+  background: color-mix(in srgb, var(--text-error) 12%, var(--background-primary));
   color: var(--text-error);
+}
+
+/* 移动端把全部播放操作压缩为一行，置顶按钮不再覆盖视频画面。 */
+.evs-root.evs-mobile .evs-toolbar {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.evs-root.evs-mobile .evs-toolbar > .evs-floating-toggle {
+  flex: 0 0 32px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--interactive-normal);
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
 }
 
 .evs-cache-warning {
@@ -496,11 +515,11 @@
 
 .evs-segment-action-dock {
   position: sticky;
-  top: calc(50vh - 36px);
+  top: calc(50vh - 71px);
   z-index: 8;
   display: flex;
   width: 38px;
-  min-height: 72px;
+  min-height: 142px;
   margin: 0 8px 0 auto;
   padding: 3px;
   flex-direction: column;
@@ -518,7 +537,7 @@
  * 第一条字幕再向上抵消这段占位，因此页面顶部布局和正文空间保持不变。
  */
 .evs-segment-action-dock + .evs-segment {
-  margin-top: -70px;
+  margin-top: -140px;
 }
 
 .evs-transcript-end-spacer {
@@ -583,6 +602,221 @@
   color: var(--text-normal);
   line-height: 1.62;
   overflow-wrap: anywhere;
+}
+
+.evs-segment.is-dictating .evs-segment-text,
+.evs-segment.is-dictating .evs-translation-text,
+.evs-segment.is-dictating .evs-translation-status,
+.evs-segment.is-dictation-result .evs-translation-text,
+.evs-segment.is-dictation-result .evs-translation-status {
+  display: none !important;
+}
+
+.evs-global-dictation-action.is-active,
+.evs-global-shadowing-action.is-active {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  color: var(--interactive-accent);
+}
+
+.evs-dictation-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 5px;
+  padding: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.evs-dictation-prompt,
+.evs-dictation-answer-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+
+.evs-dictation-input {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  padding: 9px 10px;
+  line-height: 1.55;
+}
+
+.evs-dictation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evs-dictation-actions .evs-button {
+  height: auto !important;
+  min-height: 34px;
+}
+
+.evs-dictation-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.evs-dictation-score {
+  color: var(--interactive-accent);
+  font-size: 1.45em;
+  font-weight: 750;
+}
+
+.evs-dictation-score-note,
+.evs-dictation-answer {
+  color: var(--text-normal);
+}
+
+.evs-dictation-answer {
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.evs-dictation-comparison {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.evs-dictation-token {
+  display: inline-flex;
+  min-width: 46px;
+  padding: 6px 8px;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.evs-dictation-token.is-match {
+  border-color: var(--text-success);
+  color: var(--text-success);
+}
+
+.evs-dictation-token.is-substitution {
+  border-color: var(--text-error);
+  color: var(--text-error);
+}
+
+.evs-dictation-token.is-deletion {
+  border-color: var(--text-warning);
+  color: var(--text-warning);
+}
+
+.evs-dictation-token.is-insertion {
+  color: var(--text-muted);
+}
+
+.evs-dictation-token-label {
+  color: inherit;
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.evs-shadowing-panel {
+  display: grid;
+  width: min(100%, 680px);
+  box-sizing: border-box;
+  gap: 6px;
+  margin-top: 5px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.evs-shadowing-source-player {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.evs-shadowing-source-button {
+  flex: 0 0 32px;
+}
+
+.evs-shadowing-source-button.evs-seek-button {
+  flex-basis: 38px;
+}
+
+.evs-shadowing-source-time {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.evs-shadowing-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.evs-shadowing-status {
+  flex: 1 1 240px;
+  min-height: 0;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.evs-shadowing-status.is-recording {
+  color: var(--text-error);
+  font-weight: 700;
+}
+
+.evs-shadowing-status.is-paused {
+  color: var(--text-warning);
+  font-weight: 700;
+}
+
+.evs-shadowing-waveform {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+
+.evs-shadowing-waveform-canvas {
+  display: block;
+  width: 100%;
+  height: 56px;
+  color: var(--text-normal);
+}
+
+.evs-shadowing-panel.is-paused .evs-shadowing-waveform-canvas {
+  opacity: 0.72;
+}
+
+.evs-shadowing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.evs-shadowing-actions .evs-button {
+  height: auto !important;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+
+@media (max-width: 700px) {
+  .evs-shadowing-actions {
+    margin-left: 0;
+  }
 }
 
 .evs-dictionary-word {
@@ -1397,8 +1631,94 @@
 }
 
 .lingua-vocabulary-stats {
+  align-items: center;
   justify-content: space-between;
   padding: 10px 1px;
+}
+
+.lingua-vocabulary-stats-counts {
+  display: flex;
+  flex: 1 1 170px;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.lingua-vocabulary-export-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.lingua-vocabulary-export-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px !important;
+  min-height: 32px;
+  padding: 0;
+}
+
+.lingua-vocabulary-export-icon,
+.lingua-vocabulary-export-icon .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.lingua-vocabulary-export-button.is-loading .lingua-vocabulary-export-icon {
+  animation: lingua-vocabulary-export-spin 0.9s linear infinite;
+}
+
+@keyframes lingua-vocabulary-export-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 导出生词本中的单词使用 Obsidian 原生 callout，并强化为独立学习卡片。 */
+.lingua-vocabulary-export-note .callout[data-callout="lingua-word"] {
+  --callout-color: 90, 205, 222;
+  --callout-icon: lucide-book-open;
+  overflow: hidden;
+  margin: 14px 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--background-secondary) 92%, var(--interactive-accent) 8%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+  break-inside: avoid;
+}
+
+.lingua-vocabulary-export-note .callout[data-callout="lingua-word"] > .callout-title {
+  gap: 8px;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  color: var(--text-normal);
+  font-size: 1.05em;
+  font-weight: 700;
+}
+
+.lingua-vocabulary-export-note .callout[data-callout="lingua-word"] > .callout-content {
+  padding: 10px 14px 13px;
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+}
+
+.lingua-vocabulary-export-note .callout[data-callout="lingua-word"] > .callout-content > :first-child {
+  margin-top: 0;
+}
+
+.lingua-vocabulary-export-note .callout[data-callout="lingua-word"] > .callout-content > :last-child {
+  margin-bottom: 0;
+}
+
+.lingua-vocabulary-export-note .callout[data-callout="lingua-word"] li {
+  margin-block: 4px;
 }
 
 .lingua-vocabulary-list {
@@ -2042,6 +2362,7 @@
   .lingua-review-ratings {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
 }
 
 /* 左侧功能栏中的 Lingua Study 线条 Logo。 */

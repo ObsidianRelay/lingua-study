@@ -2,6 +2,47 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+test("正式版保持桌面限定且移动端测试框架只按需加载电脑专用服务", async () => {
+  const [manifestText, main, dictionary, youtubeImport, bilibiliSession, settings] = await Promise.all([
+    readFile("manifest.json", "utf8"),
+    readFile("src/main.ts", "utf8"),
+    readFile("src/dictionary-core.ts", "utf8"),
+    readFile("src/youtube-import.ts", "utf8"),
+    readFile("src/bilibili-session.ts", "utf8"),
+    readFile("src/settings.ts", "utf8")
+  ]);
+  const manifest = JSON.parse(manifestText) as { isDesktopOnly?: unknown };
+  assert.equal(manifest.isDesktopOnly, true);
+  assert.match(main, /readonly capabilities: PlatformCapabilities = getPlatformCapabilities\(\)/u);
+  assert.match(main, /if \(this\.capabilities\.desktop\) \{/u);
+  assert.match(main, /rootClasses\.push\("evs-mobile"\)/u);
+  assert.match(main, /await MarkdownRenderer\.render\(/u);
+  assert.match(main, /!\[\]\(https:\/\/www\.youtube\.com\/watch\?v=/u);
+  assert.match(main, /playerFrame\.replaceChildren\(nativeIframe\)/u);
+  assert.match(main, /buildMobileYouTubeStartUrl\(this\.iframeEl\.src, seconds\)/u);
+  assert.match(main, /移动端请使用视频内控件播放、暂停和调整倍速/u);
+  assert.match(main, /Obsidian 移动端未能创建 YouTube 播放器/u);
+  assert.doesNotMatch(main, /widget_referrer/u);
+  for (const moduleName of [
+    "full-dictionary",
+    "bilibili-cache",
+    "local-whisper",
+    "legacy-whisper-cleanup",
+    "yt-dlp"
+  ]) {
+    assert.match(main, new RegExp(`import\\(\"\\./${moduleName}\"\\)`, "u"));
+  }
+  assert.doesNotMatch(dictionary, /from "node:|require\("node:/u);
+  assert.doesNotMatch(youtubeImport, /from "\.\/yt-dlp"/u);
+  assert.match(bilibiliSession, /Platform\.isDesktopApp \? loadElectronRemote\(\) : null/u);
+  assert.match(settings, /visible: \(\) => this\.plugin\.capabilities\.ytDlp/u);
+  assert.match(settings, /visible: \(\) => this\.plugin\.capabilities\.mobile/u);
+  assert.match(settings, /name: mobile \? "B站视频与字幕" : "B站视频与登录"/u);
+  assert.match(settings, /displayValue: mobile \? "在线播放 · 匿名字幕" : "匿名优先 · 需要时登录"/u);
+  assert.match(settings, /不会在手机或平板缓存视频，也不使用插件内登录或 Whisper/u);
+  assert.match(settings, /移动端只通过 YouTube 在线字幕接口获取公开字幕/u);
+});
+
 test("YouTube 独立移动端回退不打包固定 InnerTube key", async () => {
   const source = await readFile("src/youtube-import.ts", "utf8");
   assert.match(source, /requestKeylessMobilePlayer/u);
@@ -70,7 +111,6 @@ test("设置首页使用六个原生分类并保留全部设置项", async () =>
 
   for (const pageName of [
     "YouTube 字幕",
-    "B站视频与登录",
     "学习与词典",
     "文稿导入与对齐",
     "翻译服务",
@@ -109,6 +149,8 @@ test("设置首页使用六个原生分类并保留全部设置项", async () =>
   assert.match(source, /name: "ECDICT 完整版"/u);
   assert.match(source, /text: "下载完整版"/u);
   assert.match(source, /installFullDictionary/u);
+  assert.doesNotMatch(source, /从本地文件安装|installFullDictionaryFromLocalFile/u);
+  assert.match(source, /支持断点续传和自动重试/u);
   assert.match(source, /ClearFullDictionaryModal/u);
   assert.match(source, /支持断点续传和自动重试/u);
   assert.doesNotMatch(source, /从本地文件安装|installFullDictionaryFromLocalFile/u);
@@ -209,7 +251,9 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.match(source, /list\.scrollHeight <= list\.clientHeight \+ 1/u);
   assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 3);
   assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 3);
-  assert.equal(source.match(/this\.createFloatingToggle\(/gu)?.length, 1);
+  assert.equal(source.match(/this\.createFloatingToggle\(/gu)?.length, 2);
+  assert.equal(source.match(/this\.createMobileFloatingToggle\(/gu)?.length, 3);
+  assert.match(source, /if \(!this\.plugin\.capabilities\.mobile\) \{[\s\S]*?cls: "evs-player-utilities"/u);
   assert.match(source, /utilities\.setAttribute\("aria-label", "视频置顶操作"\)/u);
   assert.doesNotMatch(source, /this\.createSourceLink\(utilities,/u);
   assert.equal(source.match(/this\.createSourceLink\(toolbar, sourceUrl\)/gu)?.length, 2);
@@ -218,6 +262,7 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.match(source, /cleanupLegacyBilibiliSourceLink/u);
   assert.match(source, /button\.createSpan\(\{ cls: "evs-seek-seconds", text: "5s" \}\)/u);
   assert.match(source, /private createSpeedControls/u);
+  assert.doesNotMatch(source, /createMobileSpeedSelector|evs-speed-select/u);
   assert.match(source, /cls: "evs-speed-slider"/u);
   assert.match(source, /type: "range"/u);
   assert.match(source, /slider\.addEventListener\("input"/u);
@@ -230,7 +275,7 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.match(source, /cls: rate === 1 \? "evs-speed-label is-active" : "evs-speed-label"/u);
   assert.match(source, /"--evs-speed-offset": `\$\{displayedIndex \* 100\}%`/u);
   assert.doesNotMatch(source, /evs-speed-button|evs-speed-value/u);
-  assert.doesNotMatch(source, /createSpeedSelector|speedToggleButton|aria-haspopup/u);
+  assert.doesNotMatch(source, /speedToggleButton|aria-haspopup/u);
   assert.match(source, /setIcon,/u);
   assert.match(source, /this\.setControlIcon\(button, "pin", "让视频保持在当前画面中"\)/u);
   assert.match(source, /floating \? "pin-off" : "pin"/u);
@@ -306,6 +351,10 @@ test("简洁样式铺开全部字幕并移除内部滚动窗口", async () => {
   assert.match(css, /@keyframes evs-loading-shimmer/u);
   assert.match(css, /\.evs-player-utilities \{[\s\S]*?position: absolute;[\s\S]*?top: 0;[\s\S]*?right: -32px;/u);
   assert.match(css, /\.evs-player-utilities \.evs-icon-button \{[\s\S]*?border-left: 0;[\s\S]*?border-radius: 0 7px 7px 0;/u);
+  assert.match(css, /\.evs-root\.evs-mobile \.evs-toolbar \{[\s\S]*?flex-wrap: nowrap;[\s\S]*?justify-content: flex-end;[\s\S]*?gap: 4px;/u);
+  assert.doesNotMatch(css, /\.evs-speed-select/u);
+  assert.match(css, /\.evs-root\.evs-mobile \.evs-toolbar > \.evs-floating-toggle/u);
+  assert.match(css, /\.evs-runtime-error,[\s\S]*?color-mix\(in srgb, var\(--text-error\) 12%, var\(--background-primary\)\)/u);
   assert.doesNotMatch(css, /grid-template-columns: minmax\(0, 1fr\) 40px;/u);
   assert.match(css, /\.evs-toolbar \{[\s\S]*?min-height: 41px;[\s\S]*?padding: 4px 8px;/u);
   assert.match(css, /\.evs-icon-button \{[\s\S]*?width: 32px;[\s\S]*?background: transparent;/u);
@@ -342,6 +391,7 @@ test("简洁样式铺开全部字幕并移除内部滚动窗口", async () => {
   assert.match(css, /\.lingua-vocabulary-controls select:hover/u);
   assert.match(css, /\.lingua-dictionary-profile select:focus-visible/u);
   assert.match(css, /\.setting-page:has\(\.lingua-study-settings-section\)[^}]*button:not\(:disabled\):not\(\.mod-warning\):not\(\.mod-destructive\):hover/u);
+  assert.match(css, /\.setting-page:has\(\.lingua-study-settings-section\)\) \[hidden\] \{[\s\S]*?display: none !important;/u);
   assert.match(css, /\.lingua-dictionary-tabs button\.is-active \{[\s\S]*?background: var\(--interactive-accent\);/u);
   assert.match(css, /\.lingua-dictionary-tabs button\.is-active \{[\s\S]*?color: var\(--text-on-accent\);/u);
   assert.match(css, /\.lingua-dictionary-tabs button\.is-active \{[\s\S]*?font-weight: 700;/u);
@@ -374,10 +424,15 @@ test("离线词典使用右侧独立视图且双击只绑定英文字幕正文",
   assert.doesNotMatch(source, /detachLeavesOfType\(DICTIONARY_VIEW_TYPE\)/u);
 });
 
-test("生词本使用独立串行存储并注册两个入口命令", async () => {
+test("生词本使用独立串行存储、导出笔记与长图并注册两个入口命令", async () => {
   const source = await readFile("src/main.ts", "utf8");
   const store = await readFile("src/vocabulary-store.ts", "utf8");
   const core = await readFile("src/vocabulary-core.ts", "utf8");
+  const exportCore = await readFile("src/vocabulary-export-core.ts", "utf8");
+  const imageExportCore = await readFile("src/vocabulary-image-export-core.ts", "utf8");
+  const imageExport = await readFile("src/vocabulary-image-export.ts", "utf8");
+  const dictionaryView = await readFile("src/dictionary-view.ts", "utf8");
+  const css = await readFile("styles.css", "utf8");
   assert.match(source, /id: "open-vocabulary-book"/u);
   assert.match(source, /id: "start-vocabulary-review"/u);
   assert.match(source, /private vocabularyStore: VocabularyStore/u);
@@ -392,13 +447,54 @@ test("生词本使用独立串行存储并注册两个入口命令", async () =>
   assert.match(source, /已定位到生词所在原句；视频没有自动播放/u);
   assert.doesNotMatch(source, /playVocabularyContext|playBilibiliVocabularyContext/u);
   assert.doesNotMatch(source, /vocabularyPlaybackStopAt|shouldStopVocabularyPlayback/u);
-  const dictionaryView = await readFile("src/dictionary-view.ts", "utf8");
   assert.match(dictionaryView, /openVocabularyContext/u);
+  assert.match(dictionaryView, /"导出生词本到笔记"/u);
+  assert.match(dictionaryView, /"download"/u);
+  assert.match(dictionaryView, /this\.vocabularyExporting/u);
+  assert.match(dictionaryView, /this\.plugin\.exportVocabularyBookToNote\(\)/u);
+  assert.match(dictionaryView, /"将全部生词导出为长图"/u);
+  assert.match(dictionaryView, /"正在生成生词本长图"/u);
+  assert.match(dictionaryView, /"loader-circle"/u);
+  assert.doesNotMatch(dictionaryView, /text:\s*this\.vocabularyImageExporting/u);
+  assert.match(dictionaryView, /移动端暂不支持生词本长图导出/u);
+  assert.match(dictionaryView, /this\.plugin\.exportVocabularyBookToImages\(\)/u);
+  assert.match(dictionaryView, /!this\.plugin\.capabilities\.desktop/u);
   assert.doesNotMatch(dictionaryView, /playVocabularyContext|播放本句|播放这一句/u);
   assert.match(store, /private readonly writeQueue = new AsyncKeyedQueue/u);
   assert.match(store, /this\.app\.vault\.process/u);
   assert.match(core, /Lingua Study\/Vocabulary\/wordbook\.json/u);
   assert.match(core, /10 \* 60 \* 1_000/u);
+  assert.match(exportCore, /Lingua Study\/Vocabulary\/生词本\.md/u);
+  assert.match(exportCore, /lingua-study-vocabulary-export/u);
+  assert.match(exportCore, /\[!lingua-word\]/u);
+  assert.match(exportCore, /lingua-vocabulary-export-note/u);
+  assert.match(exportCore, /已有普通笔记，已停止覆盖/u);
+  assert.match(source, /async exportVocabularyBookToNote\(\)/u);
+  assert.match(source, /async exportVocabularyBookToImages\(\)/u);
+  assert.match(source, /this\.app\.vault\.createBinary/u);
+  assert.match(source, /this\.app\.vault\.modifyBinary/u);
+  assert.match(source, /this\.app\.fileManager\.trashFile\(node\)/u);
+  assert.match(imageExportCore, /VOCABULARY_IMAGE_WIDTH = 1_080/u);
+  assert.match(imageExportCore, /VOCABULARY_IMAGE_MAX_HEIGHT = 12_000/u);
+  assert.match(imageExportCore, /Lingua Study\/Vocabulary\/生词本长图/u);
+  assert.match(imageExportCore, /lingua-study-vocabulary-image-export/u);
+  assert.match(imageExportCore, /非 Lingua Study 管理的图片，已停止覆盖/u);
+  assert.match(imageExport, /context\.fillStyle = "#f7fafb"/u);
+  assert.match(imageExport, /context\.fillText\("Lingua Study 生词本"/u);
+  assert.match(imageExport, /roundedRectPath/u);
+  assert.match(imageExport, /canvas\.toBlob/u);
+  assert.doesNotMatch(imageExport, /foreignObject/u);
+  assert.doesNotMatch(imageExport, /html2canvas|html-to-image/u);
+  assert.match(source, /file\.extension === "md" \? "markdown" : "image"/u);
+  assert.match(source, /this\.app\.workspace\.getLeavesOfType\(viewType\)/u);
+  assert.match(source, /view\.file\?\.path === file\.path/u);
+  assert.match(source, /this\.app\.workspace\.getLeaf\("tab"\)/u);
+  assert.match(css, /\.lingua-vocabulary-export-button \{[\s\S]*?width: 32px;[\s\S]*?height: 32px !important;/u);
+  assert.match(css, /\.lingua-vocabulary-export-actions \{[\s\S]*?flex-wrap: wrap;/u);
+  assert.match(css, /\.lingua-vocabulary-export-button\.is-loading[\s\S]*?animation: lingua-vocabulary-export-spin/u);
+  assert.match(css, /\.lingua-vocabulary-export-note \.callout\[data-callout="lingua-word"\] \{/u);
+  assert.match(css, /--callout-icon: lucide-book-open;/u);
+  assert.match(css, /\.callout\[data-callout="lingua-word"\] > \.callout-content/u);
 });
 
 test("知识卡保留旧译文并且只有用户点击才请求分析", async () => {
@@ -416,7 +512,7 @@ test("知识卡保留旧译文并且只有用户点击才请求分析", async ()
   assert.doesNotMatch(source, /void this\.plugin\.analyzeSentence[^;]*initialize/u);
 });
 
-test("字幕编辑与翻译共用右侧固定操作栏", async () => {
+test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async () => {
   const source = await readFile("src/main.ts", "utf8");
   const css = await readFile("styles.css", "utf8");
 
@@ -424,9 +520,13 @@ test("字幕编辑与翻译共用右侧固定操作栏", async () => {
   assert.match(source, /transcriptList\.createDiv\(\{ cls: "evs-segment-action-dock" \}\)/u);
   assert.match(source, /this\.selectSegmentForActions\(index, true\)/u);
   assert.match(source, /dock\.appendChild\(view\.primaryButton\)/u);
+  assert.match(source, /dock\.appendChild\(dictationButton\)/u);
+  assert.match(source, /dock\.appendChild\(shadowingButton\)/u);
   assert.doesNotMatch(source, /createDiv\(\{ cls: "evs-translation-actions" \}\)/u);
   assert.match(source, /"pencil", "请先选择字幕"/u);
   assert.match(source, /"languages",[\s\S]*?entry \? "显示翻译" : "翻译"/u);
+  assert.match(source, /"headphones", "听写功能正在准备"/u);
+  assert.match(source, /"mic", "跟读功能正在准备"/u);
   assert.match(source, /"refresh-cw", "重新翻译"/u);
   assert.match(source, /"lightbulb", "补充知识点"/u);
   assert.match(source, /setIcon\(button, iconName\)/u);
@@ -444,8 +544,8 @@ test("字幕编辑与翻译共用右侧固定操作栏", async () => {
   assert.match(source, /this\.requestTranslation\(index, "supplement"\)/u);
   assert.doesNotMatch(source, /segmentRestoreButtons|text: "恢复原文"/u);
 
-  assert.match(css, /\.evs-segment-action-dock \{[\s\S]*?position: sticky;[\s\S]*?top: calc\(50vh - 36px\);[\s\S]*?flex-direction: column;/u);
-  assert.match(css, /\.evs-segment-action-dock \+ \.evs-segment \{[\s\S]*?margin-top: -70px;/u);
+  assert.match(css, /\.evs-segment-action-dock \{[\s\S]*?position: sticky;[\s\S]*?top: calc\(50vh - 71px\);[\s\S]*?min-height: 142px;[\s\S]*?flex-direction: column;/u);
+  assert.match(css, /\.evs-segment-action-dock \+ \.evs-segment \{[\s\S]*?margin-top: -140px;/u);
   assert.doesNotMatch(css, /margin:\s*0 8px -72px auto/u);
   assert.doesNotMatch(css, /\.evs-translation-actions \{/u);
   assert.doesNotMatch(css, /\.evs-segment-primary \{[^}]*grid-template-columns:/u);
@@ -456,6 +556,118 @@ test("字幕编辑与翻译共用右侧固定操作栏", async () => {
   assert.match(css, /\.evs-study-legacy-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 32px;/u);
   assert.match(css, /\.evs-study-extension-list \{[\s\S]*?display: grid;/u);
   assert.doesNotMatch(css, /\.evs-study-extensions[^}]*display:\s*none/u);
+});
+
+test("单句跟读按播放状态自动同步并使用紧凑播放器布局", async () => {
+  const source = await readFile("src/main.ts", "utf8");
+  const css = await readFile("styles.css", "utf8");
+
+  assert.match(source, /private startShadowing\(index: number\)/u);
+  assert.match(source, /session\.syncSourceDuringRecording = this\.isPracticeSourcePlaying\(\)/u);
+  assert.match(source, /"原句播放中 · 现在录音将同步跟读"/u);
+  assert.match(source, /"原句已暂停 · 现在录音将只录人声"/u);
+  assert.match(source, /"rotate-ccw"/u);
+  assert.match(source, /"rotate-cw"/u);
+  assert.match(source, /text: "2s"/u);
+  assert.match(source, /sourcePlaying \? "pause" : "play"/u);
+  assert.match(source, /if \(session\.syncSourceDuringRecording\)/u);
+  assert.match(source, /const sourceControlsLocked = !canAdjustShadowingSource\(session\.phase\)/u);
+  assert.match(source, /\{ disabled: sourceControlsLocked, play: true \}/u);
+  assert.doesNotMatch(source, /sourceControlsLocked \|\| session\.phase === "paused"/u);
+  assert.doesNotMatch(source, /!canAdjustShadowingSource\(session\.phase\) \|\| session\.phase === "paused"/u);
+  assert.match(source, /session\.phase === "recording" \|\| session\.phase === "paused"/u);
+  assert.match(source, /else if \(session\?\.phase === "paused"\) \{[\s\S]*?session\.sourceEnded = true;/u);
+  assert.match(source, /session\.phase === "recording"[\s\S]*?session\.syncSourceDuringRecording = true/u);
+  assert.match(source, /session\.phase === "recording"[\s\S]*?session\.syncSourceDuringRecording = false/u);
+  assert.match(source, /const liveSampleCapacity = getShadowingWaveformTargetSampleCount\([\s\S]*?SHADOWING_MAX_RECORDING_MS/u);
+  assert.match(source, /getShadowingLiveWaveformLayout\([\s\S]*?peaks\.length,[\s\S]*?liveSampleCapacity/u);
+  assert.match(source, /getShadowingRecordingProgress\([\s\S]*?this\.getShadowingRecordingElapsed\(session\)/u);
+  assert.match(source, /liveLayout\.startSlot \+ index \* samplesPerBar/u);
+  assert.match(source, /const barHeight = peak \* \(height - 12\);[\s\S]*?if \(barHeight < 2\)/u);
+  assert.doesNotMatch(source, /Math\.max\(3, peak \* \(height - 12\)\)/u);
+  assert.match(source, /const samplesPerBar = isLiveWaveform[\s\S]*?getShadowingWaveformBinSize\(barWidth\)/u);
+  assert.match(source, /peak = Math\.max\(peak, peaks\[peakIndex\] \?\? 0\)/u);
+  assert.match(source, /getShadowingWaveformTargetSampleCount\(elapsedMs\)/u);
+  assert.match(source, /missingSampleCount = targetSampleCount - session\.waveformPeaks\.length/u);
+  assert.match(source, /previousPeak \+ \(nextPeak - previousPeak\) \* progress/u);
+  assert.match(source, /Math\.max\(56, Math\.floor\(canvas\.clientHeight \|\| 56\)\)/u);
+  assert.match(source, /formatShadowingElapsed\(\(current - segment\.start\) \* 1_000\)/u);
+  assert.match(source, /"开始录音"/u);
+  assert.match(source, /"暂停录音"/u);
+  assert.match(source, /"继续录音"/u);
+  assert.match(source, /"结束录音"/u);
+  assert.match(source, /"播放录音"/u);
+  assert.match(source, /"重新录制"/u);
+  assert.match(source, /addButton\("重新录制", \(\) => this\.restartShadowingRecording\(\)\)/u);
+  assert.match(source, /private restartShadowingRecording\(\): void \{[\s\S]*?void this\.startShadowingRecording\(\);/u);
+  assert.match(source, /formatShadowingRecordingElapsed\(this\.getShadowingRecordingElapsed\(session\)\)/u);
+  assert.match(source, /formatShadowingRecordingElapsed\(session\.recordingAccumulatedMs\)/u);
+  assert.match(source, /private startShadowingUiTimer\(session: ShadowingSession\): void \{[\s\S]*?\}, 50\);/u);
+  assert.match(source, /mediaDevices\.getUserMedia/u);
+  assert.match(source, /echoCancellation: true/u);
+  assert.match(source, /noiseSuppression: true/u);
+  assert.match(source, /autoGainControl: true/u);
+  assert.match(source, /SHADOWING_MAX_RECORDING_MS/u);
+  assert.match(source, /recorder\.pause\(\)/u);
+  assert.match(source, /recorder\.resume\(\)/u);
+  assert.match(source, /createMediaStreamSource\(stream\)/u);
+  assert.match(source, /getByteTimeDomainData\(session\.waveformSamples\)/u);
+  assert.match(source, /cancelAnimationFrame\(session\.waveformFrame\)/u);
+  assert.match(source, /audioContext\.close\(\)/u);
+  assert.match(source, /getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/u);
+  assert.match(source, /revokeObjectURL\(session\.recordingUrl\)/u);
+  assert.match(source, /audio\.preload = "auto"/u);
+  assert.match(source, /getShadowingPlaybackProgress\(/u);
+  assert.match(source, /this\.closeShadowing\(false\)/u);
+  assert.match(source, /"跟读录音暂时只支持电脑端"/u);
+  assert.match(source, /"当前在线播放器无法逐句跟读，请先缓存视频"/u);
+  assert.match(css, /\.evs-shadowing-panel \{/u);
+  assert.match(css, /width: min\(100%, 680px\);/u);
+  assert.match(css, /\.evs-shadowing-source-player/u);
+  assert.match(css, /\.evs-shadowing-footer/u);
+  assert.match(css, /\.evs-shadowing-waveform-canvas/u);
+  assert.match(css, /height: 56px;/u);
+  assert.match(css, /\.evs-shadowing-status\.is-recording/u);
+  assert.match(css, /\.evs-shadowing-status\.is-paused/u);
+  assert.match(css, /\.evs-shadowing-actions \.evs-button/u);
+  assert.doesNotMatch(source, /ShadowingMode|addModeButton|setShadowingMode/u);
+  assert.doesNotMatch(css, /\.evs-shadowing-mode/u);
+  assert.doesNotMatch(css, /\.evs-shadowing-source-time \{[^}]*margin-left: auto;/u);
+  assert.doesNotMatch(source, /evs-shadowing[^\n]*createEl\("input"/u);
+  assert.doesNotMatch(css, /\.evs-segment\.is-shadowing \.evs-segment-text[\s\S]*?display: none/u);
+});
+
+test("单句听写原位隐藏、评分并在句尾停止播放", async () => {
+  const source = await readFile("src/main.ts", "utf8");
+  const css = await readFile("styles.css", "utf8");
+
+  assert.match(source, /private startDictation\(index: number\)/u);
+  assert.match(source, /text: "请听音频并输入完整句子"/u);
+  assert.match(source, /"当前听写句后退 2 秒"/u);
+  assert.match(source, /"当前听写句前进 2 秒"/u);
+  assert.match(source, /private toggleDictationSourcePlayback\(\)/u);
+  assert.match(source, /private seekDictationSource\(deltaSeconds: number\)/u);
+  assert.match(source, /private updateDictationSourceUi\(session: DictationSession\)/u);
+  assert.match(source, /evs-shadowing-source-player/u);
+  assert.match(source, /evs-shadowing-source-time/u);
+  assert.doesNotMatch(source, /text: "再听一次"/u);
+  assert.match(source, /text: "提交听写"/u);
+  assert.match(source, /event\.key === "Enter" && \(event\.metaKey \|\| event\.ctrlKey\)/u);
+  assert.match(source, /compareDictation\(segment\.text, answer\)/u);
+  assert.match(source, /text: "重新听写"/u);
+  assert.match(source, /text: "下一句"/u);
+  assert.match(source, /shouldStopDictationPlayback\(this\.getEstimatedCurrentTime\(\), stopAt\)/u);
+  assert.match(source, /this\.sendCommand\("pauseVideo"\)/u);
+  assert.match(source, /this\.localVideoEl\.pause\(\)/u);
+  assert.match(source, /"听写暂时只支持桌面端"/u);
+  assert.match(source, /"当前在线播放器无法逐句听写，请先缓存视频"/u);
+
+  assert.match(css, /\.evs-segment\.is-dictating \.evs-segment-text[\s\S]*?display: none !important;/u);
+  assert.match(css, /\.evs-dictation-panel \{/u);
+  assert.match(css, /\.evs-dictation-token\.is-match/u);
+  assert.match(css, /\.evs-dictation-token\.is-substitution/u);
+  assert.match(css, /\.evs-dictation-token\.is-deletion/u);
+  assert.match(css, /\.evs-dictation-token\.is-insertion/u);
 });
 
 test("暂停视频时不会在五秒后强制恢复字幕跟随", async () => {

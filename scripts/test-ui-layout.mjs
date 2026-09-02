@@ -27,7 +27,7 @@ const fixturePath = join(temporaryRoot, "fixture.html");
 try {
   const css = (await readFile("styles.css", "utf8")).replaceAll("</style>", "<\\/style>");
   const rowMarkup = Array.from({ length: 24 }, (_value, index) => `
-    <div class="evs-segment${index === 4 ? " is-active" : ""}">
+    <div class="evs-segment${index === 4 ? " is-active" : ""}${index === 5 ? " is-dictation-result" : ""}${index === 6 ? " is-shadowing" : ""}">
       <button class="evs-timestamp">00:${String(index * 2).padStart(2, "0")}</button>
       <div class="evs-segment-content">
         <div class="evs-segment-text"><span class="evs-dictionary-word${index === 0 ? " is-dictionary-active" : ""}">Subtitle</span> <span class="evs-dictionary-word">row</span> ${index + 1}</div>
@@ -36,6 +36,17 @@ try {
           <div class="evs-study-section evs-study-extensions"><div class="evs-study-heading">延伸拓展</div><div class="evs-study-extension-list">
             <div class="evs-study-extension-item"><div class="evs-study-extension-anchor">由原句中的“Subtitle”延伸</div><div class="evs-study-extension-title"><strong>subtitle track</strong>：字幕轨道</div><div class="evs-study-note">由字幕这一主题延伸出的常见媒体表达。</div><div class="evs-study-extension-example"><div lang="en">Choose the correct subtitle track before playing the video.</div><div lang="zh-CN">播放视频前请选择正确的字幕轨道。</div></div></div>
           </div></div>
+        </div>` : ""}
+        ${index === 5 ? `<div class="evs-dictation-panel" id="dictation-panel">
+          <div class="evs-dictation-summary"><span class="evs-dictation-score">75 分</span><span class="evs-dictation-score-note">共 1 处需要调整</span></div>
+          <div class="evs-dictation-answer-label">你的答案</div><div class="evs-dictation-answer">This is one deliberately long answer used to verify that the dictation result wraps without covering nearby subtitles.</div>
+          <div class="evs-dictation-answer-label">逐词对照</div><div class="evs-dictation-comparison"><span class="evs-dictation-token is-match"><span>This</span><span class="evs-dictation-token-label">正确</span></span><span class="evs-dictation-token is-substitution"><span>are</span><span class="evs-dictation-token-label">错写，应为 is</span></span><span class="evs-dictation-token is-deletion"><span>a</span><span class="evs-dictation-token-label">漏写</span></span><span class="evs-dictation-token is-insertion"><span>extra</span><span class="evs-dictation-token-label">多写</span></span></div>
+          <div class="evs-dictation-actions"><button class="evs-button mod-cta">重新听写</button><button class="evs-button">下一句</button><button class="evs-button">退出听写</button></div>
+        </div>` : ""}
+        ${index === 6 ? `<div class="evs-shadowing-panel" id="shadowing-panel">
+          <div class="evs-shadowing-prompt">先听原句，再录下自己的跟读</div>
+          <div class="evs-shadowing-status is-recording">● 录音中 00:38</div>
+          <div class="evs-shadowing-actions"><button class="evs-button mod-cta">结束录音</button><button class="evs-button">退出跟读</button></div>
         </div>` : ""}
       </div>
     </div>`).join("");
@@ -51,8 +62,8 @@ try {
     #column { width: 65%; margin-inline: auto; }
     #host { width: 100%; }
     #dictionary { height: 100vh; border-left: 1px solid #bbb; background: var(--background-primary); }
-    .theme-light { --background-primary: #fff; --background-secondary: #f4f4f4; --background-primary-alt: #eee; --background-modifier-border: #ccc; --text-normal: #222; --text-muted: #666; --text-error: #b22; --text-success: #287d3c; --text-highlight-bg: #ffe9a8; --interactive-accent: #b23b3b; --interactive-normal: #f3f3f3; --text-on-accent: #fff; --tag-background: #eee; --tag-color: #333; --shadow-s: 0 1px 3px rgba(0,0,0,.16); }
-    .theme-dark { --background-primary: #202020; --background-secondary: #2b2b2b; --background-primary-alt: #303030; --background-modifier-border: #555; --text-normal: #eee; --text-muted: #aaa; --text-error: #ff7373; --text-success: #64c779; --text-highlight-bg: #66521e; --interactive-accent: #c45b5b; --interactive-normal: #333; --text-on-accent: #fff; --tag-background: #444; --tag-color: #eee; --shadow-s: 0 1px 3px rgba(0,0,0,.4); }
+    .theme-light { --background-primary: #fff; --background-secondary: #f4f4f4; --background-primary-alt: #eee; --background-modifier-border: #ccc; --text-normal: #222; --text-muted: #666; --text-error: #b22; --text-warning: #9a6400; --text-success: #287d3c; --text-highlight-bg: #ffe9a8; --interactive-accent: #b23b3b; --interactive-normal: #f3f3f3; --text-on-accent: #fff; --tag-background: #eee; --tag-color: #333; --shadow-s: 0 1px 3px rgba(0,0,0,.16); }
+    .theme-dark { --background-primary: #202020; --background-secondary: #2b2b2b; --background-primary-alt: #303030; --background-modifier-border: #555; --text-normal: #eee; --text-muted: #aaa; --text-error: #ff7373; --text-warning: #e7b85f; --text-success: #64c779; --text-highlight-bg: #66521e; --interactive-accent: #c45b5b; --interactive-normal: #333; --text-on-accent: #fff; --tag-background: #444; --tag-color: #eee; --shadow-s: 0 1px 3px rgba(0,0,0,.4); }
     ${css}
   </style></head>
   <body class="theme-light"><div id="app-layout">
@@ -85,7 +96,7 @@ try {
         </div>
       </div>
         <div class="evs-status evs-local-status is-collapsed" id="status">本地缓存播放器已就绪</div>
-        <div class="evs-transcript" id="transcript"><div class="evs-segment-action-dock" id="segment-action-dock"><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button></div>${rowMarkup}<div class="evs-transcript-end-spacer" id="spacer"></div></div>
+        <div class="evs-transcript" id="transcript"><div class="evs-segment-action-dock" id="segment-action-dock"><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button></div>${rowMarkup}<div class="evs-transcript-end-spacer" id="spacer"></div></div>
     </div></div></div></div>
     <aside id="dictionary" class="lingua-dictionary-view">
       <div class="lingua-dictionary-header"><h3>Lingua Study</h3><span class="lingua-dictionary-source">23,596 词条</span></div>
@@ -101,6 +112,17 @@ try {
         </div>
       </div>
     </aside></div>
+    <div id="mobile-fixture" style="position:fixed;left:-10000px;top:0;width:360px;visibility:hidden">
+      <div class="evs-root evs-mobile">
+        <div class="evs-player-dock">
+          <div class="evs-player-stage"><div class="evs-player-frame"></div></div>
+          <div class="evs-toolbar" id="mobile-toolbar">
+            <a class="evs-button evs-icon-button evs-source-link" id="mobile-source-link"></a>
+            <button class="evs-button evs-icon-button evs-floating-toggle" id="mobile-floating-toggle"></button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="import-modal" class="lingua-study-document-import-modal" style="position:fixed;left:-10000px;top:0">
       <div class="modal-content">
         <textarea class="lingua-study-document-paste">${"A long imported transcript sentence. ".repeat(20)}</textarea>
@@ -142,11 +164,31 @@ try {
           const list = document.getElementById("transcript");
           const segmentActionDock = document.getElementById("segment-action-dock");
           const extensionCard = document.getElementById("extension-card");
+          const dictationPanel = document.getElementById("dictation-panel");
+          const shadowingPanel = document.getElementById("shadowing-panel");
           const rows = Array.from(list.querySelectorAll(".evs-segment"));
           const dictionary = document.getElementById("dictionary");
           const dictionaryBody = document.getElementById("dictionary-body");
           const dictionaryTabs = Array.from(dictionary.querySelectorAll(".lingua-dictionary-tabs button"));
           const importModal = document.getElementById("import-modal");
+          const mobileFixture = document.getElementById("mobile-fixture");
+          const mobileToolbar = document.getElementById("mobile-toolbar");
+          const mobileSourceLink = document.getElementById("mobile-source-link");
+          const mobileFloatingToggle = document.getElementById("mobile-floating-toggle");
+
+          check(!mobileFixture.querySelector(".evs-player-utilities"), "移动端置顶按钮仍覆盖视频画面");
+          check(mobileFloatingToggle.closest(".evs-toolbar") === mobileToolbar, "移动端置顶按钮没有进入控制栏");
+          check(!mobileToolbar.querySelector(".evs-primary-controls"), "移动端仍显示失效的播放和跳转按钮");
+          check(!mobileToolbar.querySelector(".evs-speed-select"), "移动端仍显示失效的倍速按钮");
+          check(getComputedStyle(mobileToolbar).flexWrap === "nowrap", "移动端控制栏仍允许换行");
+          check(getComputedStyle(mobileToolbar).justifyContent === "flex-end", "移动端保留按钮没有靠右");
+          check(mobileToolbar.scrollWidth <= mobileToolbar.clientWidth + 1, "360px 移动端控制栏产生横向溢出");
+          const mobileControlTops = Array.from(mobileToolbar.children).map((element) => element.getBoundingClientRect().top);
+          check(Math.max(...mobileControlTops) - Math.min(...mobileControlTops) <= 1, "移动端播放操作没有保持在同一行");
+          const mobileSourceRect = mobileSourceLink.getBoundingClientRect();
+          const mobileFloatingRect = mobileFloatingToggle.getBoundingClientRect();
+          check(mobileFloatingRect.left - mobileSourceRect.right <= 5, "原视频与置顶按钮没有保持相邻");
+          check(mobileToolbar.getBoundingClientRect().right - mobileFloatingRect.right <= 9, "移动端右侧按钮组没有贴近控制栏右边");
 
           // 复现运行代码对代码块容器执行的“铺满阅读视图”计算。
           const applyFullWidth = () => {
@@ -185,6 +227,11 @@ try {
           check(importModal.getBoundingClientRect().width <= Math.min(920, window.innerWidth - 40) + 1, "文稿向导宽度超出窗口");
           check(importModal.scrollWidth <= importModal.clientWidth + 1, "长文稿向导产生横向溢出");
           check(importModal.querySelector(".lingua-study-alignment-preview").getBoundingClientRect().height >= 38, "对齐结果缺少试听控件");
+          check(dictationPanel.scrollWidth <= dictationPanel.clientWidth + 1, "长听写结果产生横向溢出");
+          check(dictationPanel.querySelectorAll(".evs-dictation-token").length === 4, "听写逐词状态没有完整显示");
+          check(Array.from(dictationPanel.querySelectorAll("button")).every((button) => button.clientHeight + 1 >= button.scrollHeight), "听写操作按钮被固定高度裁切");
+          check(shadowingPanel.scrollWidth <= shadowingPanel.clientWidth + 1, "跟读录音面板产生横向溢出");
+          check(Array.from(shadowingPanel.querySelectorAll("button")).every((button) => button.clientHeight + 1 >= button.scrollHeight), "跟读操作按钮被固定高度裁切");
           const activeTabStyle = getComputedStyle(dictionaryTabs[0]);
           const inactiveTabStyle = getComputedStyle(dictionaryTabs[1]);
           check(activeTabStyle.backgroundColor !== inactiveTabStyle.backgroundColor, "当前词典页面缺少明确的实心高亮");
@@ -212,11 +259,30 @@ try {
             "深色主题下当前词典页面高亮不明显"
           );
           document.body.classList.replace("theme-dark", "theme-light");
-          dictionaryBody.innerHTML = '<div class="lingua-vocabulary-stats"><span>共 4 个生词</span><span>当前显示 4 个</span></div><div class="lingua-vocabulary-list">' + ['wisdom', 'bother', 'anything', 'focus'].map((word) => '<button class="lingua-vocabulary-list-item"><div class="lingua-vocabulary-list-heading"><strong>' + word + '</strong><span>下次 2026/8/22</span></div><div class="lingua-vocabulary-list-meaning">n. 这是一条用于验证列表不会互相覆盖的完整释义</div><div class="lingua-vocabulary-list-meta"><span>1 个语境</span><span>四级 · 六级 · 雅思</span></div></button>').join('') + '</div>';
+          dictionaryBody.innerHTML = '<div class="lingua-vocabulary-stats"><div class="lingua-vocabulary-stats-counts"><span>共 4 个生词</span><span>当前显示 4 个</span></div><div class="lingua-vocabulary-export-actions"><button class="lingua-vocabulary-export-button" aria-label="导出生词本到笔记"><span class="lingua-vocabulary-export-icon"></span></button><button class="lingua-vocabulary-export-button lingua-vocabulary-image-export-button" aria-label="将全部生词导出为长图"><span class="lingua-vocabulary-export-icon"></span></button></div></div><div class="lingua-vocabulary-list">' + ['wisdom', 'bother', 'anything', 'focus'].map((word) => '<button class="lingua-vocabulary-list-item"><div class="lingua-vocabulary-list-heading"><strong>' + word + '</strong><span>下次 2026/8/22</span></div><div class="lingua-vocabulary-list-meaning">n. 这是一条用于验证列表不会互相覆盖的完整释义</div><div class="lingua-vocabulary-list-meta"><span>1 个语境</span><span>四级 · 六级 · 雅思</span></div></button>').join('') + '</div>';
+          const vocabularyStats = dictionaryBody.querySelector(".lingua-vocabulary-stats");
+          const vocabularyExportActions = dictionaryBody.querySelector(".lingua-vocabulary-export-actions");
+          const vocabularyExportButtons = Array.from(dictionaryBody.querySelectorAll(".lingua-vocabulary-export-button"));
+          const vocabularyExportButton = vocabularyExportButtons[0];
+          check(vocabularyExportButton !== null, "生词本缺少导出笔记按钮");
+          check(vocabularyExportButtons.length === 2, "生词本没有同时显示笔记和长图导出按钮");
+          check(vocabularyExportButtons.every((button) => button.textContent.trim() === ""), "生词导出按钮仍显示文字");
+          check(vocabularyExportButtons.every((button) => button.getBoundingClientRect().width === 32), "纯图标导出按钮宽度不是 32px");
+          check(vocabularyStats.scrollWidth <= vocabularyStats.clientWidth + 1, "生词统计和导出按钮产生横向溢出");
+          check(vocabularyExportActions.scrollWidth <= vocabularyExportActions.clientWidth + 1, "生词导出按钮组产生横向溢出");
+          check(vocabularyExportButtons.every((button) => button.clientHeight + 1 >= button.scrollHeight), "生词导出按钮被固定高度裁切");
           const vocabularyItems = Array.from(dictionaryBody.querySelectorAll(".lingua-vocabulary-list-item"));
           check(vocabularyItems.length === 4, "生词本测试卡片没有完整渲染");
           check(vocabularyItems.every((item) => item.clientHeight + 1 >= item.scrollHeight), "Obsidian 固定按钮高度仍在裁切生词卡");
           check(vocabularyItems.every((item, index) => index === 0 || item.getBoundingClientRect().top >= vocabularyItems[index - 1].getBoundingClientRect().bottom + 6), "生词卡内容仍与下一条重叠");
+          const exportedNote = document.createElement("div");
+          exportedNote.className = "lingua-vocabulary-export-note";
+          exportedNote.innerHTML = '<div class="callout" data-callout="lingua-word"><div class="callout-title"><div class="callout-title-inner">development</div></div><div class="callout-content"><ul><li><strong>音标</strong>：/dɪˈveləpmənt/</li><li><strong>中文释义</strong>：发展；展开</li><li><strong>English definition</strong>：' + 'a deliberately long definition used to verify card wrapping '.repeat(8) + '</li></ul><p><strong>视频语境</strong></p><ol><li>This is a long subtitle context for the exported vocabulary card.</li></ol></div></div>';
+          dictionaryBody.appendChild(exportedNote);
+          const exportedCard = exportedNote.querySelector('.callout[data-callout="lingua-word"]');
+          check(exportedCard.scrollWidth <= exportedCard.clientWidth + 1, "导出生词卡片的长内容产生横向溢出");
+          check(parseFloat(getComputedStyle(exportedCard).borderRadius) >= 10, "导出生词没有显示为圆角卡片");
+          check(getComputedStyle(exportedCard).backgroundColor !== "rgba(0, 0, 0, 0)", "导出生词卡片缺少独立背景");
           dictionaryBody.innerHTML = '<div class="lingua-review-summary"><strong>今日待复习 12</strong><div>学习中 2 · 到期 6 · 新词 4</div></div><div class="lingua-review-card"><div class="lingua-review-card-label">先回忆这个单词的含义</div><h2>antidepressant</h2><button class="lingua-dictionary-icon-button"></button><div class="lingua-review-answer"><div class="lingua-review-meaning">' + '用于测试窄侧栏长释义自然换行。'.repeat(30) + '</div><div class="lingua-review-context">' + 'This is a deliberately long subtitle context used to verify that the review card remains fully readable in a narrow Obsidian sidebar. '.repeat(10) + '<div class="lingua-review-context-actions"><button>回到视频原句</button></div></div><div class="lingua-review-ratings"><button><span>忘记</span><small>10 分钟</small></button><button><span>困难</span><small>1 天</small></button><button><span>记得</span><small>3 天</small></button><button><span>熟练</span><small>7 天</small></button></div></div></div>';
           check(dictionaryBody.scrollWidth <= dictionaryBody.clientWidth + 1, "长复习卡产生横向溢出");
           check(dictionaryBody.scrollHeight > dictionaryBody.clientHeight, "长复习卡内容被侧栏裁切");
@@ -234,8 +300,8 @@ try {
           check(list.scrollHeight <= list.clientHeight + 1, "字幕内容仍被内部高度裁切");
           check(list.scrollTop === 0, "展开式字幕列表不应产生内部滚动位置");
           check(getComputedStyle(segmentActionDock).position === "sticky", "字幕共用操作栏没有固定在右侧");
-          check(segmentActionDock.querySelectorAll("button").length === 2, "字幕共用操作栏不是两个按钮");
-          check(rows.every((row) => row.querySelectorAll("button:not(.evs-timestamp)").length === 0), "字幕行仍在重复显示操作按钮");
+          check(segmentActionDock.querySelectorAll("button").length === 4, "字幕共用操作栏不是四个按钮");
+          check(rows.every((row) => row.querySelectorAll(".evs-transcript-icon-button").length === 0), "字幕行仍在重复显示悬浮操作按钮");
           check(extensionCard && extensionCard.offsetParent !== null, "延伸拓展知识卡没有默认展开");
           check(extensionCard.clientHeight + 1 >= extensionCard.scrollHeight, "延伸拓展知识卡内容被裁切");
           check(status.getBoundingClientRect().height === 0, "就绪状态没有完全收起");

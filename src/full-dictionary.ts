@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
+import { createReadStream, createWriteStream, readFileSync, type WriteStream } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { get as httpGet, type IncomingMessage } from "node:http";
 import { get as httpsGet } from "node:https";
@@ -250,25 +250,46 @@ async function downloadAttempt(
       const output = createWriteStream(targetPath, { flags: statusCode === 206 ? "a" : "w" });
       const startedAt = Date.now();
       let attemptBytes = 0;
-      const fail = (error: Error): void => {
+      let pendingInputError: Error | null = null;
+      const abortImmediately = (error: Error): void => {
+        response.unpipe(output);
         response.destroy();
         output.destroy();
         finish(error);
       };
-      response.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => fail(new Error("词典下载超时，已保留当前进度。")));
+      const failAfterFlush = (error: Error): void => {
+        if (settled || pendingInputError) return;
+        pendingInputError = error;
+        response.unpipe(output);
+        response.destroy();
+        // 先让已经进入写入缓冲区的数据完整落盘，再开始下一次 Range 请求。
+        // 否则高并发或磁盘繁忙时，重试可能错误地从 0 字节重新下载。
+        if (output.destroyed) {
+          finish(error);
+          return;
+        }
+        if (!output.writableEnded) {
+          output.end();
+        }
+      };
+      response.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => failAfterFlush(new Error("词典下载超时，已保留当前进度。")));
       response.on("data", (chunk: Buffer) => {
         attemptBytes += chunk.byteLength;
         const received = startOffset + attemptBytes;
         if (received > maxBytes) {
-          fail(new Error("远程词典文件超过安全大小限制，已停止下载。"));
+          abortImmediately(new Error("远程词典文件超过安全大小限制，已停止下载。"));
           return;
         }
         const elapsedSeconds = Math.max(0.001, (Date.now() - startedAt) / 1_000);
         onProgress({ received, total, bytesPerSecond: attemptBytes / elapsedSeconds });
       });
-      response.once("error", fail);
-      output.once("error", fail);
-      output.once("finish", () => finish());
+      response.once("aborted", () => failAfterFlush(new Error("词典下载连接中断，已保留当前进度。")));
+      response.once("error", failAfterFlush);
+      output.once("error", (error) => {
+        response.destroy();
+        finish(error);
+      });
+      output.once("finish", () => finish(pendingInputError ?? undefined));
       response.pipe(output);
     });
     request.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => request.destroy(new Error("连接词典下载服务器超时，已保留当前进度。")));
@@ -699,6 +720,18 @@ export class FullDictionaryService {
 
   getShardFolder(): string | null {
     return this.manifest ? this.cacheFolder : null;
+  }
+
+  /** 仅由桌面端注入到通用词典中，避免移动端模块直接引用 node:fs。 */
+  readCompressedShard(key: string): Uint8Array | null {
+    if (!this.manifest || !/^(?:[a-z]|other)$/u.test(key)) {
+      return null;
+    }
+    try {
+      return readFileSync(join(this.cacheFolder, `${key}.json.gz`));
+    } catch {
+      return null;
+    }
   }
 
   install(onProgress: (message: string) => void): Promise<FullDictionaryInstallResult> {

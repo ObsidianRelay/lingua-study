@@ -1,12 +1,42 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildMobileYouTubeStartUrl,
   isPlaybackStateConfirmed,
   shouldAdvancePlaybackClock,
   shouldResumeTranscriptAutoFollow,
+  shouldStopDictationPlayback,
   waitForMediaMetadata,
   type MediaMetadataSource
 } from "../src/player-control-core";
+
+test("移动端 YouTube 时间戳通过官方兼容播放器安全跳转", () => {
+  assert.equal(
+    buildMobileYouTubeStartUrl(
+      "https://releases.obsidian.md/youtube?v=abcdefghijk&enablejsapi=1",
+      15.8
+    ),
+    "https://releases.obsidian.md/youtube?v=abcdefghijk&start=15&autoplay=1"
+  );
+  assert.equal(
+    buildMobileYouTubeStartUrl(
+      "https://www.youtube-nocookie.com/embed/abcdefghijk?playsinline=1",
+      60
+    ),
+    "https://www.youtube-nocookie.com/embed/abcdefghijk?playsinline=1&start=60&autoplay=1"
+  );
+  assert.equal(
+    buildMobileYouTubeStartUrl(
+      "https://releases.obsidian.md/youtube?v=abcdefghijk&autoplay=0&start=5",
+      30
+    ),
+    "https://releases.obsidian.md/youtube?v=abcdefghijk&autoplay=1&start=30"
+  );
+  assert.equal(buildMobileYouTubeStartUrl("https://releases.obsidian.md/not-youtube?v=test", 1), null);
+  assert.equal(buildMobileYouTubeStartUrl("https://releases.obsidian.md.evil.example/youtube?v=test", 1), null);
+  assert.equal(buildMobileYouTubeStartUrl("javascript:alert(1)", 1), null);
+  assert.equal(buildMobileYouTubeStartUrl("https://releases.obsidian.md/youtube?v=test", -1), null);
+});
 
 class FakeMediaSource extends EventTarget implements MediaMetadataSource {
   readyState = 0;
@@ -31,6 +61,13 @@ test("YouTube 命令未确认时本地计时器不继续推进", () => {
   assert.equal(shouldAdvancePlaybackClock(1, 1, 1), false);
   assert.equal(shouldAdvancePlaybackClock(1, 2, 1), false);
   assert.equal(shouldAdvancePlaybackClock(2, null, 1), false);
+});
+
+test("听写播放只在到达当前句结束时间后停止", () => {
+  assert.equal(shouldStopDictationPlayback(9.99, 10), false);
+  assert.equal(shouldStopDictationPlayback(10, 10), true);
+  assert.equal(shouldStopDictationPlayback(10.25, 10), true);
+  assert.equal(shouldStopDictationPlayback(10.25, null), false);
 });
 
 test("暂停或等待暂停确认时不会恢复字幕自动跟随", () => {

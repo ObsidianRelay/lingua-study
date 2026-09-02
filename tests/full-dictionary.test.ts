@@ -104,8 +104,9 @@ test("词典下载中断后保留进度并使用 Range 续传", async () => {
     if (firstRequest && !range) {
       firstRequest = false;
       response.writeHead(200, { "Content-Length": payload.byteLength });
-      response.write(payload.subarray(0, 128 * 1024));
-      setImmediate(() => response.destroy());
+      response.write(payload.subarray(0, 128 * 1024), () => {
+        setImmediate(() => response.destroy());
+      });
       return;
     }
     const match = typeof range === "string" ? /^bytes=(\d+)-$/u.exec(range) : null;

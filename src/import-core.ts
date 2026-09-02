@@ -8,6 +8,11 @@ export interface YouTubeLink {
   originalUrl: string;
 }
 
+export interface StudyBlockAppendPlan {
+  offset: number;
+  text: string;
+}
+
 export interface BilibiliVideoLink {
   kind: "video";
   idType: "bvid" | "aid";
@@ -159,6 +164,23 @@ export function findYouTubeLinksByPriority(
     }
   }
   return [];
+}
+
+/** 判断笔记是否以 YAML 属性区的起始分隔线开头。 */
+export function startsWithFrontmatterFence(markdown: string): boolean {
+  return /^\uFEFF?---[ \t]*(?:\r?\n|$)/u.test(markdown);
+}
+
+/** 统一把学习代码块追加为笔记的最后一个内容，并保留已有 RSS 正文。 */
+export function planStudyBlockAppend(markdown: string, block: string): StudyBlockAppendPlan {
+  const separator = markdown.length === 0
+    ? ""
+    : markdown.endsWith("\n\n")
+      ? ""
+      : markdown.endsWith("\n")
+        ? "\n"
+        : "\n\n";
+  return { offset: markdown.length, text: `${separator}${block}` };
 }
 
 function parsePositivePage(value: string | null): number {

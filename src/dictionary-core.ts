@@ -1,6 +1,4 @@
-import { gunzipSync } from "node:zlib";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { ungzip } from "pako";
 import { DICTIONARY_SHARDS, DICTIONARY_SOURCE } from "./dictionary-data.generated";
 import type { StudyProfile } from "./study-core";
 
@@ -49,6 +47,8 @@ interface PackedDictionaryShard {
   entries: Record<string, PackedDictionaryEntry>;
   aliases: Record<string, string>;
 }
+
+export type ExternalDictionaryShardLoader = (key: string) => Uint8Array | null;
 
 const INFLECTION_LABELS: Readonly<Record<string, string>> = {
   "0": "原形",
@@ -164,19 +164,32 @@ function editDistance(left: string, right: string): number {
   return previous[right.length] ?? Math.max(left.length, right.length);
 }
 
+function decodeBase64(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function parseCompressedShard(compressed: Uint8Array): PackedDictionaryShard {
+  return JSON.parse(ungzip(compressed, { to: "string" })) as PackedDictionaryShard;
+}
+
 /** 按需解压首字母分片；已经使用的分片保留在内存中，后续查询不重复解析。 */
 export class OfflineDictionary {
   private readonly loaded = new Map<string, PackedDictionaryShard>();
   private readonly externalLoaded = new Map<string, PackedDictionaryShard>();
-  private externalShardFolder: string | null = null;
+  private externalShardLoader: ExternalDictionaryShardLoader | null = null;
 
   constructor(
     private readonly compressedShards: Readonly<Record<string, string>> = DICTIONARY_SHARDS
   ) {}
 
-  /** 完整版词典安装或删除后切换本地分片；内置精简版始终保留。 */
-  setExternalShardFolder(folder: string | null): void {
-    this.externalShardFolder = folder;
+  /** 由桌面端注入完整版分片读取器；移动端仍保留内置精简版。 */
+  setExternalShardLoader(loader: ExternalDictionaryShardLoader | null): void {
+    this.externalShardLoader = loader;
     this.externalLoaded.clear();
   }
 
@@ -197,7 +210,7 @@ export class OfflineDictionary {
       };
     }
 
-    if (this.externalShardFolder) {
+    if (this.externalShardLoader) {
       const external = this.lookupInSource(normalizedQuery, (key) => this.loadExternalShard(key));
       if (external.entry) {
         return {
@@ -254,9 +267,7 @@ export class OfflineDictionary {
     if (!encoded) {
       return { entries: {}, aliases: {} };
     }
-    const parsed = JSON.parse(
-      gunzipSync(Buffer.from(encoded, "base64")).toString("utf8")
-    ) as PackedDictionaryShard;
+    const parsed = parseCompressedShard(decodeBase64(encoded));
     this.loaded.set(key, parsed);
     return parsed;
   }
@@ -266,13 +277,15 @@ export class OfflineDictionary {
     if (existing) {
       return existing;
     }
-    if (!this.externalShardFolder) {
+    if (!this.externalShardLoader) {
       return { entries: {}, aliases: {} };
     }
     try {
-      const parsed = JSON.parse(
-        gunzipSync(readFileSync(join(this.externalShardFolder, `${key}.json.gz`))).toString("utf8")
-      ) as PackedDictionaryShard;
+      const compressed = this.externalShardLoader(key);
+      if (!compressed) {
+        return { entries: {}, aliases: {} };
+      }
+      const parsed = parseCompressedShard(compressed);
       this.externalLoaded.set(key, parsed);
       return parsed;
     } catch {

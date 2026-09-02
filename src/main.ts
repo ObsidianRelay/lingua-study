@@ -1,5 +1,6 @@
 import {
   addIcon,
+  MarkdownRenderer,
   MarkdownView,
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
@@ -10,6 +11,7 @@ import {
   Plugin,
   setIcon,
   TFile,
+  TFolder,
   type WorkspaceLeaf
 } from "obsidian";
 import {
@@ -51,10 +53,10 @@ import {
   tokenizeDictionaryText,
   type DictionaryLookupResult
 } from "./dictionary-core";
-import {
+import type {
   FullDictionaryService,
-  type FullDictionaryInstallResult,
-  type FullDictionaryStatus
+  FullDictionaryInstallResult,
+  FullDictionaryStatus
 } from "./full-dictionary";
 import {
   DICTIONARY_VIEW_TYPE,
@@ -73,22 +75,23 @@ import {
   calculateTranscriptEndSpacer
 } from "./ui-layout-core";
 import {
+  buildMobileYouTubeStartUrl,
   isPlaybackStateConfirmed,
   shouldAdvancePlaybackClock,
+  shouldStopDictationPlayback,
   shouldResumeTranscriptAutoFollow,
   waitForMediaMetadata
 } from "./player-control-core";
 import { YouTubeImportController } from "./youtube-import";
 import { BilibiliImportController } from "./bilibili-import";
-import { BilibiliCacheService, type CachedBilibiliVideo } from "./bilibili-cache";
+import type { BilibiliCacheService, CachedBilibiliVideo } from "./bilibili-cache";
 import { BilibiliSessionService, type BilibiliSessionStatus } from "./bilibili-session";
-import { removeLegacyWhisperCachesOnce } from "./legacy-whisper-cleanup";
 import {
   findSupportedVideoLinksByPriority,
   parseStandalonePastedVideoLink,
   type PastedVideoLink
 } from "./import-core";
-import { LocalWhisperService } from "./local-whisper";
+import type { LocalWhisperService } from "./local-whisper";
 import { disposeDocumentParserRuntime } from "./document-parser";
 import { VocabularyStore, type VocabularyBookLoadResult } from "./vocabulary-store";
 import {
@@ -96,12 +99,47 @@ import {
   type VocabularyBookFile,
   type VocabularyContext
 } from "./vocabulary-core";
+import {
+  writeVocabularyExport,
+  type VocabularyExportStorage,
+  type VocabularyExportWriteResult
+} from "./vocabulary-export-core";
+import { renderVocabularyBookImages } from "./vocabulary-image-export";
+import {
+  writeVocabularyImageExport,
+  type VocabularyImageExportResult,
+  type VocabularyImageExportStorage
+} from "./vocabulary-image-export-core";
 import { selectNewestEligibleRenderer } from "./vocabulary-navigation-core";
 import {
   containsStudyBlock,
   getStudyBlockCursorRecovery
 } from "./live-preview-core";
 import { VersionedAsyncCache } from "./versioned-async-cache";
+import { getPlatformCapabilities, type PlatformCapabilities } from "./platform";
+import type { YtDlpTranscriptFetcher } from "./yt-dlp-core";
+import {
+  compareDictation,
+  type DictationResult
+} from "./dictation-core";
+import {
+  canAdjustShadowingSource,
+  calculateShadowingWaveformPeak,
+  clampShadowingPosition,
+  formatShadowingElapsed,
+  formatShadowingRecordingElapsed,
+  getShadowingActiveElapsedMs,
+  getShadowingLiveWaveformLayout,
+  getShadowingPlaybackProgress,
+  getShadowingRecordingProgress,
+  getShadowingRecordingErrorMessage,
+  getShadowingWaveformBinSize,
+  getShadowingWaveformTargetSampleCount,
+  selectShadowingMimeType,
+  SHADOWING_MAX_RECORDING_MS,
+  SHADOWING_SEEK_STEP_SECONDS,
+  type ShadowingPhase
+} from "./shadowing-core";
 import ribbonLogoMaskUrl from "../assets/logo-ribbon-mask.png";
 
 interface TranscriptCodeBlockConfig {
@@ -141,6 +179,46 @@ interface SegmentTranslationView {
   loadingAction: "translate" | "retranslate" | "supplement" | null;
   errorMessage: string | null;
   statusTone: "error" | "warning" | null;
+  requestGeneration: number;
+}
+
+interface DictationSession {
+  index: number;
+  panelEl: HTMLElement;
+  inputEl: HTMLTextAreaElement | null;
+  submitButton: HTMLButtonElement | null;
+  sourceTimeEl: HTMLElement | null;
+  sourcePlayButton: HTMLButtonElement | null;
+  uiTimer: number | null;
+  phase: "input" | "result";
+}
+
+interface ShadowingSession {
+  index: number;
+  panelEl: HTMLElement;
+  statusEl: HTMLElement;
+  sourceTimeEl: HTMLElement | null;
+  sourcePlayButton: HTMLButtonElement | null;
+  waveformCanvas: HTMLCanvasElement | null;
+  phase: ShadowingPhase;
+  syncSourceDuringRecording: boolean;
+  mediaRecorder: MediaRecorder | null;
+  mediaStream: MediaStream | null;
+  chunks: Blob[];
+  audioEl: HTMLAudioElement | null;
+  recordingUrl: string | null;
+  recordingStartedAt: number;
+  recordingAccumulatedMs: number;
+  recordingSourcePosition: number;
+  sourceEnded: boolean;
+  uiTimer: number | null;
+  limitTimer: number | null;
+  audioContext: AudioContext | null;
+  analyserNode: AnalyserNode | null;
+  audioSourceNode: MediaStreamAudioSourceNode | null;
+  waveformFrame: number | null;
+  waveformSamples: Uint8Array<ArrayBuffer> | null;
+  waveformPeaks: number[];
   requestGeneration: number;
 }
 
@@ -410,6 +488,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private readonly source: string;
   private readonly sourcePath: string;
   private iframeEl: HTMLIFrameElement | null = null;
+  private playerMessageTargetOrigin: string | null = null;
   private localVideoEl: HTMLVideoElement | null = null;
   private cachedVideoUrls: string[] = [];
   private cachedVideoOffsets: number[] = [];
@@ -458,8 +537,14 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private segmentTextEls: HTMLElement[] = [];
   private segmentActionDockEl: HTMLElement | null = null;
   private segmentEditButton: HTMLButtonElement | null = null;
+  private segmentDictationButton: HTMLButtonElement | null = null;
+  private segmentShadowingButton: HTMLButtonElement | null = null;
   private segmentActionTargetIndex = -1;
   private segmentActionTargetPinned = false;
+  private dictationSession: DictationSession | null = null;
+  private dictationPlaybackStopAt: number | null = null;
+  private shadowingSession: ShadowingSession | null = null;
+  private shadowingPlaybackStopAt: number | null = null;
   private translationBatchRunning = false;
   private playerDockEl: HTMLElement | null = null;
   private fullWidthObserver: ResizeObserver | null = null;
@@ -512,6 +597,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   onunload(): void {
     this.destroyed = true;
+    this.closeDictation(false);
+    this.closeShadowing(false);
     this.plugin.unregisterStudyRenderer(this);
     this.localSeekGeneration += 1;
     this.fullWidthObserver?.disconnect();
@@ -554,6 +641,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.messageHandler = null;
     this.messageWindow = null;
     this.iframeEl = null;
+    this.playerMessageTargetOrigin = null;
     this.vocabularyTargetRowEl?.classList.remove("is-vocabulary-target");
     this.vocabularyTargetRowEl = null;
     this.vocabularyNavigationIndex = null;
@@ -583,8 +671,14 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.segmentTextEls = [];
     this.segmentActionDockEl = null;
     this.segmentEditButton = null;
+    this.segmentDictationButton = null;
+    this.segmentShadowingButton = null;
     this.segmentActionTargetIndex = -1;
     this.segmentActionTargetPinned = false;
+    this.dictationSession = null;
+    this.dictationPlaybackStopAt = null;
+    this.shadowingSession = null;
+    this.shadowingPlaybackStopAt = null;
     this.translationBatchRunning = false;
     this.playerDockEl = null;
     this.viewViewportEl = null;
@@ -620,7 +714,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       if (this.destroyed) {
         return;
       }
-      this.renderLayout(transcriptData);
+      await this.renderLayout(transcriptData);
     } catch (error) {
       if (this.destroyed) {
         return;
@@ -719,7 +813,14 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       scrollEl.addEventListener("scroll", this.fullWidthScrollHandler, { passive: true });
     }
     updateFullWidth(true);
-    const rootClass = extraClass === "" ? "evs-root" : `evs-root ${extraClass}`;
+    const rootClasses = ["evs-root"];
+    if (this.plugin.capabilities.mobile) {
+      rootClasses.push("evs-mobile");
+    }
+    if (extraClass !== "") {
+      rootClasses.push(extraClass);
+    }
+    const rootClass = rootClasses.join(" ");
     const root = this.containerEl.createDiv({ cls: rootClass });
     root.dataset.linguaStudySourcePath = this.sourcePath;
     const viewWindow = this.containerEl.ownerDocument.defaultView ?? window;
@@ -741,10 +842,18 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private createPlayerStage(dock: HTMLElement): HTMLElement {
     const stage = dock.createDiv({ cls: "evs-player-stage" });
     const frame = stage.createDiv({ cls: "evs-player-frame" });
-    const utilities = stage.createDiv({ cls: "evs-player-utilities" });
-    utilities.setAttribute("aria-label", "视频置顶操作");
-    this.createFloatingToggle(utilities, dock);
+    if (!this.plugin.capabilities.mobile) {
+      const utilities = stage.createDiv({ cls: "evs-player-utilities" });
+      utilities.setAttribute("aria-label", "视频置顶操作");
+      this.createFloatingToggle(utilities, dock);
+    }
     return frame;
+  }
+
+  private createMobileFloatingToggle(parent: HTMLElement, dock: HTMLElement): void {
+    if (this.plugin.capabilities.mobile) {
+      this.createFloatingToggle(parent, dock);
+    }
   }
 
   private createFloatingToggle(parent: HTMLElement, dock: HTMLElement): HTMLButtonElement {
@@ -915,6 +1024,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       this.createTranscriptImportButton(sourceToolbar, config);
     }
     this.createSourceLink(sourceToolbar, sourceUrl);
+    this.createMobileFloatingToggle(sourceToolbar, playerDock);
     const status = root.createDiv({ cls: "evs-status evs-bilibili-status" });
     status.createSpan({
       text: transcriptData
@@ -973,6 +1083,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       this.createTranscriptImportButton(toolbar, config);
     }
     this.createSourceLink(toolbar, sourceUrl);
+    this.createMobileFloatingToggle(toolbar, playerDock);
 
     this.statusEl = root.createDiv({ cls: "evs-status evs-local-status" });
     this.statusEl.setAttribute("role", "status");
@@ -1115,7 +1226,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     };
   }
 
-  private renderLayout(data: TranscriptRenderData): void {
+  private async renderLayout(data: TranscriptRenderData): Promise<void> {
     const { transcript } = data;
     const root = this.createRoot();
 
@@ -1136,44 +1247,93 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       playerParams.set("origin", window.location.origin);
     }
 
-    const iframe = playerFrame.createEl("iframe", {
-      cls: "evs-player-host",
-      attr: {
-        id: iframeId,
-        title: "YouTube 视频播放器",
-        src: `https://www.youtube-nocookie.com/embed/${transcript.videoId}?${playerParams.toString()}`,
-        allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
-        referrerpolicy: "strict-origin-when-cross-origin"
+    let iframe: HTMLIFrameElement;
+    if (this.plugin.capabilities.mobile) {
+      // Obsidian 1.10.5 起在 iOS/iPadOS 原生层处理了 YouTube WebView 的
+      // Referer 身份要求。第三方插件无法自行设置这个 HTTP 请求头，因此
+      // 移动端必须复用 Obsidian 的 Markdown 外部视频嵌入器。
+      await MarkdownRenderer.render(
+        this.plugin.app,
+        `![](https://www.youtube.com/watch?v=${encodeURIComponent(transcript.videoId)})`,
+        playerFrame,
+        this.sourcePath,
+        this
+      );
+      if (this.destroyed) {
+        return;
       }
-    });
+      const nativeIframe = playerFrame.querySelector<HTMLIFrameElement>("iframe");
+      if (!nativeIframe) {
+        throw new Error("Obsidian 移动端未能创建 YouTube 播放器，请确认应用已更新到 1.10.5 或更高版本。");
+      }
+      // 只保留 Obsidian 已经完成原生配置的 iframe，不替换为直接
+      // YouTube 地址，避免在 iOS/iPadOS 上重新触发 Error 153。
+      playerFrame.replaceChildren(nativeIframe);
+      iframe = nativeIframe;
+      iframe.classList.add("evs-player-host");
+      iframe.id = iframeId;
+      iframe.title = "YouTube 视频播放器";
+    } else {
+      iframe = playerFrame.createEl("iframe", {
+        cls: "evs-player-host",
+        attr: {
+          id: iframeId,
+          title: "YouTube 视频播放器",
+          src: `https://www.youtube-nocookie.com/embed/${transcript.videoId}?${playerParams.toString()}`,
+          allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+          referrerpolicy: "strict-origin-when-cross-origin"
+        }
+      });
+      this.playerMessageTargetOrigin = new URL(iframe.src).origin;
+    }
+    iframe.setAttribute(
+      "allow",
+      "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    );
+    iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
     iframe.setAttribute("allowfullscreen", "");
     this.iframeEl = iframe;
-    this.setupMessageListener();
-    iframe.addEventListener("load", () => this.startPlayerHandshake());
+    if (!this.plugin.capabilities.mobile) {
+      this.setupMessageListener();
+      iframe.addEventListener("load", () => this.startPlayerHandshake());
+      this.startPlayerHandshake();
+    }
 
     const toolbar = playerDock.createDiv({ cls: "evs-toolbar" });
     toolbar.setAttribute("aria-label", "视频播放控制");
-
-    const primaryControls = toolbar.createDiv({ cls: "evs-primary-controls" });
-    this.playPauseButton = this.createControlButton(
-      primaryControls,
-      "播放",
-      "play",
-      () => this.togglePlayback(),
-      "evs-play-button"
-    );
-    this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
-    this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
-    this.createSpeedControls(toolbar);
+    if (!this.plugin.capabilities.mobile) {
+      const primaryControls = toolbar.createDiv({ cls: "evs-primary-controls" });
+      this.playPauseButton = this.createControlButton(
+        primaryControls,
+        "播放",
+        "play",
+        () => this.togglePlayback(),
+        "evs-play-button"
+      );
+      this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
+      this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
+      this.createSpeedControls(toolbar);
+    }
     this.createSourceLink(toolbar, sourceUrl);
+    this.createMobileFloatingToggle(toolbar, playerDock);
 
-    this.statusEl = root.createDiv({ cls: "evs-status", text: "正在加载 YouTube 播放器…" });
+    this.statusEl = root.createDiv({
+      cls: "evs-status",
+      text: this.plugin.capabilities.mobile
+        ? "移动端请使用视频内控件播放、暂停和调整倍速 · 点击字幕时间戳可跳转"
+        : "正在加载 YouTube 播放器…"
+    });
     this.statusEl.setAttribute("role", "status");
     this.runtimeErrorEl = root.createDiv({ cls: "evs-runtime-error" });
     this.runtimeErrorEl.setAttribute("role", "alert");
     this.runtimeErrorEl.hide();
 
     this.renderTranscriptList(root, data);
+
+    if (this.plugin.capabilities.mobile) {
+      this.timestampButtons.forEach((button) => (button.disabled = false));
+      return;
+    }
 
     // 部分 YouTube 嵌入不会回传 onReady；此时 iframe 仍可接收控制命令。
     // 短暂等待后启用控件，避免用户被永久卡在“正在加载”。
@@ -1226,8 +1386,32 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.openSegmentEditor(this.segmentActionTargetIndex);
       }
     });
+    const dictationButton = actionDock.createEl("button", {
+      cls: "evs-icon-button evs-transcript-icon-button evs-global-dictation-action"
+    });
+    dictationButton.type = "button";
+    dictationButton.disabled = true;
+    this.setTranscriptActionIcon(dictationButton, "headphones", "听写功能正在准备");
+    dictationButton.addEventListener("click", () => {
+      if (this.segmentActionTargetIndex >= 0) {
+        this.startDictation(this.segmentActionTargetIndex);
+      }
+    });
+    const shadowingButton = actionDock.createEl("button", {
+      cls: "evs-icon-button evs-transcript-icon-button evs-global-shadowing-action"
+    });
+    shadowingButton.type = "button";
+    shadowingButton.disabled = true;
+    this.setTranscriptActionIcon(shadowingButton, "mic", "跟读功能正在准备");
+    shadowingButton.addEventListener("click", () => {
+      if (this.segmentActionTargetIndex >= 0) {
+        this.startShadowing(this.segmentActionTargetIndex);
+      }
+    });
     this.segmentActionDockEl = actionDock;
     this.segmentEditButton = editButton;
+    this.segmentDictationButton = dictationButton;
+    this.segmentShadowingButton = shadowingButton;
 
     transcript.segments.forEach((segment, index) => {
       const row = transcriptList.createDiv({ cls: "evs-segment" });
@@ -1345,6 +1529,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (transcript.segments.length > 0) {
       this.selectSegmentForActions(0, false);
     }
+    this.updateDictationActionAvailability();
+    this.updateShadowingActionAvailability();
     this.translationViews.forEach((view) => this.updateTranslationView(view));
     this.transcriptEndSpacerEl = transcriptList.createDiv({
       cls: "evs-transcript-end-spacer"
@@ -1403,7 +1589,23 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     const view = this.translationViews[index];
     const dock = this.segmentActionDockEl;
     const editButton = this.segmentEditButton;
-    if (!row || !view || !dock || !editButton || this.destroyed) {
+    const dictationButton = this.segmentDictationButton;
+    const shadowingButton = this.segmentShadowingButton;
+    if (
+      !row ||
+      !view ||
+      !dock ||
+      !editButton ||
+      !dictationButton ||
+      !shadowingButton ||
+      this.destroyed
+    ) {
+      return;
+    }
+    if (
+      (this.dictationSession && this.dictationSession.index !== index) ||
+      (this.shadowingSession && this.shadowingSession.index !== index)
+    ) {
       return;
     }
 
@@ -1415,9 +1617,1565 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.segmentActionTargetPinned = pinnedByUser;
     row.classList.add("is-action-target");
     dock.setAttribute("aria-label", `第 ${index + 1} 句字幕操作`);
-    editButton.disabled = false;
+    editButton.disabled = this.dictationSession !== null || this.shadowingSession !== null;
     this.setTranscriptActionLabel(editButton, `编辑第 ${index + 1} 句字幕`);
     dock.appendChild(view.primaryButton);
+    dock.appendChild(dictationButton);
+    dock.appendChild(shadowingButton);
+    this.updateDictationActionAvailability();
+    this.updateShadowingActionAvailability();
+  }
+
+  /** 听写只在桌面端可精确控制的 YouTube 或本地缓存播放器中启用。 */
+  private updateDictationActionAvailability(): void {
+    const button = this.segmentDictationButton;
+    if (!button) {
+      return;
+    }
+
+    let label: string;
+    let disabled = false;
+    if (this.plugin.capabilities.mobile) {
+      disabled = true;
+      label = "听写暂时只支持桌面端";
+    } else if (!this.localVideoEl && !this.iframeEl) {
+      disabled = true;
+      label = "当前在线播放器无法逐句听写，请先缓存视频";
+    } else if (!this.controlsActivated) {
+      disabled = true;
+      label = "播放器准备完成后可开始听写";
+    } else if (this.translationBatchRunning) {
+      disabled = true;
+      label = "整篇翻译完成后可开始听写";
+    } else if (this.translationViews[this.segmentActionTargetIndex]?.loading) {
+      disabled = true;
+      label = "当前句翻译完成后可开始听写";
+    } else if (this.shadowingSession) {
+      disabled = true;
+      label = `正在跟读第 ${this.shadowingSession.index + 1} 句`;
+    } else if (this.dictationSession) {
+      disabled = true;
+      label = `正在听写第 ${this.dictationSession.index + 1} 句`;
+    } else if (this.segmentActionTargetIndex < 0) {
+      disabled = true;
+      label = "请先选择要听写的字幕";
+    } else {
+      label = `听写第 ${this.segmentActionTargetIndex + 1} 句`;
+    }
+
+    button.disabled = disabled;
+    button.classList.toggle("is-active", this.dictationSession !== null);
+    this.setTranscriptActionLabel(button, label);
+  }
+
+  private canUseShadowingRecorder(): boolean {
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    return Boolean(
+      viewWindow?.navigator.mediaDevices?.getUserMedia &&
+      viewWindow.MediaRecorder
+    );
+  }
+
+  /** 跟读与听写共享播放器和字幕操作锁，同一时间只能进行一种练习。 */
+  private updateShadowingActionAvailability(): void {
+    const button = this.segmentShadowingButton;
+    if (!button) {
+      return;
+    }
+
+    let label: string;
+    let disabled = false;
+    if (this.plugin.capabilities.mobile) {
+      disabled = true;
+      label = "跟读录音暂时只支持电脑端";
+    } else if (!this.localVideoEl && !this.iframeEl) {
+      disabled = true;
+      label = "当前在线播放器无法逐句跟读，请先缓存视频";
+    } else if (!this.controlsActivated) {
+      disabled = true;
+      label = "播放器准备完成后可开始跟读";
+    } else if (!this.canUseShadowingRecorder()) {
+      disabled = true;
+      label = "当前环境无法使用麦克风录音";
+    } else if (this.translationBatchRunning) {
+      disabled = true;
+      label = "整篇翻译完成后可开始跟读";
+    } else if (this.translationViews[this.segmentActionTargetIndex]?.loading) {
+      disabled = true;
+      label = "当前句翻译完成后可开始跟读";
+    } else if (this.dictationSession) {
+      disabled = true;
+      label = `正在听写第 ${this.dictationSession.index + 1} 句`;
+    } else if (this.shadowingSession) {
+      disabled = true;
+      label = `正在跟读第 ${this.shadowingSession.index + 1} 句`;
+    } else if (this.segmentActionTargetIndex < 0) {
+      disabled = true;
+      label = "请先选择要跟读的字幕";
+    } else {
+      label = `跟读第 ${this.segmentActionTargetIndex + 1} 句`;
+    }
+
+    button.disabled = disabled;
+    button.classList.toggle("is-active", this.shadowingSession !== null);
+    this.setTranscriptActionLabel(button, label);
+  }
+
+  private startDictation(index: number): void {
+    const segment = this.transcript?.segments[index];
+    const row = this.segmentRows[index];
+    const content = row?.querySelector<HTMLElement>(".evs-segment-content");
+    if (
+      !segment ||
+      !row ||
+      !content ||
+      this.destroyed ||
+      this.dictationSession ||
+      this.shadowingSession
+    ) {
+      return;
+    }
+    if (
+      this.plugin.capabilities.mobile ||
+      (!this.localVideoEl && !this.iframeEl) ||
+      !this.controlsActivated
+    ) {
+      new Notice("当前播放器暂时无法进行逐句听写。", 4_000);
+      return;
+    }
+
+    this.selectSegmentForActions(index, true);
+    const panel = content.createDiv({ cls: "evs-dictation-panel" });
+    panel.setAttribute("aria-label", `第 ${index + 1} 句听写`);
+    panel.createDiv({
+      cls: "evs-dictation-prompt",
+      text: "请听音频并输入完整句子"
+    });
+    const sourcePlayer = panel.createDiv({ cls: "evs-shadowing-source-player" });
+    sourcePlayer.setAttribute("role", "group");
+    sourcePlayer.setAttribute("aria-label", "当前听写句播放控制");
+    const addSourceButton = (
+      label: string,
+      icon: string,
+      onClick: () => void,
+      options: { play?: boolean; seek?: boolean } = {}
+    ): HTMLButtonElement => {
+      const button = sourcePlayer.createEl("button", {
+        cls: [
+          "evs-button",
+          "evs-icon-button",
+          "evs-shadowing-source-button",
+          options.play ? "evs-play-button" : "",
+          options.seek ? "evs-seek-button" : ""
+        ].filter(Boolean).join(" ")
+      });
+      button.type = "button";
+      this.setControlIcon(button, icon, label);
+      if (options.seek) {
+        button.createSpan({ cls: "evs-seek-seconds", text: "2s" });
+      }
+      button.addEventListener("click", onClick);
+      return button;
+    };
+    addSourceButton(
+      "当前听写句后退 2 秒",
+      "rotate-ccw",
+      () => this.seekDictationSource(-SHADOWING_SEEK_STEP_SECONDS),
+      { seek: true }
+    );
+    const sourcePlayButton = addSourceButton(
+      "播放当前听写句",
+      "play",
+      () => this.toggleDictationSourcePlayback(),
+      { play: true }
+    );
+    addSourceButton(
+      "当前听写句前进 2 秒",
+      "rotate-cw",
+      () => this.seekDictationSource(SHADOWING_SEEK_STEP_SECONDS),
+      { seek: true }
+    );
+    const sourceTimeEl = sourcePlayer.createSpan({ cls: "evs-shadowing-source-time" });
+    const input = panel.createEl("textarea", {
+      cls: "evs-dictation-input",
+      attr: {
+        rows: "2",
+        placeholder: "输入你听到的英文句子……",
+        "aria-label": `输入第 ${index + 1} 句听写答案`,
+        autocapitalize: "off",
+        autocomplete: "off",
+        spellcheck: "false"
+      }
+    });
+    const actions = panel.createDiv({ cls: "evs-dictation-actions" });
+    const submitButton = actions.createEl("button", {
+      cls: "evs-button mod-cta",
+      text: "提交听写"
+    });
+    submitButton.type = "button";
+    submitButton.disabled = true;
+    const exitButton = actions.createEl("button", {
+      cls: "evs-button",
+      text: "退出听写"
+    });
+    exitButton.type = "button";
+
+    this.dictationSession = {
+      index,
+      panelEl: panel,
+      inputEl: input,
+      submitButton,
+      sourceTimeEl,
+      sourcePlayButton,
+      uiTimer: null,
+      phase: "input"
+    };
+    row.classList.add("is-dictating");
+    this.segmentActionTargetPinned = true;
+    this.timestampButtons.forEach((button) => (button.disabled = true));
+    this.segmentEditButton!.disabled = true;
+    this.translationViews.forEach((view) => this.updateTranslationView(view));
+    this.updateDictationActionAvailability();
+    this.updateShadowingActionAvailability();
+
+    const submit = (): void => {
+      const answer = input.value.trim();
+      if (!answer || this.dictationSession?.index !== index) {
+        return;
+      }
+      this.stopDictationPlayback();
+      this.renderDictationResult(index, answer, compareDictation(segment.text, answer));
+    };
+    input.addEventListener("input", () => {
+      submitButton.disabled = input.value.trim().length === 0;
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        submit();
+      }
+    });
+    submitButton.addEventListener("click", submit);
+    exitButton.addEventListener("click", () => this.closeDictation());
+
+    this.startDictationUiTimer(this.dictationSession);
+    this.playDictationSegment(index);
+    input.focus({ preventScroll: true });
+    this.scheduleTranscriptLayout(true);
+  }
+
+  private renderDictationResult(index: number, answer: string, result: DictationResult): void {
+    const session = this.dictationSession;
+    const row = this.segmentRows[index];
+    if (!session || session.index !== index || !row) {
+      return;
+    }
+
+    session.phase = "result";
+    this.clearDictationUiTimer(session);
+    session.inputEl = null;
+    session.submitButton = null;
+    session.sourceTimeEl = null;
+    session.sourcePlayButton = null;
+    session.panelEl.empty();
+    row.classList.remove("is-dictating");
+    row.classList.add("is-dictation-result");
+
+    const summary = session.panelEl.createDiv({ cls: "evs-dictation-summary" });
+    summary.setAttribute("role", "status");
+    summary.setAttribute("aria-live", "polite");
+    summary.createSpan({ cls: "evs-dictation-score", text: `${result.score} 分` });
+    summary.createSpan({
+      cls: "evs-dictation-score-note",
+      text: result.score === 100 ? "完全正确" : `共 ${result.distance} 处需要调整`
+    });
+
+    session.panelEl.createDiv({ cls: "evs-dictation-answer-label", text: "你的答案" });
+    session.panelEl.createDiv({ cls: "evs-dictation-answer", text: answer });
+    session.panelEl.createDiv({ cls: "evs-dictation-answer-label", text: "逐词对照" });
+    const comparison = session.panelEl.createDiv({ cls: "evs-dictation-comparison" });
+    for (const operation of result.operations) {
+      const token = comparison.createSpan({
+        cls: `evs-dictation-token is-${operation.kind}`
+      });
+      if (operation.kind === "match") {
+        token.createSpan({ text: operation.actual ?? "" });
+        token.createSpan({ cls: "evs-dictation-token-label", text: "正确" });
+      } else if (operation.kind === "substitution") {
+        token.createSpan({ text: operation.actual ?? "" });
+        token.createSpan({
+          cls: "evs-dictation-token-label",
+          text: `错写，应为 ${operation.expected ?? ""}`
+        });
+      } else if (operation.kind === "deletion") {
+        token.createSpan({ text: operation.expected ?? "" });
+        token.createSpan({ cls: "evs-dictation-token-label", text: "漏写" });
+      } else {
+        token.createSpan({ text: operation.actual ?? "" });
+        token.createSpan({ cls: "evs-dictation-token-label", text: "多写" });
+      }
+    }
+
+    const actions = session.panelEl.createDiv({ cls: "evs-dictation-actions" });
+    const retryButton = actions.createEl("button", {
+      cls: "evs-button mod-cta",
+      text: "重新听写"
+    });
+    retryButton.type = "button";
+    retryButton.addEventListener("click", () => {
+      this.closeDictation(false);
+      this.startDictation(index);
+    });
+
+    const nextIndex = index + 1;
+    if (nextIndex < (this.transcript?.segments.length ?? 0)) {
+      const nextButton = actions.createEl("button", {
+        cls: "evs-button",
+        text: "下一句"
+      });
+      nextButton.type = "button";
+      nextButton.addEventListener("click", () => {
+        this.closeDictation(false);
+        this.selectSegmentForActions(nextIndex, true);
+        this.startDictation(nextIndex);
+      });
+    }
+    const exitButton = actions.createEl("button", {
+      cls: "evs-button",
+      text: "退出听写"
+    });
+    exitButton.type = "button";
+    exitButton.addEventListener("click", () => this.closeDictation());
+    this.scheduleTranscriptLayout(true);
+  }
+
+  private closeDictation(restoreActions = true): void {
+    const session = this.dictationSession;
+    this.stopDictationPlayback();
+    if (!session) {
+      return;
+    }
+    this.clearDictationUiTimer(session);
+
+    const row = this.segmentRows[session.index];
+    row?.classList.remove("is-dictating", "is-dictation-result");
+    session.panelEl.remove();
+    this.dictationSession = null;
+    this.segmentActionTargetPinned = false;
+    this.segmentDictationButton?.classList.remove("is-active");
+    if (!this.destroyed && this.controlsActivated) {
+      this.timestampButtons.forEach((button) => (button.disabled = false));
+    }
+
+    if (!this.destroyed && restoreActions) {
+      this.selectSegmentForActions(session.index, false);
+      this.translationViews.forEach((view) => this.updateTranslationView(view));
+      this.scheduleTranscriptLayout(true);
+    } else if (!this.destroyed) {
+      this.segmentEditButton?.removeAttribute("disabled");
+      this.translationViews.forEach((view) => this.updateTranslationView(view));
+      this.updateDictationActionAvailability();
+      this.updateShadowingActionAvailability();
+    }
+  }
+
+  private playDictationSegment(index: number, restart = true): void {
+    const segment = this.transcript?.segments[index];
+    if (!segment || this.dictationSession?.index !== index || this.destroyed) {
+      return;
+    }
+    const current = this.getEstimatedCurrentTime();
+    const target = restart || current < segment.start || current >= segment.end - 0.02
+      ? segment.start
+      : current;
+    this.dictationPlaybackStopAt = segment.end;
+    this.clearPendingPlaybackCommand();
+    if (this.localVideoEl) {
+      void this.seekLocalVideoTo(target, true);
+      return;
+    }
+    if (!this.iframeEl) {
+      return;
+    }
+    this.setCurrentTime(target);
+    this.updateActiveSegment();
+    this.beginPlaybackCommand(PLAYER_STATE_PLAYING);
+    this.sendCommand("seekTo", [target, true]);
+    this.sendCommand("playVideo");
+    this.updateDictationSourceUi(this.dictationSession);
+  }
+
+  private toggleDictationSourcePlayback(): void {
+    const session = this.dictationSession;
+    if (!session || session.phase !== "input") {
+      return;
+    }
+    if (this.isPracticeSourcePlaying()) {
+      this.stopDictationPlayback();
+      this.updateDictationSourceUi(session);
+      return;
+    }
+    this.playDictationSegment(session.index, false);
+  }
+
+  private seekDictationSource(deltaSeconds: number): void {
+    const session = this.dictationSession;
+    const segment = session ? this.transcript?.segments[session.index] : null;
+    if (!session || session.phase !== "input" || !segment) {
+      return;
+    }
+    const shouldPlay = this.isPracticeSourcePlaying();
+    const target = clampShadowingPosition(
+      this.getEstimatedCurrentTime(),
+      deltaSeconds,
+      segment.start,
+      segment.end
+    );
+    this.dictationPlaybackStopAt = shouldPlay ? segment.end : null;
+    if (this.localVideoEl) {
+      void this.seekLocalVideoTo(target, shouldPlay);
+    } else if (this.iframeEl) {
+      this.clearPendingPlaybackCommand();
+      this.setCurrentTime(target);
+      this.updateActiveSegment();
+      this.sendCommand("seekTo", [target, true]);
+      if (shouldPlay) {
+        this.beginPlaybackCommand(PLAYER_STATE_PLAYING);
+        this.sendCommand("playVideo");
+      }
+    }
+    this.updateDictationSourceUi(session);
+  }
+
+  private startDictationUiTimer(session: DictationSession): void {
+    if (session.uiTimer !== null) {
+      return;
+    }
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    if (!viewWindow) {
+      return;
+    }
+    session.uiTimer = viewWindow.setInterval(() => {
+      if (this.dictationSession === session && !this.destroyed) {
+        this.updateDictationSourceUi(session);
+      }
+    }, 200);
+  }
+
+  private clearDictationUiTimer(session: DictationSession): void {
+    if (session.uiTimer !== null) {
+      window.clearInterval(session.uiTimer);
+      session.uiTimer = null;
+    }
+  }
+
+  private updateDictationSourceUi(session: DictationSession): void {
+    const segment = this.transcript?.segments[session.index];
+    if (!segment || this.dictationSession !== session || session.phase !== "input") {
+      return;
+    }
+    const current = clampShadowingPosition(
+      this.getEstimatedCurrentTime(),
+      0,
+      segment.start,
+      segment.end
+    );
+    session.sourceTimeEl?.setText(
+      `${formatShadowingElapsed((current - segment.start) * 1_000)} / ${formatShadowingElapsed((segment.end - segment.start) * 1_000)} · ${this.playbackRate}x`
+    );
+    if (session.sourcePlayButton) {
+      const sourcePlaying = this.isPracticeSourcePlaying();
+      this.setControlIcon(
+        session.sourcePlayButton,
+        sourcePlaying ? "pause" : "play",
+        sourcePlaying ? "暂停当前听写句" : "播放当前听写句"
+      );
+    }
+  }
+
+  private stopDictationPlayback(): void {
+    this.dictationPlaybackStopAt = null;
+    if (this.destroyed) {
+      return;
+    }
+    const currentTime = this.getEstimatedCurrentTime();
+    if (this.localVideoEl) {
+      this.localVideoEl.pause();
+      this.setCurrentTime(currentTime);
+      if (this.dictationSession) {
+        this.updateDictationSourceUi(this.dictationSession);
+      }
+      return;
+    }
+    if (!this.iframeEl) {
+      return;
+    }
+    this.clearPendingPlaybackCommand();
+    this.sendCommand("pauseVideo");
+    this.playerState = PLAYER_STATE_PAUSED;
+    this.setCurrentTime(currentTime);
+    this.setPlayPauseVisual("play");
+    if (this.dictationSession) {
+      this.updateDictationSourceUi(this.dictationSession);
+    }
+  }
+
+  /** 返回 true 表示本轮已在句尾暂停，调用方不再切换高亮到下一句。 */
+  private stopDictationPlaybackAtBoundary(): boolean {
+    const stopAt = this.dictationPlaybackStopAt;
+    if (!shouldStopDictationPlayback(this.getEstimatedCurrentTime(), stopAt)) {
+      return false;
+    }
+    if (stopAt === null) {
+      return false;
+    }
+    this.dictationPlaybackStopAt = null;
+    const finalTime = Math.max(0, stopAt - 0.01);
+    if (this.localVideoEl) {
+      this.localVideoEl.pause();
+    } else if (this.iframeEl) {
+      this.clearPendingPlaybackCommand();
+      this.sendCommand("pauseVideo");
+      this.playerState = PLAYER_STATE_PAUSED;
+      this.setPlayPauseVisual("play");
+    }
+    this.setCurrentTime(finalTime);
+    if (this.dictationSession) {
+      this.updateDictationSourceUi(this.dictationSession);
+    }
+    return true;
+  }
+
+  private startShadowing(index: number): void {
+    const segment = this.transcript?.segments[index];
+    const row = this.segmentRows[index];
+    const content = row?.querySelector<HTMLElement>(".evs-segment-content");
+    if (
+      !segment ||
+      !row ||
+      !content ||
+      this.destroyed ||
+      this.dictationSession ||
+      this.shadowingSession
+    ) {
+      return;
+    }
+    if (
+      this.plugin.capabilities.mobile ||
+      (!this.localVideoEl && !this.iframeEl) ||
+      !this.controlsActivated ||
+      !this.canUseShadowingRecorder()
+    ) {
+      new Notice("当前播放器或设备暂时无法进行逐句跟读。", 4_000);
+      return;
+    }
+
+    this.selectSegmentForActions(index, true);
+    const panel = content.createDiv({ cls: "evs-shadowing-panel" });
+    panel.setAttribute("aria-label", `第 ${index + 1} 句跟读录音`);
+    const statusEl = panel.createDiv({ cls: "evs-shadowing-status" });
+    statusEl.setAttribute("role", "status");
+    statusEl.setAttribute("aria-live", "polite");
+    this.shadowingSession = {
+      index,
+      panelEl: panel,
+      statusEl,
+      sourceTimeEl: null,
+      sourcePlayButton: null,
+      waveformCanvas: null,
+      phase: "listening",
+      syncSourceDuringRecording: false,
+      mediaRecorder: null,
+      mediaStream: null,
+      chunks: [],
+      audioEl: null,
+      recordingUrl: null,
+      recordingStartedAt: 0,
+      recordingAccumulatedMs: 0,
+      recordingSourcePosition: segment.start,
+      sourceEnded: false,
+      uiTimer: null,
+      limitTimer: null,
+      audioContext: null,
+      analyserNode: null,
+      audioSourceNode: null,
+      waveformFrame: null,
+      waveformSamples: null,
+      waveformPeaks: [],
+      requestGeneration: 0
+    };
+    row.classList.add("is-shadowing");
+    this.segmentActionTargetPinned = true;
+    this.timestampButtons.forEach((button) => (button.disabled = true));
+    this.segmentEditButton!.disabled = true;
+    this.translationViews.forEach((view) => this.updateTranslationView(view));
+    this.updateDictationActionAvailability();
+    this.updateShadowingActionAvailability();
+    this.renderShadowingPanel();
+    this.startShadowingUiTimer(this.shadowingSession);
+    this.playShadowingSegment(index);
+    this.scheduleTranscriptLayout(true);
+  }
+
+  private renderShadowingPanel(): void {
+    const session = this.shadowingSession;
+    if (!session || this.destroyed) {
+      return;
+    }
+
+    const panel = session.panelEl;
+    panel.classList.toggle("is-recording", session.phase === "recording");
+    panel.classList.toggle("is-paused", session.phase === "paused");
+    panel.classList.toggle("is-recorded", session.phase === "recorded");
+    panel.empty();
+
+    const sourcePlayer = panel.createDiv({ cls: "evs-shadowing-source-player" });
+    sourcePlayer.setAttribute("role", "group");
+    sourcePlayer.setAttribute("aria-label", "当前句播放控制");
+    const sourceControlsLocked = !canAdjustShadowingSource(session.phase);
+    const sourcePlaying = this.isPracticeSourcePlaying();
+    const addSourceButton = (
+      label: string,
+      icon: string,
+      onClick: () => void,
+      options: { disabled?: boolean; play?: boolean; seek?: boolean } = {}
+    ): HTMLButtonElement => {
+      const button = sourcePlayer.createEl("button", {
+        cls: [
+          "evs-button",
+          "evs-icon-button",
+          "evs-shadowing-source-button",
+          options.play ? "evs-play-button" : "",
+          options.seek ? "evs-seek-button" : ""
+        ].filter(Boolean).join(" ")
+      });
+      button.type = "button";
+      button.disabled = options.disabled ?? false;
+      this.setControlIcon(button, icon, label);
+      if (options.seek) {
+        button.createSpan({ cls: "evs-seek-seconds", text: "2s" });
+      }
+      button.addEventListener("click", onClick);
+      return button;
+    };
+    addSourceButton(
+      "当前句后退 2 秒",
+      "rotate-ccw",
+      () => this.seekShadowingSource(-SHADOWING_SEEK_STEP_SECONDS),
+      { disabled: sourceControlsLocked, seek: true }
+    );
+    session.sourcePlayButton = addSourceButton(
+      sourcePlaying ? "暂停当前句" : "播放当前句",
+      sourcePlaying ? "pause" : "play",
+      () => this.toggleShadowingSourcePlayback(),
+      { disabled: sourceControlsLocked, play: true }
+    );
+    addSourceButton(
+      "当前句前进 2 秒",
+      "rotate-cw",
+      () => this.seekShadowingSource(SHADOWING_SEEK_STEP_SECONDS),
+      { disabled: sourceControlsLocked, seek: true }
+    );
+    session.sourceTimeEl = sourcePlayer.createSpan({ cls: "evs-shadowing-source-time" });
+
+    if (
+      session.phase === "recording"
+      || session.phase === "paused"
+      || session.phase === "processing"
+      || session.phase === "recorded"
+    ) {
+      const waveform = panel.createDiv({ cls: "evs-shadowing-waveform" });
+      const canvas = waveform.createEl("canvas", { cls: "evs-shadowing-waveform-canvas" });
+      canvas.setAttribute("role", "img");
+      canvas.setAttribute("aria-label", session.phase === "recorded" ? "已录制的音频波形" : "实时麦克风音量波形");
+      session.waveformCanvas = canvas;
+      this.drawShadowingWaveform(session);
+    } else {
+      session.waveformCanvas = null;
+    }
+
+    const footer = panel.createDiv({ cls: "evs-shadowing-footer" });
+    const statusEl = footer.createDiv({ cls: "evs-shadowing-status" });
+    statusEl.setAttribute("role", "status");
+    statusEl.setAttribute("aria-live", "polite");
+    session.statusEl = statusEl;
+
+    if (session.phase === "listening" || session.phase === "ready") {
+      statusEl.setText(sourcePlaying
+        ? "原句播放中 · 现在录音将同步跟读"
+        : "原句已暂停 · 现在录音将只录人声");
+    } else if (session.phase === "requesting") {
+      statusEl.setText(session.syncSourceDuringRecording
+        ? "正在准备麦克风 · 将同步跟读…"
+        : "正在准备麦克风 · 将只录人声…");
+    } else if (session.phase === "recording") {
+      statusEl.addClass("is-recording");
+      statusEl.setText(`● 录音中 ${formatShadowingRecordingElapsed(this.getShadowingRecordingElapsed(session))}`);
+    } else if (session.phase === "paused") {
+      statusEl.addClass("is-paused");
+      statusEl.setText(`已暂停 ${formatShadowingRecordingElapsed(session.recordingAccumulatedMs)}`);
+    } else if (session.phase === "processing") {
+      statusEl.setText("正在生成录音…");
+    } else {
+      statusEl.setText("录音完成，可以播放对比");
+    }
+
+    const actions = footer.createDiv({ cls: "evs-shadowing-actions" });
+    const addButton = (
+      text: string,
+      onClick: () => void,
+      options: { cta?: boolean; disabled?: boolean } = {}
+    ): HTMLButtonElement => {
+      const button = actions.createEl("button", {
+        cls: options.cta ? "evs-button mod-cta" : "evs-button",
+        text
+      });
+      button.type = "button";
+      button.disabled = options.disabled ?? false;
+      button.addEventListener("click", onClick);
+      return button;
+    };
+
+    if (session.phase === "listening" || session.phase === "ready") {
+      addButton("开始录音", () => void this.startShadowingRecording(), { cta: true });
+    } else if (session.phase === "requesting") {
+      addButton("正在准备麦克风", () => undefined, { cta: true, disabled: true });
+    } else if (session.phase === "recording") {
+      addButton("暂停录音", () => this.pauseShadowingRecording(), { cta: true });
+      addButton("结束录音", () => this.finishShadowingRecording());
+    } else if (session.phase === "paused") {
+      addButton("继续录音", () => this.resumeShadowingRecording(), { cta: true });
+      addButton("结束录音", () => this.finishShadowingRecording());
+    } else if (session.phase === "processing") {
+      addButton("正在处理录音", () => undefined, { cta: true, disabled: true });
+    } else {
+      const isPlaying = Boolean(session.audioEl && !session.audioEl.paused);
+      addButton(isPlaying ? "暂停录音" : "播放录音", () => this.toggleShadowingRecording(), {
+        cta: true
+      });
+      addButton("重新录制", () => this.restartShadowingRecording());
+      const nextIndex = session.index + 1;
+      if (nextIndex < (this.transcript?.segments.length ?? 0)) {
+        addButton("下一句", () => {
+          this.closeShadowing(false);
+          this.selectSegmentForActions(nextIndex, true);
+          this.startShadowing(nextIndex);
+        });
+      }
+    }
+    addButton("退出跟读", () => this.closeShadowing());
+    this.scheduleTranscriptLayout(true);
+  }
+
+  private playShadowingSegment(index: number, restart = true): void {
+    const segment = this.transcript?.segments[index];
+    const session = this.shadowingSession;
+    if (!segment || !session || session.index !== index || this.destroyed) {
+      return;
+    }
+    if (
+      session.phase === "recording"
+      || session.phase === "paused"
+      || session.phase === "requesting"
+      || session.phase === "processing"
+    ) {
+      return;
+    }
+    this.pauseShadowingRecordingPlayback(session);
+    if (session.phase !== "recorded") {
+      session.phase = "listening";
+    }
+    const current = this.getEstimatedCurrentTime();
+    const target = restart || current < segment.start || current >= segment.end - 0.02
+      ? segment.start
+      : current;
+    this.startShadowingSourceAt(index, target);
+    this.renderShadowingPanel();
+  }
+
+  private startShadowingSourceAt(index: number, targetSeconds: number): void {
+    const segment = this.transcript?.segments[index];
+    const session = this.shadowingSession;
+    if (!segment || !session || session.index !== index || this.destroyed) {
+      return;
+    }
+    const target = clampShadowingPosition(targetSeconds, 0, segment.start, segment.end);
+    session.sourceEnded = false;
+    this.shadowingPlaybackStopAt = segment.end;
+    this.clearPendingPlaybackCommand();
+    if (this.localVideoEl) {
+      void this.seekLocalVideoTo(target, true);
+      return;
+    }
+    if (!this.iframeEl) {
+      return;
+    }
+    this.setCurrentTime(target);
+    this.updateActiveSegment();
+    this.beginPlaybackCommand(PLAYER_STATE_PLAYING);
+    this.sendCommand("seekTo", [target, true]);
+    this.sendCommand("playVideo");
+  }
+
+  private toggleShadowingSourcePlayback(): void {
+    const session = this.shadowingSession;
+    if (!session || !canAdjustShadowingSource(session.phase)) {
+      return;
+    }
+    if (this.isPracticeSourcePlaying()) {
+      this.stopShadowingSourcePlayback();
+      if (session.phase === "recording" || session.phase === "paused") {
+        session.syncSourceDuringRecording = false;
+      }
+      if (session.phase === "listening") {
+        session.phase = "ready";
+      }
+      this.renderShadowingPanel();
+      return;
+    }
+    if (session.phase === "recording" || session.phase === "paused") {
+      const segment = this.transcript?.segments[session.index];
+      if (!segment) {
+        return;
+      }
+      const current = this.getEstimatedCurrentTime();
+      const target = current < segment.start || current >= segment.end - 0.02
+        ? segment.start
+        : current;
+      session.syncSourceDuringRecording = true;
+      session.sourceEnded = false;
+      this.startShadowingSourceAt(session.index, target);
+      this.renderShadowingPanel();
+      return;
+    }
+    this.playShadowingSegment(session.index, false);
+  }
+
+  private seekShadowingSource(deltaSeconds: number): void {
+    const session = this.shadowingSession;
+    const segment = session ? this.transcript?.segments[session.index] : null;
+    if (
+      !session
+      || !segment
+      || session.phase === "requesting"
+      || session.phase === "processing"
+    ) {
+      return;
+    }
+    this.pauseShadowingRecordingPlayback(session);
+    const shouldPlay = this.isPracticeSourcePlaying();
+    const target = clampShadowingPosition(
+      this.getEstimatedCurrentTime(),
+      deltaSeconds,
+      segment.start,
+      segment.end
+    );
+    session.sourceEnded = target >= segment.end - 0.02;
+    this.shadowingPlaybackStopAt = shouldPlay ? segment.end : null;
+    if (this.localVideoEl) {
+      void this.seekLocalVideoTo(target, shouldPlay);
+    } else if (this.iframeEl) {
+      this.clearPendingPlaybackCommand();
+      this.setCurrentTime(target);
+      this.updateActiveSegment();
+      this.sendCommand("seekTo", [target, true]);
+      if (shouldPlay) {
+        this.beginPlaybackCommand(PLAYER_STATE_PLAYING);
+        this.sendCommand("playVideo");
+      }
+    }
+    this.updateShadowingLiveUi(session);
+  }
+
+  private isPracticeSourcePlaying(): boolean {
+    if (this.localVideoEl) {
+      return !this.localVideoEl.paused;
+    }
+    return this.playerState === PLAYER_STATE_PLAYING
+      || this.pendingPlaybackState === PLAYER_STATE_PLAYING;
+  }
+
+  private stopShadowingSourcePlayback(): void {
+    this.shadowingPlaybackStopAt = null;
+    if (this.destroyed) {
+      return;
+    }
+    const currentTime = this.getEstimatedCurrentTime();
+    if (this.localVideoEl) {
+      this.localVideoEl.pause();
+      this.setCurrentTime(currentTime);
+      return;
+    }
+    if (!this.iframeEl) {
+      return;
+    }
+    this.clearPendingPlaybackCommand();
+    this.sendCommand("pauseVideo");
+    this.playerState = PLAYER_STATE_PAUSED;
+    this.setCurrentTime(currentTime);
+    this.setPlayPauseVisual("play");
+  }
+
+  private stopShadowingPlaybackAtBoundary(): boolean {
+    const stopAt = this.shadowingPlaybackStopAt;
+    if (!shouldStopDictationPlayback(this.getEstimatedCurrentTime(), stopAt) || stopAt === null) {
+      return false;
+    }
+    this.shadowingPlaybackStopAt = null;
+    if (this.localVideoEl) {
+      this.localVideoEl.pause();
+    } else if (this.iframeEl) {
+      this.clearPendingPlaybackCommand();
+      this.sendCommand("pauseVideo");
+      this.playerState = PLAYER_STATE_PAUSED;
+      this.setPlayPauseVisual("play");
+    }
+    this.setCurrentTime(Math.max(0, stopAt - 0.01));
+    const session = this.shadowingSession;
+    if (session?.phase === "listening") {
+      session.phase = session.audioEl ? "recorded" : "ready";
+      this.renderShadowingPanel();
+    } else if (session?.phase === "recording" && session.syncSourceDuringRecording) {
+      session.sourceEnded = true;
+      this.updateShadowingLiveUi(session);
+    } else if (session?.phase === "paused") {
+      session.sourceEnded = true;
+      this.updateShadowingLiveUi(session);
+    } else if (session?.phase === "recorded") {
+      this.renderShadowingPanel();
+    }
+    return true;
+  }
+
+  private async startShadowingRecording(): Promise<void> {
+    const session = this.shadowingSession;
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    const Recorder = viewWindow?.MediaRecorder;
+    const mediaDevices = viewWindow?.navigator.mediaDevices;
+    if (
+      !session
+      || (session.phase !== "ready" && session.phase !== "listening")
+      || !Recorder
+      || !mediaDevices?.getUserMedia
+    ) {
+      return;
+    }
+
+    const segment = this.transcript?.segments[session.index];
+    if (!segment) {
+      return;
+    }
+    session.syncSourceDuringRecording = this.isPracticeSourcePlaying();
+    const currentPosition = this.getEstimatedCurrentTime();
+    session.recordingSourcePosition = currentPosition < segment.start || currentPosition >= segment.end - 0.02
+      ? segment.start
+      : currentPosition;
+    this.stopShadowingSourcePlayback();
+    this.releaseShadowingRecording(session);
+    session.recordingAccumulatedMs = 0;
+    session.phase = "requesting";
+    session.requestGeneration += 1;
+    const requestGeneration = session.requestGeneration;
+    this.renderShadowingPanel();
+
+    let stream: MediaStream | null = null;
+    try {
+      stream = await mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: false
+      });
+      if (
+        this.destroyed ||
+        this.shadowingSession !== session ||
+        session.requestGeneration !== requestGeneration
+      ) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      const mimeType = selectShadowingMimeType(
+        typeof Recorder.isTypeSupported === "function"
+          ? (type) => Recorder.isTypeSupported(type)
+          : null
+      );
+      const recorder = mimeType === ""
+        ? new Recorder(stream)
+        : new Recorder(stream, { mimeType });
+      session.mediaStream = stream;
+      session.mediaRecorder = recorder;
+      session.chunks = [];
+      this.setupShadowingWaveform(session, stream);
+      recorder.addEventListener("dataavailable", (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          session.chunks.push(event.data);
+        }
+      });
+      recorder.addEventListener("stop", () => this.completeShadowingRecording(session, recorder));
+      recorder.addEventListener("error", () => this.failShadowingRecording(session));
+      recorder.start(250);
+      session.recordingStartedAt = Date.now();
+      session.phase = "recording";
+      this.renderShadowingPanel();
+      this.startShadowingWaveformAnimation(session);
+      this.scheduleShadowingRecordingLimit(session);
+      if (session.syncSourceDuringRecording) {
+        session.sourceEnded = false;
+        this.startShadowingSourceAt(session.index, session.recordingSourcePosition);
+      }
+    } catch (error) {
+      stream?.getTracks().forEach((track) => track.stop());
+      if (this.shadowingSession === session && session.requestGeneration === requestGeneration) {
+        this.releaseShadowingAudioGraph(session);
+        session.mediaStream = null;
+        session.mediaRecorder = null;
+        session.syncSourceDuringRecording = false;
+        session.phase = "ready";
+        this.renderShadowingPanel();
+        new Notice(getShadowingRecordingErrorMessage(error), 8_000);
+      }
+    }
+  }
+
+  /** 已完成录音后直接开始下一次录制，不再要求用户重复点击“开始录音”。 */
+  private restartShadowingRecording(): void {
+    const session = this.shadowingSession;
+    if (!session || session.phase !== "recorded") {
+      return;
+    }
+    this.releaseShadowingRecording(session);
+    session.recordingAccumulatedMs = 0;
+    session.syncSourceDuringRecording = false;
+    session.phase = "ready";
+    this.renderShadowingPanel();
+    void this.startShadowingRecording();
+  }
+
+  private pauseShadowingRecording(): void {
+    const session = this.shadowingSession;
+    const recorder = session?.mediaRecorder;
+    if (!session || session.phase !== "recording" || !recorder) {
+      return;
+    }
+    try {
+      recorder.pause();
+    } catch {
+      this.failShadowingRecording(session);
+      return;
+    }
+    session.recordingAccumulatedMs = this.getShadowingRecordingElapsed(session);
+    this.captureShadowingWaveformToElapsed(session, session.recordingAccumulatedMs);
+    this.clearShadowingRecordingLimit(session);
+    this.stopShadowingWaveformAnimation(session);
+    if (session.syncSourceDuringRecording) {
+      this.stopShadowingSourcePlayback();
+    }
+    session.phase = "paused";
+    this.renderShadowingPanel();
+  }
+
+  private resumeShadowingRecording(): void {
+    const session = this.shadowingSession;
+    const recorder = session?.mediaRecorder;
+    if (!session || session.phase !== "paused" || !recorder) {
+      return;
+    }
+    try {
+      recorder.resume();
+    } catch {
+      this.failShadowingRecording(session);
+      return;
+    }
+    session.recordingStartedAt = Date.now();
+    session.phase = "recording";
+    this.renderShadowingPanel();
+    this.startShadowingWaveformAnimation(session);
+    this.scheduleShadowingRecordingLimit(session);
+    if (session.syncSourceDuringRecording && !session.sourceEnded) {
+      const current = this.getEstimatedCurrentTime();
+      this.startShadowingSourceAt(session.index, current);
+    }
+  }
+
+  private finishShadowingRecording(): void {
+    const session = this.shadowingSession;
+    const recorder = session?.mediaRecorder;
+    if (
+      !session
+      || (session.phase !== "recording" && session.phase !== "paused")
+      || !recorder
+    ) {
+      return;
+    }
+    if (session.phase === "recording") {
+      session.recordingAccumulatedMs = this.getShadowingRecordingElapsed(session);
+      this.captureShadowingWaveformToElapsed(session, session.recordingAccumulatedMs);
+    }
+    this.clearShadowingRecordingLimit(session);
+    this.stopShadowingWaveformAnimation(session);
+    this.stopShadowingSourcePlayback();
+    session.phase = "processing";
+    this.renderShadowingPanel();
+    try {
+      recorder.stop();
+    } catch {
+      this.failShadowingRecording(session);
+    }
+  }
+
+  private completeShadowingRecording(session: ShadowingSession, recorder: MediaRecorder): void {
+    this.clearShadowingRecordingLimit(session);
+    this.releaseShadowingAudioGraph(session);
+    this.stopShadowingTracks(session);
+    session.mediaRecorder = null;
+    if (
+      this.shadowingSession !== session ||
+      this.destroyed ||
+      session.phase !== "processing"
+    ) {
+      return;
+    }
+    const chunks = session.chunks.filter((chunk) => chunk.size > 0);
+    session.chunks = [];
+    if (chunks.length === 0) {
+      session.phase = "ready";
+      this.renderShadowingPanel();
+      new Notice("没有录到声音，请检查麦克风后重新录制。", 5_000);
+      return;
+    }
+
+    const mimeType = recorder.mimeType || chunks[0].type || "audio/webm";
+    const blob = new Blob(chunks, { type: mimeType });
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    const objectUrl = (viewWindow?.URL ?? URL).createObjectURL(blob);
+    const audio = this.containerEl.createEl("audio");
+    audio.detach();
+    // WebM 录音首次播放时可能仍在解析时长，提前加载可减少解码等待。
+    audio.preload = "auto";
+    audio.src = objectUrl;
+    audio.addEventListener("ended", () => {
+      if (this.shadowingSession === session && session.phase === "recorded") {
+        this.stopShadowingWaveformAnimation(session);
+        this.renderShadowingPanel();
+      }
+    });
+    audio.addEventListener("loadedmetadata", () => {
+      if (this.shadowingSession === session && session.phase === "recorded") {
+        this.drawShadowingWaveform(session);
+      }
+    });
+    session.audioEl = audio;
+    session.recordingUrl = objectUrl;
+    session.phase = "recorded";
+    audio.load();
+    this.renderShadowingPanel();
+  }
+
+  private failShadowingRecording(session: ShadowingSession): void {
+    this.clearShadowingRecordingLimit(session);
+    this.stopShadowingSourcePlayback();
+    this.releaseShadowingAudioGraph(session);
+    this.stopShadowingTracks(session);
+    session.mediaRecorder = null;
+    session.chunks = [];
+    session.recordingAccumulatedMs = 0;
+    session.syncSourceDuringRecording = false;
+    if (this.shadowingSession !== session || this.destroyed) {
+      return;
+    }
+    session.phase = "ready";
+    this.renderShadowingPanel();
+    new Notice("录音过程发生错误，请重新录制。", 5_000);
+  }
+
+  private toggleShadowingRecording(): void {
+    const session = this.shadowingSession;
+    const audio = session?.audioEl;
+    if (!session || session.phase !== "recorded" || !audio) {
+      return;
+    }
+    this.stopShadowingSourcePlayback();
+    if (audio.paused) {
+      void audio.play()
+        .then(() => {
+          this.renderShadowingPanel();
+          this.startShadowingWaveformAnimation(session);
+        })
+        .catch(() => new Notice("录音播放失败，请重新录制后再试。", 5_000));
+    } else {
+      audio.pause();
+      this.stopShadowingWaveformAnimation(session);
+      this.renderShadowingPanel();
+    }
+  }
+
+  private pauseShadowingRecordingPlayback(session: ShadowingSession): void {
+    if (session.audioEl && !session.audioEl.paused) {
+      session.audioEl.pause();
+    }
+    this.stopShadowingWaveformAnimation(session);
+  }
+
+  private getShadowingRecordingElapsed(session: ShadowingSession): number {
+    return getShadowingActiveElapsedMs(
+      session.recordingAccumulatedMs,
+      session.recordingStartedAt,
+      Date.now(),
+      session.phase === "recording"
+    );
+  }
+
+  private startShadowingUiTimer(session: ShadowingSession): void {
+    if (session.uiTimer !== null) {
+      return;
+    }
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    if (!viewWindow) {
+      return;
+    }
+    session.uiTimer = viewWindow.setInterval(() => {
+      if (this.shadowingSession === session && !this.destroyed) {
+        this.updateShadowingLiveUi(session);
+      }
+    }, 50);
+  }
+
+  private updateShadowingLiveUi(session: ShadowingSession): void {
+    const segment = this.transcript?.segments[session.index];
+    if (!segment || this.shadowingSession !== session) {
+      return;
+    }
+    const current = clampShadowingPosition(
+      this.getEstimatedCurrentTime(),
+      0,
+      segment.start,
+      segment.end
+    );
+    session.sourceTimeEl?.setText(
+      `${formatShadowingElapsed((current - segment.start) * 1_000)} / ${formatShadowingElapsed((segment.end - segment.start) * 1_000)} · ${this.playbackRate}x`
+    );
+    if (session.sourcePlayButton) {
+      const sourcePlaying = this.isPracticeSourcePlaying();
+      this.setControlIcon(
+        session.sourcePlayButton,
+        sourcePlaying ? "pause" : "play",
+        sourcePlaying ? "暂停当前句" : "播放当前句"
+      );
+    }
+    if (session.phase === "recording") {
+      const sourceEnded = session.syncSourceDuringRecording
+        && session.sourceEnded;
+      session.statusEl.setText(
+        `● 录音中 ${formatShadowingRecordingElapsed(this.getShadowingRecordingElapsed(session))}${sourceEnded ? " · 原句已播放完" : ""}`
+      );
+    } else if (session.phase === "paused") {
+      session.statusEl.setText(`已暂停 ${formatShadowingRecordingElapsed(session.recordingAccumulatedMs)}`);
+    }
+    if (session.phase === "recorded" && session.audioEl && !session.audioEl.paused) {
+      this.drawShadowingWaveform(session);
+    }
+  }
+
+  private scheduleShadowingRecordingLimit(session: ShadowingSession): void {
+    this.clearShadowingRecordingLimit(session);
+    const remainingMs = Math.max(0, SHADOWING_MAX_RECORDING_MS - session.recordingAccumulatedMs);
+    session.limitTimer = window.setTimeout(() => {
+      if (this.shadowingSession === session && session.phase === "recording") {
+        new Notice("录音已达到 60 秒，已自动结束。", 4_000);
+        this.finishShadowingRecording();
+      }
+    }, remainingMs);
+  }
+
+  private clearShadowingRecordingLimit(session: ShadowingSession): void {
+    if (session.limitTimer !== null) {
+      window.clearTimeout(session.limitTimer);
+      session.limitTimer = null;
+    }
+  }
+
+  private clearShadowingSessionTimers(session: ShadowingSession): void {
+    this.clearShadowingRecordingLimit(session);
+    if (session.uiTimer !== null) {
+      window.clearInterval(session.uiTimer);
+      session.uiTimer = null;
+    }
+  }
+
+  private setupShadowingWaveform(session: ShadowingSession, stream: MediaStream): void {
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    const AudioContextConstructor = viewWindow?.AudioContext;
+    if (!AudioContextConstructor) {
+      return;
+    }
+    try {
+      const audioContext = new AudioContextConstructor();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.72;
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      session.audioContext = audioContext;
+      session.analyserNode = analyser;
+      session.audioSourceNode = source;
+      session.waveformSamples = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+      if (audioContext.state === "suspended") {
+        void audioContext.resume().catch(() => undefined);
+      }
+    } catch {
+      this.releaseShadowingAudioGraph(session);
+    }
+  }
+
+  private startShadowingWaveformAnimation(session: ShadowingSession): void {
+    if (session.waveformFrame !== null) {
+      return;
+    }
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    if (!viewWindow) {
+      return;
+    }
+    const drawFrame = (): void => {
+      session.waveformFrame = null;
+      if (this.shadowingSession !== session || this.destroyed) {
+        return;
+      }
+      if (session.phase === "recording") {
+        this.captureShadowingWaveformToElapsed(
+          session,
+          this.getShadowingRecordingElapsed(session)
+        );
+      }
+      this.drawShadowingWaveform(session);
+      const shouldContinue = session.phase === "recording"
+        || (session.phase === "recorded" && Boolean(session.audioEl && !session.audioEl.paused));
+      if (shouldContinue) {
+        session.waveformFrame = viewWindow.requestAnimationFrame(drawFrame);
+      }
+    };
+    session.waveformFrame = viewWindow.requestAnimationFrame(drawFrame);
+  }
+
+  /**
+   * 浏览器绘制掉帧时补齐缺失的时间槽，避免录音越长，进度线越领先波形。
+   * 缺失槽使用前后两个真实峰值平滑插值，不会改变录音文件本身。
+   */
+  private captureShadowingWaveformToElapsed(
+    session: ShadowingSession,
+    elapsedMs: number
+  ): void {
+    if (!session.analyserNode || !session.waveformSamples) {
+      return;
+    }
+    const targetSampleCount = getShadowingWaveformTargetSampleCount(elapsedMs);
+    const missingSampleCount = targetSampleCount - session.waveformPeaks.length;
+    if (missingSampleCount <= 0) {
+      return;
+    }
+
+    session.analyserNode.getByteTimeDomainData(session.waveformSamples);
+    const nextPeak = calculateShadowingWaveformPeak(session.waveformSamples);
+    const previousPeak = session.waveformPeaks.at(-1) ?? nextPeak;
+    for (let index = 1; index <= missingSampleCount; index += 1) {
+      const progress = index / missingSampleCount;
+      session.waveformPeaks.push(
+        previousPeak + (nextPeak - previousPeak) * progress
+      );
+    }
+  }
+
+  private stopShadowingWaveformAnimation(session: ShadowingSession): void {
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    if (session.waveformFrame !== null && viewWindow) {
+      viewWindow.cancelAnimationFrame(session.waveformFrame);
+    }
+    session.waveformFrame = null;
+    this.drawShadowingWaveform(session);
+  }
+
+  private drawShadowingWaveform(session: ShadowingSession): void {
+    const canvas = session.waveformCanvas;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) {
+      return;
+    }
+    const viewWindow = canvas.ownerDocument.defaultView;
+    const ratio = Math.max(1, viewWindow?.devicePixelRatio ?? 1);
+    const width = Math.max(280, Math.floor(canvas.clientWidth || 640));
+    const height = Math.max(56, Math.floor(canvas.clientHeight || 56));
+    const pixelWidth = Math.floor(width * ratio);
+    const pixelHeight = Math.floor(height * ratio);
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, width, height);
+    const styles = viewWindow?.getComputedStyle(canvas);
+    context.strokeStyle = styles?.color || "#6b7280";
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.moveTo(0, height / 2);
+    context.lineTo(width, height / 2);
+    context.stroke();
+
+    const peaks = session.waveformPeaks;
+    const isLiveWaveform = session.phase === "recording" || session.phase === "paused";
+    const liveSampleCapacity = getShadowingWaveformTargetSampleCount(
+      SHADOWING_MAX_RECORDING_MS
+    );
+    const liveLayout = getShadowingLiveWaveformLayout(
+      peaks.length,
+      liveSampleCapacity
+    );
+    if (peaks.length > 0) {
+      const barWidth = isLiveWaveform
+        ? width / liveLayout.slotCount
+        : 4;
+      const samplesPerBar = isLiveWaveform
+        ? getShadowingWaveformBinSize(barWidth)
+        : Math.max(1, peaks.length / Math.max(1, Math.floor(width / barWidth)));
+      const barCount = isLiveWaveform
+        ? Math.ceil(liveLayout.visibleCount / samplesPerBar)
+        : Math.min(peaks.length, Math.max(1, Math.floor(width / barWidth)));
+      context.beginPath();
+      for (let index = 0; index < barCount; index += 1) {
+        const groupStart = isLiveWaveform
+          ? liveLayout.startIndex + index * samplesPerBar
+          : Math.floor(index * samplesPerBar);
+        const groupEnd = Math.min(
+          isLiveWaveform
+            ? liveLayout.startIndex + liveLayout.visibleCount
+            : peaks.length,
+          Math.ceil(groupStart + samplesPerBar)
+        );
+        let peak = 0;
+        for (let peakIndex = groupStart; peakIndex < groupEnd; peakIndex += 1) {
+          peak = Math.max(peak, peaks[peakIndex] ?? 0);
+        }
+        const barHeight = peak * (height - 12);
+        // 静音与底噪不绘制最小竖线，避免密集采样叠加后把已走过的中线加粗。
+        if (barHeight < 2) {
+          continue;
+        }
+        const x = isLiveWaveform
+          ? (liveLayout.startSlot + index * samplesPerBar + samplesPerBar / 2) * barWidth
+          : index * barWidth + barWidth / 2;
+        context.moveTo(x, (height - barHeight) / 2);
+        context.lineTo(x, (height + barHeight) / 2);
+      }
+      context.stroke();
+    }
+
+    let playheadRatio = session.phase === "recorded"
+      ? 0
+      : isLiveWaveform
+        ? getShadowingRecordingProgress(
+          session.phase === "recording"
+            ? this.getShadowingRecordingElapsed(session)
+            : session.recordingAccumulatedMs
+        )
+        : 1;
+    const audio = session.audioEl;
+    if (session.phase === "recorded" && audio) {
+      playheadRatio = getShadowingPlaybackProgress(
+        audio.currentTime,
+        audio.duration,
+        session.recordingAccumulatedMs,
+        audio.ended
+      );
+    }
+    const accent = styles?.getPropertyValue("--interactive-accent").trim() || "#3b82f6";
+    context.strokeStyle = accent;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(width * playheadRatio, 0);
+    context.lineTo(width * playheadRatio, height);
+    context.stroke();
+  }
+
+  private releaseShadowingAudioGraph(session: ShadowingSession): void {
+    this.stopShadowingWaveformAnimation(session);
+    try {
+      session.audioSourceNode?.disconnect();
+      session.analyserNode?.disconnect();
+    } catch {
+      // 某些 Chromium 版本在音轨结束后会提前断开节点。
+    }
+    if (session.audioContext && session.audioContext.state !== "closed") {
+      void session.audioContext.close().catch(() => undefined);
+    }
+    session.audioContext = null;
+    session.analyserNode = null;
+    session.audioSourceNode = null;
+    session.waveformSamples = null;
+  }
+
+  private stopShadowingTracks(session: ShadowingSession): void {
+    session.mediaStream?.getTracks().forEach((track) => track.stop());
+    session.mediaStream = null;
+  }
+
+  private releaseShadowingRecording(session: ShadowingSession): void {
+    this.pauseShadowingRecordingPlayback(session);
+    if (session.audioEl) {
+      session.audioEl.removeAttribute("src");
+      session.audioEl.load();
+      session.audioEl = null;
+    }
+    if (session.recordingUrl) {
+      const viewWindow = this.containerEl.ownerDocument.defaultView;
+      (viewWindow?.URL ?? URL).revokeObjectURL(session.recordingUrl);
+      session.recordingUrl = null;
+    }
+    session.waveformPeaks = [];
+    this.drawShadowingWaveform(session);
+  }
+
+  private closeShadowing(restoreActions = true): void {
+    const session = this.shadowingSession;
+    this.stopShadowingSourcePlayback();
+    if (!session) {
+      return;
+    }
+
+    session.requestGeneration += 1;
+    this.clearShadowingSessionTimers(session);
+    this.releaseShadowingAudioGraph(session);
+    if (session.mediaRecorder && session.mediaRecorder.state !== "inactive") {
+      try {
+        session.mediaRecorder.stop();
+      } catch {
+        // 卸载或快速退出时录音器可能已经停止，继续执行资源清理即可。
+      }
+    }
+    session.mediaRecorder = null;
+    this.stopShadowingTracks(session);
+    this.releaseShadowingRecording(session);
+    session.chunks = [];
+    const row = this.segmentRows[session.index];
+    row?.classList.remove("is-shadowing");
+    session.panelEl.remove();
+    this.shadowingSession = null;
+    this.segmentActionTargetPinned = false;
+    this.segmentShadowingButton?.classList.remove("is-active");
+    if (!this.destroyed && this.controlsActivated) {
+      this.timestampButtons.forEach((button) => (button.disabled = false));
+    }
+
+    if (!this.destroyed && restoreActions) {
+      this.selectSegmentForActions(session.index, false);
+      this.translationViews.forEach((view) => this.updateTranslationView(view));
+      this.scheduleTranscriptLayout(true);
+    } else if (!this.destroyed) {
+      this.segmentEditButton?.removeAttribute("disabled");
+      this.translationViews.forEach((view) => this.updateTranslationView(view));
+      this.updateDictationActionAvailability();
+      this.updateShadowingActionAvailability();
+    }
   }
 
   private openSegmentEditor(index: number): void {
@@ -1506,9 +3264,11 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     const hasOutput = Boolean(currentStudyEntry || view.entry);
     const wholeTranscriptPending =
       this.plugin.settings.translateWholeTranscript && this.getPendingTranslationIndices().length > 0;
-    view.primaryButton.disabled = view.loading || this.translationBatchRunning;
-    view.retranslateButton.disabled = view.loading || this.translationBatchRunning;
-    view.supplementButton.disabled = view.loading || this.translationBatchRunning;
+    const practiceActive = this.dictationSession !== null || this.shadowingSession !== null;
+    view.primaryButton.disabled =
+      view.loading || this.translationBatchRunning || practiceActive;
+    view.retranslateButton.disabled = view.loading || this.translationBatchRunning || practiceActive;
+    view.supplementButton.disabled = view.loading || this.translationBatchRunning || practiceActive;
     view.primaryButton.setAttribute("aria-expanded", view.visible.toString());
     view.primaryButton.classList.toggle("is-expanded", view.visible);
     view.primaryButton.classList.toggle(
@@ -1580,6 +3340,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       view.statusEl.classList.remove("is-warning");
       view.statusEl.hide();
     }
+    if (this.translationViews[this.segmentActionTargetIndex] === view) {
+      this.updateDictationActionAvailability();
+      this.updateShadowingActionAvailability();
+    }
     this.scheduleTranscriptLayout(true);
   }
 
@@ -1634,6 +3398,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.translationBatchRunning = true;
     this.segmentActionDockEl?.setAttribute("aria-busy", "true");
     this.translationViews.forEach((view) => this.updateTranslationView(view));
+    this.updateDictationActionAvailability();
+    this.updateShadowingActionAvailability();
     new Notice(`开始翻译整篇文稿，共 ${pendingIndices.length} 句；已有结果会自动跳过。`, 5_000);
 
     let succeeded = 0;
@@ -1662,6 +3428,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       this.segmentActionDockEl?.removeAttribute("aria-busy");
       if (!this.destroyed) {
         this.translationViews.forEach((view) => this.updateTranslationView(view));
+        this.updateDictationActionAvailability();
+        this.updateShadowingActionAvailability();
       }
     }
 
@@ -2087,6 +3855,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (this.pollTimer === null) {
       this.pollTimer = window.setInterval(() => this.updateActiveSegment(), 250);
     }
+    this.updateDictationActionAvailability();
+    this.updateShadowingActionAvailability();
     this.updateActiveSegment();
   }
 
@@ -2359,10 +4129,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       return;
     }
 
-    let targetOrigin: string;
-    try {
-      targetOrigin = new URL(iframe.src).origin;
-    } catch {
+    const targetOrigin = this.playerMessageTargetOrigin;
+    if (!targetOrigin) {
       return;
     }
 
@@ -2436,6 +4204,22 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       return;
     }
     if (!this.iframeEl) {
+      return;
+    }
+
+    if (this.plugin.capabilities.mobile) {
+      const nextSrc = buildMobileYouTubeStartUrl(this.iframeEl.src, seconds);
+      if (!nextSrc) {
+        this.setStatusText("移动端时间戳跳转失败，请使用打开原视频按钮。", false);
+        return;
+      }
+      this.setCurrentTime(seconds);
+      this.updateActiveSegment();
+      this.iframeEl.src = nextSrc;
+      this.setStatusText(
+        `已跳转到 ${formatTimestamp(seconds)} · 正在尝试继续播放`,
+        false
+      );
       return;
     }
 
@@ -2603,6 +4387,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private updateActiveSegment(): void {
     const segments = this.transcript?.segments;
     if (!segments) {
+      return;
+    }
+    if (this.stopDictationPlaybackAtBoundary() || this.stopShadowingPlaybackAtBoundary()) {
       return;
     }
 
@@ -2936,6 +4723,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
 export default class LinguaStudyPlugin extends Plugin {
   settings: LinguaStudySettings = { ...DEFAULT_SETTINGS };
+  readonly capabilities: PlatformCapabilities = getPlatformCapabilities();
   private translationService: TranslationService | null = null;
   private translationCacheStore: TranslationCacheStore | null = null;
   private studyCacheStore: StudyCacheStore | null = null;
@@ -2978,30 +4766,54 @@ export default class LinguaStudyPlugin extends Plugin {
     this.translationCacheStore = new TranslationCacheStore(this.app);
     this.studyCacheStore = new StudyCacheStore(this.app);
     this.vocabularyStore = new VocabularyStore(this.app);
-    this.fullDictionaryService = new FullDictionaryService();
-    const fullDictionaryStatus = await this.fullDictionaryService.initialize();
-    this.offlineDictionary.setExternalShardFolder(
-      fullDictionaryStatus.installed ? fullDictionaryStatus.cacheFolder : null
-    );
+    let ytDlpFetcher: YtDlpTranscriptFetcher | null = null;
+    if (this.capabilities.desktop) {
+      const [
+        { FullDictionaryService },
+        { BilibiliCacheService },
+        { LocalWhisperService },
+        { removeLegacyWhisperCachesOnce },
+        { fetchTranscriptWithYtDlp }
+      ] = await Promise.all([
+        import("./full-dictionary"),
+        import("./bilibili-cache"),
+        import("./local-whisper"),
+        import("./legacy-whisper-cleanup"),
+        import("./yt-dlp")
+      ]);
+      this.fullDictionaryService = new FullDictionaryService();
+      const fullDictionaryStatus = await this.fullDictionaryService.initialize();
+      this.offlineDictionary.setExternalShardLoader(
+        fullDictionaryStatus.installed
+          ? (key) => this.fullDictionaryService?.readCompressedShard(key) ?? null
+          : null
+      );
+      this.bilibiliCacheService = new BilibiliCacheService();
+      this.localWhisperService = new LocalWhisperService(this.bilibiliCacheService);
+      ytDlpFetcher = fetchTranscriptWithYtDlp;
+      try {
+        await removeLegacyWhisperCachesOnce();
+      } catch {
+        new Notice("旧版本地语音识别缓存清理失败，下次启动会继续尝试；不影响插件使用。", 8_000);
+      }
+    }
     this.registerView(
       DICTIONARY_VIEW_TYPE,
       (leaf) => new LinguaDictionaryView(leaf, this)
     );
-    this.youtubeImporter = new YouTubeImportController(this.app, () => this.settings);
-    this.bilibiliCacheService = new BilibiliCacheService();
+    this.youtubeImporter = new YouTubeImportController(
+      this.app,
+      () => this.settings,
+      ytDlpFetcher
+    );
     this.bilibiliSessionService = new BilibiliSessionService();
-    this.localWhisperService = new LocalWhisperService(this.bilibiliCacheService);
-    try {
-      await removeLegacyWhisperCachesOnce();
-    } catch {
-      new Notice("旧版本地语音识别缓存清理失败，下次启动会继续尝试；不影响插件使用。", 8_000);
-    }
     this.bilibiliImporter = new BilibiliImportController(
       this.app,
       this.bilibiliCacheService,
       this.bilibiliSessionService,
       () => this.settings,
       this.localWhisperService,
+      this.capabilities.bilibiliLogin,
       (transcriptPath, videoId, segments, chinese, sourceLabel) =>
         this.saveImportedDocumentTranslations(
           transcriptPath,
@@ -3426,21 +5238,26 @@ export default class LinguaStudyPlugin extends Plugin {
   }
 
   getFullDictionaryStatus(): FullDictionaryStatus {
-    return this.getFullDictionaryService().getStatus();
+    return this.fullDictionaryService?.getStatus() ?? {
+      installed: false,
+      manifest: null,
+      cacheFolder: ""
+    };
   }
 
   async installFullDictionary(
     onProgress: (message: string) => void
   ): Promise<FullDictionaryInstallResult> {
-    const result = await this.getFullDictionaryService().install(onProgress);
-    this.offlineDictionary.setExternalShardFolder(result.shardFolder);
+    const service = this.getFullDictionaryService();
+    const result = await service.install(onProgress);
+    this.offlineDictionary.setExternalShardLoader((key) => service.readCompressedShard(key));
     this.refreshDictionaryViews();
     return result;
   }
 
   async clearFullDictionary(): Promise<void> {
     await this.getFullDictionaryService().clear();
-    this.offlineDictionary.setExternalShardFolder(null);
+    this.offlineDictionary.setExternalShardLoader(null);
     this.refreshDictionaryViews();
   }
 
@@ -3449,7 +5266,7 @@ export default class LinguaStudyPlugin extends Plugin {
   }
 
   getDictionarySourceLabel(): string {
-    const manifest = this.getFullDictionaryService().getStatus().manifest;
+    const manifest = this.fullDictionaryService?.getStatus().manifest ?? null;
     return manifest
       ? `ECDICT 完整版 · ${manifest.entryCount.toLocaleString()} 词条`
       : `ECDICT 精简版 · ${DICTIONARY_SOURCE.entryCount.toLocaleString()} 词条`;
@@ -3533,6 +5350,160 @@ export default class LinguaStudyPlugin extends Plugin {
 
   async loadVocabularyBook(): Promise<VocabularyBookLoadResult> {
     return this.getVocabularyStore().load();
+  }
+
+  async exportVocabularyBookToNote(): Promise<VocabularyExportWriteResult> {
+    const loaded = await this.getVocabularyStore().load();
+    if (loaded.warning) {
+      throw new Error(loaded.warning);
+    }
+    if (Object.keys(loaded.book.entries).length === 0) {
+      throw new Error("生词本为空，暂时没有可以导出的单词。");
+    }
+    const storage: VocabularyExportStorage = {
+      inspect: (path) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (node === null) {
+          return null;
+        }
+        if (node instanceof TFile) {
+          return "file";
+        }
+        if (node instanceof TFolder) {
+          return "folder";
+        }
+        throw new Error(`无法识别导出路径类型：${path}`);
+      },
+      read: async (path) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) {
+          throw new Error(`无法读取导出笔记：${path}`);
+        }
+        return this.app.vault.cachedRead(node);
+      },
+      createFolder: async (path) => {
+        await this.app.vault.createFolder(normalizePath(path));
+      },
+      createFile: async (path, content) => {
+        await this.app.vault.create(normalizePath(path), content);
+      },
+      updateFile: async (path, content) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) {
+          throw new Error(`无法更新导出笔记：${path}`);
+        }
+        await this.app.vault.modify(node, content);
+      }
+    };
+    const result = await writeVocabularyExport(storage, loaded.book, new Date());
+    const exported = this.app.vault.getAbstractFileByPath(normalizePath(result.path));
+    if (!(exported instanceof TFile)) {
+      throw new Error("生词本笔记已经写入，但暂时无法打开，请在文件列表中手动打开。");
+    }
+    await this.openVocabularyExportFile(exported);
+    return result;
+  }
+
+  async exportVocabularyBookToImages(): Promise<VocabularyImageExportResult> {
+    if (!this.capabilities.desktop) {
+      throw new Error("移动端暂不支持生词本长图导出，请在电脑端使用。");
+    }
+    const loaded = await this.getVocabularyStore().load();
+    if (loaded.warning) {
+      throw new Error(loaded.warning);
+    }
+    const wordCount = Object.keys(loaded.book.entries).length;
+    if (wordCount === 0) {
+      throw new Error("生词本为空，暂时没有可以生成的长图。");
+    }
+    const generatedAt = new Date();
+    const pages = await renderVocabularyBookImages(loaded.book, generatedAt);
+    const storage: VocabularyImageExportStorage = {
+      inspect: (path) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (node === null) {
+          return null;
+        }
+        if (node instanceof TFile) {
+          return "file";
+        }
+        if (node instanceof TFolder) {
+          return "folder";
+        }
+        throw new Error(`无法识别长图导出路径类型：${path}`);
+      },
+      readText: async (path) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) {
+          throw new Error(`无法读取长图导出清单：${path}`);
+        }
+        return this.app.vault.cachedRead(node);
+      },
+      readBinary: async (path) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) {
+          throw new Error(`无法读取已有长图：${path}`);
+        }
+        return this.app.vault.readBinary(node);
+      },
+      createFolder: async (path) => {
+        await this.app.vault.createFolder(normalizePath(path));
+      },
+      createText: async (path, content) => {
+        await this.app.vault.create(normalizePath(path), content);
+      },
+      updateText: async (path, content) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) {
+          throw new Error(`无法更新长图导出清单：${path}`);
+        }
+        await this.app.vault.modify(node, content);
+      },
+      createBinary: async (path, content) => {
+        await this.app.vault.createBinary(normalizePath(path), content);
+      },
+      updateBinary: async (path, content) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) {
+          throw new Error(`无法更新长图：${path}`);
+        }
+        await this.app.vault.modifyBinary(node, content);
+      },
+      removeFile: async (path) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) {
+          throw new Error(`无法清理旧长图：${path}`);
+        }
+        await this.app.fileManager.trashFile(node);
+      }
+    };
+    const result = await writeVocabularyImageExport(
+      storage,
+      pages,
+      wordCount,
+      generatedAt
+    );
+    const firstPage = this.app.vault.getAbstractFileByPath(normalizePath(result.paths[0]));
+    if (!(firstPage instanceof TFile)) {
+      throw new Error("生词本长图已经写入，但暂时无法打开，请在文件列表中手动打开。");
+    }
+    await this.openVocabularyExportFile(firstPage);
+    return result;
+  }
+
+  private async openVocabularyExportFile(file: TFile): Promise<void> {
+    const viewType = file.extension === "md" ? "markdown" : "image";
+    const existingLeaf = this.app.workspace.getLeavesOfType(viewType).find((leaf) => {
+      const view = leaf.view as typeof leaf.view & { file?: TFile | null };
+      return view.file?.path === file.path;
+    });
+    if (existingLeaf) {
+      await this.app.workspace.revealLeaf(existingLeaf);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf("tab");
+    await leaf.openFile(file);
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   async addVocabularyFromLookup(
@@ -3797,7 +5768,10 @@ export default class LinguaStudyPlugin extends Plugin {
   async getCachedBilibiliVideo(
     config: BilibiliCodeBlockConfig
   ): Promise<CachedBilibiliVideo | null> {
-    return this.getBilibiliCacheService().getCachedVideo(
+    if (!this.bilibiliCacheService) {
+      return null;
+    }
+    return this.bilibiliCacheService.getCachedVideo(
       config.idType,
       config.videoId,
       config.page
@@ -3805,26 +5779,29 @@ export default class LinguaStudyPlugin extends Plugin {
   }
 
   async openBilibiliCacheFolder(): Promise<void> {
+    this.requireCapability(this.capabilities.bilibiliVideoCache, "B站视频缓存");
     await this.getBilibiliCacheService().openCacheFolder();
   }
 
   getBilibiliCacheFolder(): string {
-    return this.getBilibiliCacheService().cacheFolder;
+    return this.bilibiliCacheService?.cacheFolder ?? "移动端不使用本地视频缓存";
   }
 
   getWhisperAlignmentCacheFolder(): string {
-    return this.getLocalWhisperService().cacheFolder;
+    return this.localWhisperService?.cacheFolder ?? "移动端不使用本地 Whisper 缓存";
   }
 
   hasWhisperAlignmentModel(): Promise<boolean> {
-    return this.getLocalWhisperService().hasCachedModel();
+    return this.localWhisperService?.hasCachedModel() ?? Promise.resolve(false);
   }
 
   openWhisperAlignmentCacheFolder(): Promise<void> {
+    this.requireCapability(this.capabilities.localWhisper, "本地 Whisper 自动对齐");
     return this.getLocalWhisperService().openCacheFolder();
   }
 
   clearWhisperAlignmentCache(): Promise<void> {
+    this.requireCapability(this.capabilities.localWhisper, "本地 Whisper 自动对齐");
     return this.getLocalWhisperService().clearCache();
   }
 
@@ -3847,10 +5824,12 @@ export default class LinguaStudyPlugin extends Plugin {
   }
 
   async openBilibiliLogin(): Promise<void> {
+    this.requireCapability(this.capabilities.bilibiliLogin, "B站插件内登录");
     await this.getBilibiliSessionService().openLogin();
   }
 
   async clearBilibiliLogin(): Promise<void> {
+    this.requireCapability(this.capabilities.bilibiliLogin, "B站插件内登录");
     await this.getBilibiliSessionService().clearLogin();
   }
 
@@ -4014,5 +5993,11 @@ export default class LinguaStudyPlugin extends Plugin {
       throw new Error("B站登录会话尚未初始化，请重新加载插件。");
     }
     return this.bilibiliSessionService;
+  }
+
+  private requireCapability(available: boolean, feature: string): void {
+    if (!available) {
+      throw new Error(`${feature}仅支持 Obsidian 电脑端。`);
+    }
   }
 }
