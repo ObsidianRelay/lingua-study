@@ -4,6 +4,25 @@ All notable changes to Lingua Study are documented in this file.
 
 ## Unreleased
 
+## 1.3.0 - 2026-09-02
+
+### Added
+
+- Added inline single-sentence dictation with two-second sentence controls, word-level comparison, and retry or next-sentence actions
+- Added temporary single-sentence recording with automatic shadowing based on source playback, pause/resume, a live waveform, millisecond timing, and recording playback
+- Added one-click vocabulary-book export to a card-based Obsidian note and paginated 1080 px PNG images
+
+### Changed
+
+- Added the same compact sentence player controls to dictation and recording practice
+- New YouTube and RSS study blocks are appended to the end of the note without removing the existing article content
+- Kept the public 1.3.0 release desktop-only while mobile support continues in testing
+
+### Fixed
+
+- Preserved flushed partial dictionary data before retrying an interrupted download so HTTP Range resume does not restart from zero under load
+- Improved recording waveform spacing, playback progress, pause/resume behavior, and first-playback responsiveness
+
 ## 1.2.2 - 2026-08-28
 
 ### Changed

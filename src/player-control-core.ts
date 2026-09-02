@@ -16,6 +16,46 @@ export interface MediaTimerHost {
   cancel(handle: unknown): void;
 }
 
+const OBSIDIAN_YOUTUBE_BRIDGE_ORIGIN = "https://releases.obsidian.md";
+const DIRECT_YOUTUBE_EMBED_ORIGINS = new Set([
+  "https://www.youtube.com",
+  "https://www.youtube-nocookie.com"
+]);
+
+/**
+ * 为 Obsidian 移动端创建的 YouTube iframe 生成安全的时间戳跳转地址。
+ * 移动端继续复用 Obsidian 官方兼容播放器，重新加载到目标时间并请求继续播放，
+ * 不依赖在 iOS/Android 上均不稳定的 YouTube JS API 通信。
+ */
+export function buildMobileYouTubeStartUrl(src: string, seconds: number): string | null {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  let url: URL;
+  try {
+    url = new URL(src);
+  } catch {
+    return null;
+  }
+
+  const usesObsidianBridge =
+    url.origin === OBSIDIAN_YOUTUBE_BRIDGE_ORIGIN &&
+    url.pathname === "/youtube";
+  const usesDirectYouTubeEmbed =
+    DIRECT_YOUTUBE_EMBED_ORIGINS.has(url.origin) &&
+    url.pathname.startsWith("/embed/");
+  if (!usesObsidianBridge && !usesDirectYouTubeEmbed) {
+    return null;
+  }
+
+  url.searchParams.delete("enablejsapi");
+  url.searchParams.set("start", String(Math.floor(seconds)));
+  // 时间戳点击本身属于用户手势；请求播放器跳转后继续播放。
+  // 最终是否允许自动播放仍由 Obsidian WebView / 系统播放器决定。
+  url.searchParams.set("autoplay", "1");
+  return url.toString();
+}
+
 /** YouTube 暂停命令也允许以“视频结束”状态作为确认。 */
 export function isPlaybackStateConfirmed(
   pendingState: number | null,
@@ -36,6 +76,14 @@ export function shouldAdvancePlaybackClock(
   playingState: number
 ): boolean {
   return pendingState === null && playerState === playingState;
+}
+
+/** 听写播放到达当前字幕结束时间时必须立即暂停。 */
+export function shouldStopDictationPlayback(
+  currentTime: number,
+  stopAt: number | null
+): boolean {
+  return stopAt !== null && Number.isFinite(currentTime) && currentTime >= stopAt;
 }
 
 /**

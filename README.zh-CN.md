@@ -5,7 +5,7 @@
 在 Obsidian 中通过带时间戳的 YouTube 与哔哩哔哩英文字幕学习语言，支持本地缓存播放、逐句跟读、离线词典和按需 AI 翻译。
 
 > [!IMPORTANT]
-> Lingua Study 1.2.1 仅支持桌面版 Obsidian，当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
+> Lingua Study 1.3.0 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
 
 ## 功能概览
 
@@ -30,6 +30,9 @@
 - 内置离线英汉词典，双击字幕中的英文单词即可查询
 - 提供右侧栏词典视图，显示音标、释义、词形变化、考试标签、上下文和系统发音
 - 支持逐句编辑字幕，并可一键恢复首次导入或生成的原文
+- 支持逐句听写、前后 2 秒复听和逐词对照评分
+- 支持临时单句跟读录音、同步影子跟读、暂停/继续、波形和录音回放
+- 支持一键把全部生词导出为 Obsidian 笔记或桌面端分页长图
 - 支持 DeepSeek、Kimi 和使用 HTTPS 的 OpenAI Chat Completions 兼容服务
 - 翻译缓存保存在对应字幕文件旁边
 - API Key 通过 Obsidian SecretStorage 选择和保存

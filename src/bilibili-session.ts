@@ -1,4 +1,4 @@
-import { requestUrl } from "obsidian";
+import { Platform, requestUrl } from "obsidian";
 import {
   BilibiliApiError,
   hasBilibiliLoginCookie,
@@ -110,7 +110,8 @@ export interface BilibiliSessionStatus {
  * Cookie 由 Electron 持久化在应用数据目录，本类只在请求时临时拼接请求头。
  */
 export class BilibiliSessionService {
-  private readonly remote = loadElectronRemote();
+  // 移动端没有 Electron，必须在调用 require 之前先用 Obsidian 平台 API 隔离。
+  private readonly remote = Platform.isDesktopApp ? loadElectronRemote() : null;
   private loginWindow: ElectronBrowserWindowLike | null = null;
   private readonly loginAuxiliaryWindows = new Set<ElectronBrowserWindowLike>();
   private loginPromise: Promise<void> | null = null;

@@ -39,8 +39,8 @@ import {
 } from "./import-core";
 import type { LinguaStudySettings } from "./settings";
 import { validateTranscript, type TranscriptFile, type TranscriptSegment } from "./transcript-core";
-import { fetchTranscriptWithYtDlp } from "./yt-dlp";
 import { addStudyBlockExitLine } from "./live-preview-core";
+import type { YtDlpTranscriptFetcher } from "./yt-dlp-core";
 
 const MAX_LOCAL_SUBTITLE_BYTES = 10 * 1024 * 1024;
 const IOS_CLIENT_VERSION = "20.10.38";
@@ -223,7 +223,8 @@ export class YouTubeImportController {
 
   constructor(
     private readonly app: App,
-    private readonly getSettings: () => LinguaStudySettings
+    private readonly getSettings: () => LinguaStudySettings,
+    private readonly fetchWithYtDlp: YtDlpTranscriptFetcher | null
   ) {}
 
   async importFromEditor(editor: Editor, view: MarkdownView): Promise<void> {
@@ -266,18 +267,29 @@ export class YouTubeImportController {
         segments = await this.fetchPublicEnglishTranscript(link);
       } catch (error) {
         const directReason = errorMessage(error);
-        progress.setMessage("YouTube 直接获取失败，正在尝试本机 yt-dlp…");
-        const ytDlpResult = await fetchTranscriptWithYtDlp(
-          link.canonicalUrl,
-          this.getSettings().ytDlpPath
-        );
-        if (ytDlpResult.status === "success") {
-          segments = ytDlpResult.segments;
-          usedYtDlp = true;
+        if (this.fetchWithYtDlp) {
+          progress.setMessage("YouTube 直接获取失败，正在尝试本机 yt-dlp…");
+          const ytDlpResult = await this.fetchWithYtDlp(
+            link.canonicalUrl,
+            this.getSettings().ytDlpPath
+          );
+          if (ytDlpResult.status === "success") {
+            segments = ytDlpResult.segments;
+            usedYtDlp = true;
+          } else {
+            progress.hide();
+            const fallback = await this.chooseLocalSubtitle(
+              `${directReason}\n\n${ytDlpResult.message}`
+            );
+            if (!fallback) {
+              return;
+            }
+            segments = parseSubtitleFile(fallback.text);
+          }
         } else {
           progress.hide();
           const fallback = await this.chooseLocalSubtitle(
-            `${directReason}\n\n${ytDlpResult.message}`
+            `${directReason}\n\n当前设备不支持本机 yt-dlp，可手动选择 SRT 或 VTT 字幕继续。`
           );
           if (!fallback) {
             return;

@@ -1,4 +1,15 @@
 import type { YouTubeImportFailure } from "./import-core";
+import type { TranscriptSegment } from "./transcript-core";
+
+export type YtDlpTranscriptResult =
+  | { status: "success"; segments: TranscriptSegment[] }
+  | { status: "unavailable"; message: string }
+  | { status: "failed"; message: string };
+
+export type YtDlpTranscriptFetcher = (
+  sourceUrl: string,
+  configuredPath: string
+) => Promise<YtDlpTranscriptResult>;
 
 /**
  * 生成可尝试的 yt-dlp 程序位置。
@@ -8,7 +19,7 @@ import type { YouTubeImportFailure } from "./import-core";
  */
 export function buildYtDlpCandidates(
   configuredPath: string,
-  platform: NodeJS.Platform
+  platform: string
 ): string[] {
   const candidates = platform === "win32"
     ? [configuredPath.trim(), "yt-dlp.exe", "yt-dlp"]

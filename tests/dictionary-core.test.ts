@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 import {
@@ -58,20 +55,11 @@ test("双击词提取只接受一个英文词", () => {
 });
 
 test("精简版未收录时自动回退到本地完整版分片", async () => {
-  const root = await mkdtemp(join(tmpdir(), "lingua-external-dictionary-"));
-  await mkdir(root, { recursive: true });
   const packed = ["rarewordx", "rer", "an uncommon test word", "测试生僻词", "n", [], 0, 0, ""];
-  await writeFile(
-    join(root, "r.json.gz"),
-    gzipSync(JSON.stringify({ entries: { rarewordx: packed }, aliases: {} }))
-  );
-  try {
-    const dictionary = new OfflineDictionary();
-    dictionary.setExternalShardFolder(root);
-    assert.equal(dictionary.lookup("rarewordx").entry?.chineseTranslation, "测试生僻词");
-    dictionary.setExternalShardFolder(null);
-    assert.equal(dictionary.lookup("rarewordx").entry, null);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  const compressed = gzipSync(JSON.stringify({ entries: { rarewordx: packed }, aliases: {} }));
+  const dictionary = new OfflineDictionary();
+  dictionary.setExternalShardLoader((key) => key === "r" ? compressed : null);
+  assert.equal(dictionary.lookup("rarewordx").entry?.chineseTranslation, "测试生僻词");
+  dictionary.setExternalShardLoader(null);
+  assert.equal(dictionary.lookup("rarewordx").entry, null);
 });
