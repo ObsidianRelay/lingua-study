@@ -244,6 +244,14 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   const youtubeImport = await readFile("src/youtube-import.ts", "utf8");
   const bilibiliImport = await readFile("src/bilibili-import.ts", "utf8");
   assert.match(source, /calculateAlignedScrollTop/u);
+  assert.match(source, /calculateViewportAlignedScrollDelta/u);
+  assert.match(source, /const viewport = this\.fullWidthScrollEl \?\? this\.viewViewportEl/u);
+  assert.match(source, /viewport\.scrollBy\(\{ top: delta, behavior: "smooth" \}\)/u);
+  assert.match(source, /const TRANSCRIPT_SMOOTH_SCROLL_GUARD_MS = 900;/u);
+  assert.match(
+    source,
+    /this\.transcriptProgrammaticScrollUntil = Date\.now\(\) \+ TRANSCRIPT_SMOOTH_SCROLL_GUARD_MS/u
+  );
   assert.equal(source.match(/createRoot\(/gu)?.length, 5);
   assert.ok((source.match(/fullWidthObserver\?\.disconnect\(\)/gu)?.length ?? 0) >= 3);
   assert.match(source, /viewportWidth - 32/u);
@@ -287,6 +295,9 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.match(source, /scrollEl\.addEventListener\("scroll", this\.fullWidthScrollHandler, \{ passive: true \}\)/u);
   assert.match(source, /scrollEl\.addEventListener\("wheel", this\.fullWidthManualScrollHandler, \{ passive: true \}\)/u);
   assert.match(source, /scrollEl\.addEventListener\("touchstart", this\.fullWidthManualScrollHandler, \{ passive: true \}\)/u);
+  assert.match(source, /const nextScrollLeft = scrollEl\.scrollLeft/u);
+  assert.match(source, /Math\.abs\(nextScrollLeft - this\.fullWidthScrollLeft\) < 1/u);
+  assert.match(source, /if \(layoutChanged \|\| recenterTranscript\)/u);
   assert.match(source, /updateFullWidth\(false\)/u);
   assert.match(source, /this\.suspendTranscriptAutoFollow\(true\)/u);
   assert.match(source, /this\.transcriptAutoFollowEnabled/u);

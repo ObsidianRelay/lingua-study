@@ -4,6 +4,37 @@ export interface SubtitleRowGeometry {
 }
 
 /**
+ * 计算外层阅读页需要滚动的距离。
+ *
+ * 当前句已经完整可见时不移动画面；只在它越出可视区域时，
+ * 滚动刚好足够的距离让整句重新出现。超高字幕则对齐可视区域顶部。
+ */
+export function calculateViewportAlignedScrollDelta(
+  rowTop: number,
+  rowHeight: number,
+  visibleTop: number,
+  visibleBottom: number
+): number {
+  if (
+    !Number.isFinite(rowTop) ||
+    !Number.isFinite(rowHeight) ||
+    !Number.isFinite(visibleTop) ||
+    !Number.isFinite(visibleBottom) ||
+    visibleBottom <= visibleTop
+  ) {
+    return 0;
+  }
+
+  const safeRowHeight = Math.max(0, rowHeight);
+  const visibleHeight = visibleBottom - visibleTop;
+  if (safeRowHeight >= visibleHeight || rowTop < visibleTop) {
+    return rowTop - visibleTop;
+  }
+  const rowBottom = rowTop + safeRowHeight;
+  return rowBottom > visibleBottom ? rowBottom - visibleBottom : 0;
+}
+
+/**
  * 计算自动跟随的滚动位置。
  *
  * 当前句尽量位于视口中部，但返回值永远来自某一行字幕纸的顶部，

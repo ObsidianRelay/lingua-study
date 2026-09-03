@@ -72,7 +72,8 @@ import {
 import { AsyncKeyedQueue } from "./async-keyed-queue";
 import {
   calculateAlignedScrollTop,
-  calculateTranscriptEndSpacer
+  calculateTranscriptEndSpacer,
+  calculateViewportAlignedScrollDelta
 } from "./ui-layout-core";
 import {
   buildMobileYouTubeStartUrl,
@@ -255,6 +256,8 @@ const PLAYER_COMMAND_TIMEOUT_MS = 3_000;
 const LOCAL_MEDIA_LOAD_TIMEOUT_MS = 8_000;
 const LOCAL_STATUS_READY_DELAY_MS = 1_200;
 const TRANSCRIPT_AUTO_FOLLOW_RESUME_DELAY_MS = 5_000;
+// 覆盖浏览器原生平滑滚动的完整动画期，避免其 scroll 事件被误判为手动滚动。
+const TRANSCRIPT_SMOOTH_SCROLL_GUARD_MS = 900;
 const LINGUA_STUDY_RIBBON_ICON_ID = "lingua-study-logo";
 const LINGUA_STUDY_RIBBON_ICON_SVG = `
   <path d="M3.5 7c3.1-1 6-.15 8.5 2.25C14.5 6.85 17.4 6 20.5 7v10c-3.05-.85-5.95 0-8.5 2.3C9.45 17 6.55 16.15 3.5 17Z" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>
@@ -552,6 +555,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private fullWidthScrollHandler: (() => void) | null = null;
   private fullWidthManualScrollHandler: (() => void) | null = null;
   private fullWidthScrollFrame: number | null = null;
+  private fullWidthScrollLeft = 0;
   private livePreviewHostEl: HTMLElement | null = null;
   private livePreviewHostMutationObserver: MutationObserver | null = null;
   private livePreviewHostStyleBefore: {
@@ -780,10 +784,22 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       const fullWidth = `${Math.max(320, viewportWidth - 32)}px`;
       const noMaximumWidth = "none";
       const leftOffset = `${targetLeft - naturalLeft}px`;
-      this.containerEl.style.width = fullWidth;
-      this.containerEl.style.maxWidth = noMaximumWidth;
-      this.containerEl.style.marginLeft = leftOffset;
-      this.scheduleTranscriptLayout(recenterTranscript);
+      let layoutChanged = false;
+      if (this.containerEl.style.width !== fullWidth) {
+        this.containerEl.style.width = fullWidth;
+        layoutChanged = true;
+      }
+      if (this.containerEl.style.maxWidth !== noMaximumWidth) {
+        this.containerEl.style.maxWidth = noMaximumWidth;
+        layoutChanged = true;
+      }
+      if (this.containerEl.style.marginLeft !== leftOffset) {
+        this.containerEl.style.marginLeft = leftOffset;
+        layoutChanged = true;
+      }
+      if (layoutChanged || recenterTranscript) {
+        this.scheduleTranscriptLayout(recenterTranscript);
+      }
     };
 
     this.fullWidthObserver = new ResizeObserver(() => updateFullWidth(true));
@@ -794,17 +810,25 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (scrollEl) {
       const viewWindow = this.containerEl.ownerDocument.defaultView ?? window;
       this.fullWidthScrollEl = scrollEl;
+      this.fullWidthScrollLeft = scrollEl.scrollLeft;
       this.fullWidthManualScrollHandler = (): void => {
         this.suspendTranscriptAutoFollow(true);
       };
       this.fullWidthScrollHandler = (): void => {
         this.suspendTranscriptAutoFollow(false);
+        const nextScrollLeft = scrollEl.scrollLeft;
+        // 自动跟随只改变纵向位置。纵向滚动时反复读写容器宽度会强制整页重排，
+        // 尤其会与 YouTube iframe 的播放启动重绘叠加，造成录屏中的撕裂和卡顿。
+        if (Math.abs(nextScrollLeft - this.fullWidthScrollLeft) < 1) {
+          return;
+        }
+        this.fullWidthScrollLeft = nextScrollLeft;
         if (this.fullWidthScrollFrame !== null) {
           return;
         }
         this.fullWidthScrollFrame = viewWindow.requestAnimationFrame(() => {
           this.fullWidthScrollFrame = null;
-          // 页面纵向滚动只需要重新计算全宽位置，不能把字幕拉回当前播放句。
+          // 只有真正的横向位移才会影响全宽位置；仍不把字幕拉回当前播放句。
           updateFullWidth(false);
         });
       };
@@ -981,6 +1005,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.fullWidthScrollHandler = null;
     this.fullWidthManualScrollHandler = null;
     this.fullWidthScrollFrame = null;
+    this.fullWidthScrollLeft = 0;
   }
 
   private renderBilibiliPlayer(
@@ -4438,7 +4463,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
     this.updateTranscriptEndSpacer();
     if (list.scrollHeight <= list.clientHeight + 1) {
-      this.ensureSegmentOnScreen(index);
+      this.alignSegmentInViewport(index);
       return;
     }
     const target = calculateAlignedScrollTop(
@@ -4451,7 +4476,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     );
     this.markTranscriptProgrammaticScroll();
     list.scrollTo({ top: target, behavior: "auto" });
-    this.ensureSegmentOnScreen(index);
+    this.alignSegmentInViewport(index);
   }
 
   /** 用户主动浏览其他字幕后暂停自动跟随，避免播放进度把页面强制拉回。 */
@@ -4508,8 +4533,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   }
 
   private markTranscriptProgrammaticScroll(): void {
-    // scrollTo/scrollBy 的 scroll 事件可能在下一帧才触发，短暂忽略它们。
-    this.transcriptProgrammaticScrollUntil = Date.now() + 250;
+    // 平滑滚动会连续产生 scroll 事件，在动画结束前都不能当成用户手动翻页。
+    this.transcriptProgrammaticScrollUntil = Date.now() + TRANSCRIPT_SMOOTH_SCROLL_GUARD_MS;
   }
 
   private setupTranscriptViewportSizing(): void {
@@ -4558,24 +4583,33 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   }
 
   private updateTranscriptEndSpacer(): void {
-    const list = this.transcriptListEl;
     const spacer = this.transcriptEndSpacerEl;
     const lastRow = this.segmentRows.at(-1);
-    if (!list || !spacer || !lastRow) {
+    const viewport = this.fullWidthScrollEl ?? this.viewViewportEl;
+    if (!spacer || !lastRow || !viewport) {
       return;
     }
-    spacer.setCssProps({ height: "0px" });
-    if (list.scrollHeight > list.clientHeight + 1) {
-      spacer.style.height = `${calculateTranscriptEndSpacer(
-        lastRow.offsetHeight,
-        list.clientHeight
-      )}px`;
+    const viewportRect = viewport.getBoundingClientRect();
+    const dockBottom = this.playerDockEl?.classList.contains("is-floating")
+      ? this.playerDockEl.getBoundingClientRect().bottom
+      : viewportRect.top;
+    const visibleTop = Math.max(viewportRect.top + 8, dockBottom + 8);
+    const visibleHeight = Math.max(0, viewportRect.bottom - 8 - visibleTop);
+    const height = `${calculateTranscriptEndSpacer(
+      lastRow.offsetHeight,
+      visibleHeight
+    )}px`;
+    if (spacer.style.height !== height) {
+      spacer.style.height = height;
     }
   }
 
-  private ensureSegmentOnScreen(index: number): void {
+  /** 只滚动刚好足够的距离，让当前句完整回到真正的滚动视口。 */
+  private alignSegmentInViewport(index: number): void {
     const row = this.segmentRows[index];
-    const viewport = this.viewViewportEl;
+    // 实时编辑模式中 .markdown-source-view 只是外壳，真正滚动的是 .cm-scroller。
+    // 优先使用创建页面时已识别的滚动容器，避免高亮句变化但画面不动。
+    const viewport = this.fullWidthScrollEl ?? this.viewViewportEl;
     if (!row || !viewport) {
       return;
     }
@@ -4586,15 +4620,15 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       : viewportRect.top;
     const visibleTop = Math.max(viewportRect.top + 8, dockBottom + 8);
     const visibleBottom = viewportRect.bottom - 8;
-    if (rowRect.height >= visibleBottom - visibleTop) {
+    const delta = calculateViewportAlignedScrollDelta(
+      rowRect.top,
+      rowRect.height,
+      visibleTop,
+      visibleBottom
+    );
+    if (Math.abs(delta) >= 1) {
       this.markTranscriptProgrammaticScroll();
-      viewport.scrollBy({ top: rowRect.top - visibleTop, behavior: "auto" });
-    } else if (rowRect.top < visibleTop) {
-      this.markTranscriptProgrammaticScroll();
-      viewport.scrollBy({ top: rowRect.top - visibleTop, behavior: "auto" });
-    } else if (rowRect.bottom > visibleBottom) {
-      this.markTranscriptProgrammaticScroll();
-      viewport.scrollBy({ top: rowRect.bottom - visibleBottom, behavior: "auto" });
+      viewport.scrollBy({ top: delta, behavior: "smooth" });
     }
   }
 
@@ -4712,7 +4746,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (this.destroyed || this.vocabularyTargetRowEl !== row) {
       return;
     }
-    this.ensureSegmentOnScreen(index);
+    this.alignSegmentInViewport(index);
     this.timestampButtons[index]?.focus({ preventScroll: true });
   }
 
