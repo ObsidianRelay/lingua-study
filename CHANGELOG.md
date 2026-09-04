@@ -4,6 +4,13 @@ All notable changes to Lingua Study are documented in this file.
 
 ## Unreleased
 
+## 1.3.1 - 2026-09-03
+
+### Fixed
+
+- Kept the active transcript segment visible with smooth page-level scrolling in Reading view and Live Preview
+- Reduced repeated full-width layout work during vertical scrolling to avoid page jitter around the video player
+
 ## 1.3.0 - 2026-09-02
 
 ### Added

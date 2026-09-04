@@ -1,109 +1,150 @@
 # Lingua Study
 
-[English](./README.md) | [简体中文](./README.zh-CN.md)
+[简体中文](./README.md) | [English](./README.en.md)
 
-Learn languages in Obsidian with timestamped YouTube and Bilibili transcripts, local Bilibili playback, and on-demand AI translation.
+在 Obsidian 中把 YouTube 和哔哩哔哩英文视频变成可跟读、可听写、可查词、可复习的学习材料。支持带时间戳字幕、本地缓存播放、逐句翻译、离线词典和生词本。
 
 > [!IMPORTANT]
-> Lingua Study 1.3.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.3.1 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
 
-## Features
+## 近期更新（1.3.0–1.3.1）
 
-- Embedded YouTube player using the privacy-enhanced `youtube-nocookie.com` domain
-- Local cached Bilibili playback with Bilibili's official external player as a fallback
-- A dedicated left-ribbon Lingua Study logo for manually importing a YouTube or Bilibili link from the active note
-- Optional automatic import after pasting one standalone video link, disabled by default
-- Direct Bilibili English subtitle import, with an isolated in-Obsidian login only when Bilibili requires it
-- Public manual-English caption preference with automatic English captions as fallback
-- Independent keyless YouTube mobile-client fallback when the normal page route is blocked
-- Automatic local `yt-dlp` fallback on desktop when it is already installed
-- Local SRT/VTT import when public captions cannot be fetched
-- A follow-up **Add transcript** entry on player-only Bilibili blocks
-- Editable PDF, DOCX, TXT, Markdown, and pasted bilingual transcript import
-- Optional local Whisper Base English alignment that keeps media and transcripts on the device
-- Play, pause, seek backward or forward by five seconds
-- Playback speeds from 0.75x to 2x
-- Clickable timestamps, automatic highlighting, and page-level transcript following without an internal scrolling window
-- Per-segment translation that runs only after the user clicks a translation button
-- Four-part study cards with translation, vocabulary and collocations, grammar patterns, and exam-focused tips
-- CET-4, CET-6, TEM-4, TEM-8, IELTS, and TOEFL study profiles with separate local caches
-- A bundled offline English-Chinese dictionary opened by double-clicking a transcript word
-- A dedicated right-sidebar dictionary view with phonetics, definitions, inflections, exam tags, context, and system pronunciation
-- Per-segment transcript editing and one-click restoration of the original text
-- Inline single-sentence dictation with two-second replay controls and word-level comparison
-- Temporary single-sentence recording with synchronized shadowing, pause/resume, waveform, and playback comparison
-- One-click vocabulary-book export to an Obsidian note or paginated desktop PNG images
-- DeepSeek, Kimi, and HTTPS OpenAI Chat Completions-compatible providers
-- Translation cache stored beside the transcript file
-- API keys selected through Obsidian SecretStorage
+- **逐句听写**：反复播放当前句，提交后进行逐词对照与评分
+- **影子跟读**：跟随原声录音，支持暂停、继续、波形显示和录音回放
+- **生词学习闭环**：双击查词、加入生词本、保留视频原句并安排每日复习
+- **生词本导出**：可导出为 Obsidian 学习笔记或桌面端分页 PNG 长图
+- **字幕平滑跟随**：播放过程中自动保持当前句可见，减少页面跳动和重复布局
 
-## Requirements
+## 功能概览
 
-- Obsidian 1.13.0 or later
-- Obsidian desktop app
-- A YouTube or public Bilibili video available in your current network environment
-- An API key only if you want to use translation
-- Optional: a current `yt-dlp` installation for the more reliable desktop fallback
+- 使用隐私增强域名 `youtube-nocookie.com` 嵌入 YouTube 播放器
+- 本地缓存并播放哔哩哔哩视频；缓存不可用时回退到哔哩哔哩官方外部播放器
+- 在 Obsidian 左侧功能区提供 Lingua Study 专属图标，用于手动导入当前笔记中的 YouTube 或哔哩哔哩链接
+- 可选“粘贴单个独立视频链接后自动导入”，默认关闭
+- 直接导入哔哩哔哩英文字幕；仅在平台要求时使用与浏览器隔离的 Obsidian 内登录窗口
+- 优先使用人工英文字幕，找不到时再尝试自动英文字幕
+- 当 YouTube 常规页面请求失败时，自动尝试无需 API Key 的移动端请求方式
+- 桌面电脑已经安装 `yt-dlp` 时，可自动把它作为 YouTube 字幕获取的后备方案
+- 在线字幕获取失败时，可导入本地 SRT/VTT 字幕
+- 只有播放器的哔哩哔哩学习块可通过“添加字幕”入口后续补充文字稿
+- 可导入并编辑 PDF、DOCX、TXT、Markdown 或直接粘贴的双语文稿
+- 可选使用本地 Whisper Base English，在设备上完成文稿与视频时间轴对齐
+- 支持播放、暂停、前进或后退 5 秒
+- 支持 0.75× 至 2× 播放速度
+- 时间戳可点击跳转，当前句自动高亮，字幕随页面滚动，无额外的内部滚动窗口
+- 只在用户点击后翻译对应句子
+- 为每句生成四部分学习卡：中文翻译、词汇与搭配、语法结构、考试提示
+- 提供 CET-4、CET-6、TEM-4、TEM-8、IELTS 和 TOEFL 学习目标，各自使用独立本地缓存
+- 内置离线英汉词典，双击字幕中的英文单词即可查询
+- 提供右侧栏词典视图，显示音标、释义、词形变化、考试标签、上下文和系统发音
+- 支持把查询结果加入生词本，保存个人备注和视频原句语境，并安排每日复习
+- 支持逐句编辑字幕，并可一键恢复首次导入或生成的原文
+- 支持逐句听写、前后 2 秒复听和逐词对照评分
+- 支持临时单句跟读录音、同步影子跟读、暂停/继续、波形和录音回放
+- 支持一键把全部生词导出为 Obsidian 笔记或桌面端分页长图
+- 支持 DeepSeek、Kimi 和使用 HTTPS 的 OpenAI Chat Completions 兼容服务
+- 翻译缓存保存在对应字幕文件旁边
+- API Key 通过 Obsidian SecretStorage 选择和保存
 
-## Installation
+## 使用要求
 
-### Community plugins
+- Obsidian 1.13.0 或更高版本
+- Obsidian 桌面版；目前不支持手机和平板
+- 当前网络环境可以访问所选 YouTube 或公开哔哩哔哩视频
+- 只有使用 AI 翻译时才需要对应服务的 API Key
+- 可选：安装较新版本的 `yt-dlp`，提高 YouTube 字幕后备获取的成功率
 
-The Lingua Study project page may become visible on the Obsidian community website before the plugin is included in the official in-app directory. After the reviewed release becomes searchable in Obsidian, install or update it from **Settings → Community plugins → Browse**. Until then, use the manual installation steps below.
+## 安装方法
 
-### Manual installation
+### 从 Obsidian 社区插件市场安装
 
-1. Download `main.js`, `manifest.json`, and `styles.css` from the matching GitHub release.
-2. Create `<vault>/.obsidian/plugins/lingua-study/`.
-3. Put the three files in that directory.
-4. Reload Obsidian and enable **Lingua Study** under **Settings → Community plugins**.
+Lingua Study 的项目页面可能会先出现在 Obsidian 社区网站，而插件稍后才进入 Obsidian 客户端的正式目录。审核版本能够在客户端搜索到以后，打开：
 
-No Chrome extension is required for Bilibili subtitle import. If a video requires login, Lingua Study opens an isolated Bilibili login window inside Obsidian and retries automatically after login.
+**设置 → 第三方插件 → 浏览**
 
-## Usage
+搜索 `Lingua Study`，然后安装或更新。在客户端尚未收录前，请使用下面的手动安装方法。
 
-### Manual YouTube workflow
+### 手动安装
 
-1. Paste a YouTube video link into a Markdown note.
-2. Click the Lingua Study logo in Obsidian's left ribbon.
-3. Wait for the transcript to be saved and the note to switch to Reading view.
+1. 打开与目标版本对应的 GitHub Release。
+2. 下载 `main.js`、`manifest.json` 和 `styles.css`。
+3. 在仓库中创建以下插件目录：
 
-After a successful import, Lingua Study removes the long pasted link, saves the English transcript under `Lingua Study/Transcripts`, inserts the study block, and switches the note to Reading view. Use the compact **打开原视频** button inside the player when you need the source page. If the selected scope contains multiple supported links, the ribbon action asks which video to process.
+   ```text
+   <仓库目录>/.obsidian/plugins/lingua-study/
+   ```
 
-To restore paste-to-import behavior, turn on **Settings → Community plugins → Lingua Study → 通用选项 → 粘贴视频链接后自动创建学习内容**. The setting remains optional and is disabled by default.
+4. 将下载的三个文件放入该目录。
+5. 重新加载 Obsidian。
+6. 在 **设置 → 第三方插件** 中启用 **Lingua Study**。
 
-Caption retrieval follows this order automatically:
+哔哩哔哩字幕导入不需要 Chrome 扩展。如果视频要求登录，Lingua Study 会在 Obsidian 内打开一个独立的哔哩哔哩登录窗口，并在登录成功后自动重试。
 
-1. YouTube watch page and public player caption tracks
-2. A keyless YouTube mobile-client request that does not depend on watch-page configuration
-3. A separately installed local `yt-dlp`, first for manual English subtitles and then automatic English subtitles
-4. Local `.srt` or `.vtt` selection, up to 10 MB
+## 使用方法
 
-The transcript folder and an optional full path to `yt-dlp` can be changed under **Settings → Community plugins → Lingua Study → YouTube 字幕导入**. Leave the `yt-dlp` path empty to search the system PATH and common Homebrew, MacPorts, and Windows command locations automatically. Existing valid files are reused without a network request, and an existing block for the same video is not inserted again.
+### 导入 YouTube 视频
 
-### Manual Bilibili workflow
+1. 在 Markdown 笔记中粘贴一个 YouTube 视频链接。
+2. 点击 Obsidian 左侧功能区的 Lingua Study 图标。
+3. 等待字幕保存完成，插件会将笔记切换到阅读视图。
 
-1. Paste a public Bilibili video link into a Markdown note.
-2. Click the Lingua Study logo in Obsidian's left ribbon.
-3. Wait for the transcript to be saved and the note to switch to Reading view.
+导入成功后，Lingua Study 会：
 
-Lingua Study reads independent subtitle tracks directly from Bilibili and downloads the public combined MP4 into the operating system cache. When Bilibili reports that subtitles require login, the user can sign in through an isolated Obsidian window and the import retries automatically. The login session is separate from Chrome. The plugin then saves the transcript, removes the long pasted link, inserts one study block, and switches the note to Reading view. BV, av, multi-part `?p=` links, and official `b23.tv` share links are supported.
+- 删除笔记中较长的原始视频链接
+- 将英文字幕保存到 `Lingua Study/Transcripts`
+- 在笔记中插入学习代码块
+- 切换到阅读视图并显示播放器、字幕和学习操作
 
-Transcript creation follows this order:
+播放器中的 **打开原视频** 按钮可跳转到视频来源页面。如果当前处理范围内有多个受支持的视频链接，插件会先询问要导入哪一个。
 
-1. Existing valid local transcript
-2. Direct Bilibili subtitle request, preferring manual English over automatic English; in-Obsidian login only when required
-3. Local `.srt` or `.vtt` selection, up to 10 MB
-4. Import a creator-provided document and align it locally with Whisper Base English
-5. Player-only import if no usable English track is available
+如果希望恢复“粘贴链接后自动导入”，请打开：
 
-After a player-only block is created, the original visible Bilibili link is removed while surrounding note text is retained. A compact caption icon remains next to the source-video button so that SRT/VTT or a creator-provided PDF, DOCX, TXT, Markdown, or pasted transcript can be added later. Imported Chinese is stored as the corresponding local translation without calling the translation API.
+**设置 → 第三方插件 → Lingua Study → 通用选项 → 粘贴视频链接后自动创建学习内容**
 
-The video cache directory can be opened from **Settings → Community plugins → Lingua Study → 哔哩哔哩视频与登录 → 打开缓存文件夹**. Cached video is outside the Obsidian vault and is not managed by Obsidian Sync. The generated transcript JSON remains in the configured transcript folder inside the vault. The Bilibili login cookie remains in Electron's isolated persistent session and is not written into notes, transcript files, plugin settings, or Obsidian Sync. It can be cleared from the same settings section.
+该功能默认关闭，避免粘贴资料时意外触发导入。
 
-### Manual transcript format
+YouTube 字幕会按照以下顺序自动尝试：
 
-Version 1 JSON files and notes created with Lingua Study 1.0.x remain supported. Advanced users can still create a transcript file manually:
+1. YouTube 观看页面和公开播放器字幕轨道
+2. 无需固定 API Key、且不依赖观看页面配置的 YouTube 移动端请求
+3. 电脑上单独安装的本地 `yt-dlp`：先尝试人工英文字幕，再尝试自动英文字幕
+4. 用户选择的本地 `.srt` 或 `.vtt` 文件，最大 10 MB
+
+字幕保存目录和 `yt-dlp` 的完整路径可以在以下位置修改：
+
+**设置 → 第三方插件 → Lingua Study → YouTube 字幕导入**
+
+不填写 `yt-dlp` 路径时，插件会搜索系统 PATH，以及常见的 Homebrew、MacPorts 和 Windows 命令位置。已有且有效的字幕文件会直接复用，不再发起网络请求；同一视频已经存在学习块时，也不会重复插入。
+
+### 导入哔哩哔哩视频
+
+1. 在 Markdown 笔记中粘贴一个公开哔哩哔哩视频链接。
+2. 点击 Obsidian 左侧功能区的 Lingua Study 图标。
+3. 等待字幕保存完成，插件会将笔记切换到阅读视图。
+
+Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的合并版 MP4 下载到操作系统缓存目录。如果平台提示字幕需要登录，用户可以在 Obsidian 内的隔离窗口中登录，插件随后自动重试。该登录会话与 Chrome 分开。
+
+导入成功后，插件会保存字幕、删除笔记中的长视频链接、插入一个学习块并切换到阅读视图。支持 BV 号、av 号、多分 P 视频的 `?p=` 链接和官方 `b23.tv` 分享链接。
+
+字幕创建按照以下顺序进行：
+
+1. 复用已有且有效的本地字幕
+2. 直接请求哔哩哔哩字幕，优先人工英文、其次自动英文；仅在平台要求时使用 Obsidian 内登录
+3. 选择最大 10 MB 的本地 `.srt` 或 `.vtt` 文件
+4. 导入作者提供的文稿，并使用本地 Whisper Base English 对齐
+5. 没有可用英文字幕时，仅创建播放器
+
+如果最后只创建了播放器，插件会删除笔记中原本可见的哔哩哔哩链接，同时保留周围的其他笔记内容。播放器旁会保留一个紧凑的字幕图标，之后可以继续添加 SRT/VTT，或者导入 PDF、DOCX、TXT、Markdown 和直接粘贴的文字稿。文稿中已有的中文内容会作为对应的本地翻译保存，不会调用 AI 翻译接口。
+
+可通过以下位置打开视频缓存目录：
+
+**设置 → 第三方插件 → Lingua Study → 哔哩哔哩视频与登录 → 打开缓存文件夹**
+
+缓存视频位于 Obsidian 仓库之外，不受 Obsidian Sync 管理。生成的字幕 JSON 仍保存在仓库内配置的字幕目录中。哔哩哔哩登录 Cookie 只保存在 Electron 的隔离持久会话中，不会写入笔记、字幕、插件设置或 Obsidian Sync；可以在同一设置区域中清除。
+
+### 手动创建字幕文件
+
+Lingua Study 1.0.x 创建的笔记和版本 1 JSON 字幕仍然兼容。高级用户也可以手动创建字幕 JSON：
 
 ```json
 {
@@ -121,7 +162,7 @@ Version 1 JSON files and notes created with Lingua Study 1.0.x remain supported.
 }
 ```
 
-Then add this code block to a Markdown note:
+然后在 Markdown 笔记中添加：
 
 ````markdown
 ```lingua-study
@@ -129,49 +170,66 @@ transcript: Language study/Transcripts/example.json
 ```
 ````
 
-Open Reading view to use the player and transcript. The legacy `english-video-study` code block remains supported for notes created during early development.
+切换到阅读视图后即可使用播放器和字幕。早期开发版本使用的 `english-video-study` 代码块仍然兼容。
 
-## Translation setup
+## 配置翻译服务
 
-Open **Settings → Community plugins → Lingua Study** and choose one provider.
+打开 **设置 → 第三方插件 → Lingua Study**，然后选择一个翻译服务。
 
 ### DeepSeek
 
-- Base URL: `https://api.deepseek.com`
-- Models: `deepseek-v4-flash` or `deepseek-v4-pro`
-- Thinking mode is disabled for short translation requests.
+- Base URL：`https://api.deepseek.com`
+- 模型：`deepseek-v4-flash` 或 `deepseek-v4-pro`
+- 短文本翻译请求会关闭思考模式
 
 ### Kimi
 
-- Model: `kimi-k2.6`
-- The API key is selected through Obsidian SecretStorage.
-- Thinking mode is disabled for short translation requests.
+- 模型：`kimi-k2.6`
+- API Key 通过 Obsidian SecretStorage 选择
+- 短文本翻译请求会关闭思考模式
 
-### OpenAI-compatible provider
+### OpenAI 兼容服务
 
-Provide:
+需要填写：
 
-- An HTTPS base URL such as `https://example.com/v1`, or a complete `/chat/completions` URL
-- The exact model ID supported by the provider
-- A Bearer API key selected through Obsidian SecretStorage
+- HTTPS Base URL，例如 `https://example.com/v1`；也可以填写完整的 `/chat/completions` 地址
+- 服务商实际支持的准确模型 ID
+- 通过 Obsidian SecretStorage 选择的 Bearer API Key
 
-Custom headers, Anthropic-compatible endpoints, Ollama, and additional target languages are not supported in 1.2.1. Optional whole-transcript translation is available, runs sequentially, and skips segments that already have results.
+当前版本暂不支持自定义请求头、Anthropic 兼容接口、Ollama 和其他翻译目标语言。可以选择启用整篇翻译；插件会按顺序逐句请求，并自动跳过已有结果的句子。
 
-## Translation controls
+## 翻译与学习操作
 
-- **Translate** sends only that transcript segment, the selected study profile, and matching local exam tags to the selected provider. One request returns the translation and study points.
-- **Show translation** reads an existing local cache without making a network request.
-- **Hide translation** hides the result without deleting the cache.
-- **Retranslate** makes a new request and replaces the cached study card for the active study profile.
-- **Add study points** upgrades a legacy translation-only cache after an explicit click.
-- **Edit transcript** changes one segment without changing its timestamps.
-- **Restore original** restores the first imported or generated text for that segment.
+- **翻译**：只发送当前字幕句、所选学习目标和本地匹配到的考试标签；一次请求同时返回中文译文与学习知识点
+- **显示翻译**：读取已有本地缓存，不发送网络请求
+- **隐藏翻译**：隐藏当前结果，不删除缓存
+- **重新翻译**：重新发起请求，并替换当前学习目标下的学习卡缓存
+- **补充知识点**：在用户明确点击后，为旧版纯译文缓存补充学习内容
+- **编辑字幕**：修改当前句文字，不改变时间戳
+- **恢复原文**：恢复该句首次导入或生成时的文字
+- **整篇翻译**：仅在设置中明确启用后生效；严格按顺序处理尚未翻译的句子，避免同时发出大量请求
 
-Manual edits store the first version in an optional `originalText` field in the same version 1 transcript JSON. Existing files remain compatible.
+### 逐句听写与跟读
 
-Double-clicking one English word performs a fully offline lookup. It does not call the configured AI provider. The compressed exam-and-frequency subset of ECDICT remains inside `main.js`. The optional full ECDICT installer under **Settings → Lingua Study → Learning and dictionary** prefers a prebuilt 24.4 MB ZIP and falls back to the official ECDICT CSV when needed. Downloads support resume and up to three attempts. The installed dictionary stays in the operating-system cache rather than the vault or Obsidian Sync. The pronunciation button uses an installed operating-system English voice.
+1. 点击要练习的字幕句，使该句成为当前选中内容。
+2. 点击字幕操作区的耳机图标开始听写，或点击麦克风图标开始跟读。
+3. 听写时可以前后复听 2 秒；提交答案后会显示分数和逐词对照，并可重新听写或进入下一句。
+4. 跟读会同步播放原声并录音，支持暂停、继续、查看波形和回放录音。
 
-When caching is enabled, Lingua Study creates a separate file beside the transcript:
+听写和跟读目前仅支持桌面端的 YouTube 播放器或已经本地缓存的哔哩哔哩视频。哔哩哔哩在线外部播放器无法提供精确的逐句控制；跟读还需要系统允许 Obsidian 使用麦克风。
+
+### 生词本与每日复习
+
+1. 双击字幕中的英文单词，在右侧栏查看离线词典释义、音标、词形和考试标签。
+2. 点击 **加入生词本**，保存单词、当前视频原句和时间戳；也可以补充个人备注。
+3. 打开右侧栏的 **生词本** 查看、搜索和筛选单词，或在 **今日复习** 中完成当天任务。
+4. 点击导出按钮可生成 Obsidian 生词笔记；桌面端还可以把全部生词导出为分页 PNG 长图。
+
+用户第一次手动编辑字幕时，原始版本会写入同一个版本 1 字幕 JSON 的可选 `originalText` 字段，已有文件仍保持兼容。
+
+双击一个英文单词会执行完全离线的词典查询，不会调用 AI 服务。压缩后的 ECDICT 考试与词频子集已经内置于 `main.js`。用户还可以在 **设置 → Lingua Study → 学习与词典** 中安装完整 ECDICT。插件优先下载约 24.4 MB 的预生成 ZIP，不可用时自动回退到 ECDICT 官方 CSV；下载支持断点续传和最多三次尝试。词典保存在操作系统缓存目录，不写入 Obsidian 笔记库，也不参与 Obsidian Sync。发音按钮使用操作系统已经安装的英文语音。
+
+启用翻译缓存后，Lingua Study 会在字幕文件旁创建独立缓存文件：
 
 ```text
 example.json
@@ -179,46 +237,46 @@ example.zh-CN.translations.json
 example.zh-CN.study.json
 ```
 
-## Privacy, network use, and costs
+## 隐私、联网与费用
 
-- The YouTube player connects to YouTube when a Lingua Study block is rendered.
-- Bilibili video caching connects to official `b23.tv`, `api.bilibili.com`, and allowlisted HTTPS `bilivideo.com` or `bilivideo.cn` CDN hosts.
-- Bilibili subtitle import first uses anonymous HTTPS requests. If login is required, the isolated Electron session sends its Bilibili cookie only to Bilibili-owned API hosts; cookie values are never written to the vault or plugin settings.
-- Bilibili MP4 files and a small JSON manifest are saved under the operating system's user cache directory, outside the Obsidian vault. A single cached video is limited to 2 GB. The current anonymous combined format is usually at most 480P.
-- Cached Bilibili playback uses a temporary random URL bound only to `127.0.0.1`. It serves only cache files already validated by the plugin, supports browser byte-range requests, never exposes the cache to the internet, and stops when the plugin unloads.
-- When no valid local cache exists, a rendered Bilibili block connects to `player.bilibili.com` and uses the official external player.
-- Direct import connects only to HTTPS addresses on `youtube.com`. It may use the public watch page and YouTube's internal player and timed-text endpoints. Lingua Study does not bundle a fixed YouTube API key.
-- Direct import does not use browser cookies, a Google login, a user API key, a developer-controlled server, or telemetry.
-- If direct import fails and local `yt-dlp` is available, Lingua Study runs it without a shell, ignores user-wide yt-dlp configuration, downloads subtitles only into a temporary folder, and deletes that folder after parsing. It does not request video or audio.
-- Local SRT/VTT fallback files are read on the device and are not uploaded by Lingua Study.
-- PDF, DOCX, TXT, Markdown, and pasted creator transcripts are parsed locally. Image-only PDFs require OCR before import.
-- Local transcript alignment downloads a pinned Whisper Base English model and runtime only after confirmation; the video and transcript remain on the device.
-- Translation requests connect to DeepSeek or the OpenAI-compatible HTTPS endpoint configured by the user.
-- A study-card request sends only the segment explicitly selected by the user, the selected CET-4/CET-6/IELTS profile, and matching local dictionary tags.
-- Offline dictionary lookups and system pronunciation do not make network requests.
-- The connection test sends the fixed sentence `Thank you for using Lingua Study.`.
-- The plugin does not collect telemetry, serve advertisements, create accounts, or operate a developer-controlled server.
-- The plugin does not write translation API key values to plugin data, notes, transcript files, translation caches, or console logs.
-- Translation providers may charge for API usage. Review the provider's current terms and pricing before use.
-- A third-party gateway can read the text sent to it. Use only providers you trust.
-- Obsidian community plugins share an application environment. SecretStorage protects against plain-text configuration and accidental syncing, but it cannot provide absolute isolation from a malicious plugin.
-- Users are responsible for the rights to any transcript or cached media content they create or import.
+- Lingua Study 学习块渲染后，YouTube 播放器会连接 YouTube
+- 哔哩哔哩视频缓存会连接官方 `b23.tv`、`api.bilibili.com`，以及白名单中的 HTTPS `bilivideo.com` 或 `bilivideo.cn` CDN 域名
+- 哔哩哔哩字幕默认使用匿名 HTTPS 请求；如果平台要求登录，隔离的 Electron 会话只会把 Cookie 发送给哔哩哔哩自有 API 域名，Cookie 值不会写入仓库或插件设置
+- 哔哩哔哩 MP4 和小型 JSON 清单保存在操作系统用户缓存目录，位于 Obsidian 仓库之外；单个缓存视频最大 2 GB，当前匿名合并格式通常最高为 480P
+- 本地哔哩哔哩播放使用仅绑定到 `127.0.0.1` 的临时随机地址，只提供插件已经校验过的缓存文件，支持按范围读取，不会把缓存暴露到互联网，并会在插件卸载时停止
+- 本地缓存不可用时，已渲染的哔哩哔哩学习块会连接 `player.bilibili.com` 并使用官方外部播放器
+- YouTube 直接导入只连接 `youtube.com` 下的 HTTPS 地址，可能使用公开观看页面、内部播放器和 timed-text 字幕接口；插件不包含固定 YouTube API Key
+- YouTube 直接导入不使用浏览器 Cookie、Google 登录、用户 API Key、作者服务器或遥测
+- 直接导入失败且电脑上存在有效 `yt-dlp` 时，插件不会通过 Shell 执行它，会忽略用户级 `yt-dlp` 配置，只把字幕下载到临时目录，解析完成后删除；不会请求视频或音频
+- 本地 SRT/VTT 只在设备上读取，Lingua Study 不会上传这些文件
+- PDF、DOCX、TXT、Markdown 和粘贴文稿都在本地解析；只有图片而没有可选文字的 PDF 需要先进行 OCR
+- 本地字幕对齐只会在用户确认后下载固定版本的 Whisper Base English 模型和运行环境；视频和文稿不会离开设备
+- AI 翻译请求只连接用户配置的 DeepSeek、Kimi 或 OpenAI 兼容 HTTPS 服务
+- 学习卡请求只发送用户明确选择的字幕句、当前学习目标和本地匹配的词典标签
+- 离线词典查询和系统发音不会发起网络请求
+- 连接测试只发送固定句子 `Thank you for using Lingua Study.`
+- 插件不收集遥测数据、不展示广告、不创建账号，也不运行作者控制的服务器
+- 插件不会把翻译 API Key 明文写入插件数据、笔记、字幕文件、翻译缓存或控制台日志
+- 第三方翻译服务可能产生 API 费用，请在使用前核对对应服务的最新条款和价格
+- 第三方中转服务能够读取发送给它的文字，请只使用可信服务
+- Obsidian 社区插件共享同一个应用运行环境；SecretStorage 可以避免凭据明文配置和意外同步，但无法对恶意插件提供绝对隔离
+- 用户需要自行确保有权使用、保存或导入相关字幕和缓存媒体内容
 
-## Limitations
+## 已知限制
 
-- YouTube can refuse embedded playback because of publisher settings, login requirements, regional restrictions, or anti-bot checks.
-- Bilibili can refuse or limit downloads and external playback because of publisher, account, region, copyright, membership, rate limits, or platform changes.
-- Bilibili may expose visible captions only as pixels burned into the video. Those are not independent subtitle tracks; use SRT/VTT or import a creator-provided document and run transcript alignment.
-- Direct Bilibili subtitle import depends on Bilibili's current web APIs and, when required, a valid isolated login session. Membership, rate-limit, regional, or platform changes can still prevent retrieval.
-- Lingua Study does not include a YouTube login flow and does not use cookies to bypass restrictions.
-- Public-caption import depends on an unofficial YouTube interface and may require a plugin update if YouTube changes it.
-- `yt-dlp` is not bundled, installed, or updated by Lingua Study. Its fallback works only when a compatible executable is already available on the computer.
-- YouTube videos without retrievable English captions still require a local English SRT/VTT file. Other languages are not silently machine-translated into English.
-- Lingua Study does not operate a transcription service. Local Whisper alignment runs on the user's device after the required model files have been downloaded.
-- The interface and translation target are currently Simplified Chinese.
-- IELTS study tips are profile-based guidance, not claims about an official fixed IELTS vocabulary list.
+- YouTube 可能因为发布者设置、登录要求、地区限制或反机器人检查而拒绝嵌入播放
+- 哔哩哔哩可能因为发布者设置、账号、地区、版权、会员、请求频率或平台变化而拒绝或限制下载与外部播放
+- 部分哔哩哔哩视频的可见字幕只是烧录在画面中的像素，不是独立字幕轨道；这类视频需要导入 SRT/VTT，或者导入作者文稿并执行本地对齐
+- 哔哩哔哩字幕导入依赖当前网页接口；即使已经登录，会员、频率限制、地区或平台变化仍可能阻止获取
+- Lingua Study 不提供 YouTube 登录流程，也不会使用 Cookie 绕过限制
+- 公开视频字幕导入依赖非官方 YouTube 接口；YouTube 改动后可能需要更新插件
+- `yt-dlp` 不会随插件打包、安装或自动更新；只有电脑上已经存在兼容的可执行文件时才能作为后备方案
+- 无法获取英文字幕的 YouTube 视频仍需要用户提供本地英文 SRT/VTT；插件不会悄悄把其他语言机器翻译成英文
+- Lingua Study 不提供云端语音转写服务；本地 Whisper 对齐会在所需模型文件下载完成后在用户设备上运行
+- 当前界面和翻译目标语言是简体中文
+- IELTS 学习提示属于按目标生成的辅助内容，并不代表存在官方固定 IELTS 词表
 
-## Development
+## 开发与检查
 
 ```bash
 npm ci
@@ -228,10 +286,10 @@ npm run build
 npm run check:release
 ```
 
-The production build creates `main.js`; release packaging remains a separate maintainer action.
+生产构建会生成 `main.js`；构建不会自动发布 GitHub Release，发布仍需维护者单独执行。
 
-Maintainer instructions are available in [RELEASING.md](./RELEASING.md).
+维护者发布说明见 [RELEASING.md](./RELEASING.md)。
 
-## License
+## 开源协议
 
-[MIT](./LICENSE) © 2026 xiaobai. See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for bundled and optional third-party components.
+[MIT](./LICENSE) © 2026 xiaobai。插件内置和可选的第三方组件见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
