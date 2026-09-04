@@ -1045,9 +1045,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     });
     iframe.setAttribute("allowfullscreen", "");
     const sourceToolbar = playerDock.createDiv({ cls: "evs-toolbar evs-bilibili-toolbar" });
-    if (!transcriptData) {
-      this.createTranscriptImportButton(sourceToolbar, config);
-    }
+    this.createTranscriptImportButton(sourceToolbar, config, transcriptData !== null);
     this.createSourceLink(sourceToolbar, sourceUrl);
     this.createMobileFloatingToggle(sourceToolbar, playerDock);
     const status = root.createDiv({ cls: "evs-status evs-bilibili-status" });
@@ -1104,9 +1102,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
     this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
     this.createSpeedControls(toolbar);
-    if (!transcriptData) {
-      this.createTranscriptImportButton(toolbar, config);
-    }
+    this.createTranscriptImportButton(toolbar, config, transcriptData !== null);
     this.createSourceLink(toolbar, sourceUrl);
     this.createMobileFloatingToggle(toolbar, playerDock);
 
@@ -3696,13 +3692,18 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   private createTranscriptImportButton(
     parent: HTMLElement,
-    config: BilibiliCodeBlockConfig
+    config: BilibiliCodeBlockConfig,
+    hasTranscript: boolean
   ): HTMLButtonElement {
     const button = parent.createEl("button", {
       cls: "evs-button evs-icon-button evs-add-transcript-button"
     });
     button.type = "button";
-    this.setControlIcon(button, "captions", "添加字幕或导入博主文稿");
+    this.setControlIcon(
+      button,
+      "captions",
+      hasTranscript ? "替换字幕或导入文稿" : "添加字幕或导入博主文稿"
+    );
     button.addEventListener("click", () => {
       void this.plugin.openBilibiliTranscriptImport(this.sourcePath, config);
     });

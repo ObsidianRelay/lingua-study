@@ -4,6 +4,13 @@ All notable changes to Lingua Study are documented in this file.
 
 ## Unreleased
 
+## 1.3.2 - 2026-09-04
+
+### Fixed
+
+- Kept the Bilibili subtitle import button available after a transcript has already been added, allowing users to replace a failed or incorrect subtitle import
+- Placed the subtitle button between playback speed and the original-video link, with clearer replacement wording
+
 ## 1.3.1 - 2026-09-03
 
 ### Fixed
