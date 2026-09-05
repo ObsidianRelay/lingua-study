@@ -18,6 +18,11 @@ import {
   STUDY_PROFILE_LONG_LABELS
 } from "./study-core";
 import { DICTIONARY_SOURCE } from "./dictionary-core";
+import {
+  CUSTOM_DICTIONARY_JSON_TEMPLATE,
+  CUSTOM_DICTIONARY_TEMPLATE,
+  CUSTOM_DICTIONARY_TSV_TEMPLATE
+} from "./custom-dictionary-core";
 
 export {
   DEFAULT_SETTINGS,
@@ -73,6 +78,33 @@ class ClearFullDictionaryModal extends Modal {
       void this.onConfirm().then(() => this.close()).catch((error) => {
         confirm.disabled = false;
         new Notice(error instanceof Error ? error.message : "完整版词典删除失败。", 6_000);
+      });
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+class ClearCustomDictionaryModal extends Modal {
+  constructor(app: App, private readonly onConfirm: () => Promise<void>) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText("删除自定义词典？");
+    this.contentEl.createEl("p", {
+      text: "只会删除已导入的自定义词典，不会删除 ECDICT、生词本、复习记录、字幕或翻译内容。"
+    });
+    const actions = this.contentEl.createDiv({ cls: "lingua-study-import-actions" });
+    const confirm = actions.createEl("button", { cls: "mod-warning", text: "确认删除" });
+    actions.createEl("button", { text: "取消" }).addEventListener("click", () => this.close());
+    confirm.addEventListener("click", () => {
+      confirm.disabled = true;
+      void this.onConfirm().then(() => this.close()).catch((error) => {
+        confirm.disabled = false;
+        new Notice(error instanceof Error ? error.message : "自定义词典删除失败。", 6_000);
       });
     });
   }
@@ -382,8 +414,155 @@ export class LinguaStudySettingTab extends PluginSettingTab {
               }
             },
             {
+              name: "导入自定义词典（CSV / TSV / JSON）",
+              desc: "导入后，自定义释义会优先于 ECDICT。文件只在本机处理，不会上传或参与 Obsidian Sync。三种格式均使用 word、phonetic、definition、translation、pos、tags 字段；word 必填，两个释义字段至少填写一项。",
+              visible: () => this.plugin.capabilities.fullDictionary,
+              render: (setting) => {
+                setting.controlEl.addClass("lingua-study-custom-dictionary-controls");
+                const primaryRow = setting.controlEl.createDiv({
+                  cls: "lingua-study-custom-dictionary-primary"
+                });
+                const templateRow = setting.controlEl.createDiv({
+                  cls: "lingua-study-custom-dictionary-templates"
+                });
+                const status = primaryRow.createSpan({
+                  cls: "lingua-study-settings-status"
+                });
+                status.setAttribute("role", "status");
+                status.setAttribute("aria-live", "polite");
+                const importButton = primaryRow.createEl("button", { text: "选择词典文件" });
+                const remove = primaryRow.createEl("button", {
+                  cls: "mod-warning",
+                  text: "删除自定义词典"
+                });
+                const csvTemplateButton = templateRow.createEl("button", { text: "CSV 模板" });
+                const tsvTemplateLabel = "TSV 模板";
+                const tsvTemplateButton = templateRow.createEl("button", { text: tsvTemplateLabel });
+                const jsonTemplateButton = templateRow.createEl("button", { text: "JSON 模板" });
+                const fileInput = primaryRow.createEl("input", {
+                  attr: {
+                    type: "file",
+                    accept: ".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json"
+                  }
+                });
+                fileInput.hidden = true;
+
+                const refresh = (): void => {
+                  const current = this.plugin.getCustomDictionaryStatus();
+                  status.classList.remove("is-success", "is-warning", "is-error");
+                  if (current.manifest) {
+                    const detail = [
+                      `${current.manifest.entryCount.toLocaleString()} 词条`,
+                      current.manifest.skippedRows > 0
+                        ? `跳过 ${current.manifest.skippedRows.toLocaleString()} 行`
+                        : "",
+                      current.manifest.duplicateRows > 0
+                        ? `覆盖 ${current.manifest.duplicateRows.toLocaleString()} 个重复词`
+                        : ""
+                    ].filter(Boolean).join(" · ");
+                    status.setText(`已导入 ${current.manifest.sourceFileName} · ${detail}`);
+                    status.classList.add("is-success");
+                  } else {
+                    status.setText("尚未导入");
+                    status.classList.add("is-warning");
+                  }
+                  remove.hidden = !current.installed;
+                };
+                const setBusy = (busy: boolean): void => {
+                  importButton.disabled = busy;
+                  csvTemplateButton.disabled = busy;
+                  tsvTemplateButton.disabled = busy;
+                  jsonTemplateButton.disabled = busy;
+                  remove.disabled = busy;
+                };
+                importButton.addEventListener("click", () => fileInput.click());
+                fileInput.addEventListener("change", () => {
+                  const file = fileInput.files?.[0];
+                  fileInput.value = "";
+                  if (!file) return;
+                  setBusy(true);
+                  status.classList.remove("is-success", "is-warning", "is-error");
+                  status.setText("正在读取自定义词典…");
+                  void file.arrayBuffer()
+                    .then((buffer) => this.plugin.installCustomDictionaryFromFile(
+                      file.name,
+                      new Uint8Array(buffer),
+                      (message) => status.setText(message)
+                    ))
+                    .then((result) => {
+                      const skipped = result.manifest.skippedRows;
+                      const warning = skipped > 0
+                        ? `，另有 ${skipped.toLocaleString()} 行未导入：${result.warnings.join("；")}`
+                        : "";
+                      new Notice(
+                        `自定义词典已导入，共 ${result.manifest.entryCount.toLocaleString()} 个词条${warning}。`,
+                        8_000
+                      );
+                      refresh();
+                    })
+                    .catch((error: unknown) => {
+                      const message = error instanceof Error
+                        ? error.message
+                        : "自定义词典导入失败，请检查文件格式。";
+                      status.setText(`导入失败：${message}`);
+                      status.classList.add("is-error");
+                      new Notice(message, 8_000);
+                    })
+                    .finally(() => setBusy(false));
+                });
+                const downloadTemplate = (
+                  content: string,
+                  fileName: string,
+                  mimeType: string
+                ): void => {
+                  const document = this.containerEl.ownerDocument;
+                  const view = document.defaultView;
+                  if (!view) return;
+                  const blob = new Blob([`\uFEFF${content}\n`], {
+                    type: `${mimeType};charset=utf-8`
+                  });
+                  const url = view.URL.createObjectURL(blob);
+                  const link = document.body.createEl("a");
+                  link.href = url;
+                  link.download = fileName;
+                  link.click();
+                  link.remove();
+                  view.setTimeout(() => view.URL.revokeObjectURL(url), 0);
+                };
+                csvTemplateButton.addEventListener("click", () => {
+                  downloadTemplate(
+                    CUSTOM_DICTIONARY_TEMPLATE,
+                    "lingua-study-custom-dictionary-template.csv",
+                    "text/csv"
+                  );
+                });
+                tsvTemplateButton.addEventListener("click", () => {
+                  downloadTemplate(
+                    CUSTOM_DICTIONARY_TSV_TEMPLATE,
+                    "lingua-study-custom-dictionary-template.tsv",
+                    "text/tab-separated-values"
+                  );
+                });
+                jsonTemplateButton.addEventListener("click", () => {
+                  downloadTemplate(
+                    CUSTOM_DICTIONARY_JSON_TEMPLATE,
+                    "lingua-study-custom-dictionary-template.json",
+                    "application/json"
+                  );
+                });
+                remove.addEventListener("click", () => {
+                  new ClearCustomDictionaryModal(this.app, async () => {
+                    await this.plugin.clearCustomDictionary();
+                    refresh();
+                    new Notice("已删除自定义词典，ECDICT 不受影响。", 6_000);
+                  }).open();
+                });
+                refresh();
+              }
+            },
+            {
               name: "移动端词典",
-              desc: "手机和平板继续使用内置 ECDICT 精简版。完整版词典的下载和系统缓存管理暂仅支持电脑端。",
+              desc: "手机和平板继续使用内置 ECDICT 精简版。完整版词典和自定义词典的导入、缓存管理暂仅支持电脑端。",
               visible: () => this.plugin.capabilities.mobile
             },
             {

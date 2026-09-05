@@ -150,6 +150,16 @@ test("设置首页使用六个原生分类并保留全部设置项", async () =>
   assert.match(source, /text: "下载完整版"/u);
   assert.match(source, /installFullDictionary/u);
   assert.doesNotMatch(source, /从本地文件安装|installFullDictionaryFromLocalFile/u);
+  assert.match(source, /name: "导入自定义词典（CSV \/ TSV \/ JSON）"/u);
+  assert.match(source, /text: "选择词典文件"/u);
+  assert.match(source, /text: "CSV 模板"/u);
+  assert.match(source, /const tsvTemplateLabel = "TSV 模板"/u);
+  assert.match(source, /text: "JSON 模板"/u);
+  assert.match(source, /lingua-study-custom-dictionary-primary/u);
+  assert.match(source, /lingua-study-custom-dictionary-templates/u);
+  assert.match(source, /installCustomDictionaryFromFile/u);
+  assert.match(source, /文件只在本机处理，不会上传/u);
+  assert.match(source, /ClearCustomDictionaryModal/u);
   assert.match(source, /支持断点续传和自动重试/u);
   assert.match(source, /ClearFullDictionaryModal/u);
   assert.match(source, /支持断点续传和自动重试/u);
@@ -201,6 +211,8 @@ test("设置页样式统一导航卡片、状态和窄窗口布局", async () =>
   assert.match(css, /\.lingua-study-settings-section \.setting-item-description \{[\s\S]*?overflow-wrap: anywhere;/u);
   assert.match(css, /background: var\(--interactive-hover\);/u);
   assert.match(css, /\.lingua-study-settings-section \.setting-item-control \{[\s\S]*?flex-wrap: wrap;/u);
+  assert.match(css, /\.setting-item-control\.lingua-study-custom-dictionary-controls \{[\s\S]*?flex-direction: column;/u);
+  assert.match(css, /\.lingua-study-custom-dictionary-templates \{[\s\S]*?justify-content: flex-end;/u);
   assert.match(css, /\.setting-page:has\(\.lingua-study-settings-section\)\) \[hidden\] \{[\s\S]*?display: none !important;/u);
   assert.match(css, /@media \(max-width: 700px\) \{[\s\S]*?flex-direction: column;/u);
 });

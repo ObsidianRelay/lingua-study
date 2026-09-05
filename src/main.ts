@@ -58,6 +58,11 @@ import type {
   FullDictionaryInstallResult,
   FullDictionaryStatus
 } from "./full-dictionary";
+import type {
+  CustomDictionaryInstallResult,
+  CustomDictionaryService,
+  CustomDictionaryStatus
+} from "./custom-dictionary";
 import {
   DICTIONARY_VIEW_TYPE,
   LinguaDictionaryView,
@@ -4765,6 +4770,7 @@ export default class LinguaStudyPlugin extends Plugin {
   private vocabularyStore: VocabularyStore | null = null;
   private readonly offlineDictionary = new OfflineDictionary();
   private fullDictionaryService: FullDictionaryService | null = null;
+  private customDictionaryService: CustomDictionaryService | null = null;
   private readonly studyProfileListeners = new Set<(profile: StudyProfile) => void>();
   private readonly vocabularyListeners = new Set<() => void>();
   private readonly studyRenderers = new Set<LinguaStudyRenderChild>();
@@ -4805,24 +4811,26 @@ export default class LinguaStudyPlugin extends Plugin {
     if (this.capabilities.desktop) {
       const [
         { FullDictionaryService },
+        { CustomDictionaryService },
         { BilibiliCacheService },
         { LocalWhisperService },
         { removeLegacyWhisperCachesOnce },
         { fetchTranscriptWithYtDlp }
       ] = await Promise.all([
         import("./full-dictionary"),
+        import("./custom-dictionary"),
         import("./bilibili-cache"),
         import("./local-whisper"),
         import("./legacy-whisper-cleanup"),
         import("./yt-dlp")
       ]);
       this.fullDictionaryService = new FullDictionaryService();
-      const fullDictionaryStatus = await this.fullDictionaryService.initialize();
-      this.offlineDictionary.setExternalShardLoader(
-        fullDictionaryStatus.installed
-          ? (key) => this.fullDictionaryService?.readCompressedShard(key) ?? null
-          : null
-      );
+      this.customDictionaryService = new CustomDictionaryService();
+      await Promise.all([
+        this.fullDictionaryService.initialize(),
+        this.customDictionaryService.initialize()
+      ]);
+      this.syncDictionaryShardLoaders();
       this.bilibiliCacheService = new BilibiliCacheService();
       this.localWhisperService = new LocalWhisperService(this.bilibiliCacheService);
       ytDlpFetcher = fetchTranscriptWithYtDlp;
@@ -5001,6 +5009,7 @@ export default class LinguaStudyPlugin extends Plugin {
     disposeDocumentParserRuntime();
     this.localWhisperService = null;
     this.fullDictionaryService = null;
+    this.customDictionaryService = null;
     this.bilibiliSessionService = null;
     this.bilibiliCacheService = null;
     this.bilibiliImporter = null;
@@ -5280,19 +5289,27 @@ export default class LinguaStudyPlugin extends Plugin {
     };
   }
 
+  getCustomDictionaryStatus(): CustomDictionaryStatus {
+    return this.customDictionaryService?.getStatus() ?? {
+      installed: false,
+      manifest: null,
+      cacheFolder: ""
+    };
+  }
+
   async installFullDictionary(
     onProgress: (message: string) => void
   ): Promise<FullDictionaryInstallResult> {
     const service = this.getFullDictionaryService();
     const result = await service.install(onProgress);
-    this.offlineDictionary.setExternalShardLoader((key) => service.readCompressedShard(key));
+    this.syncDictionaryShardLoaders();
     this.refreshDictionaryViews();
     return result;
   }
 
   async clearFullDictionary(): Promise<void> {
     await this.getFullDictionaryService().clear();
-    this.offlineDictionary.setExternalShardLoader(null);
+    this.syncDictionaryShardLoaders();
     this.refreshDictionaryViews();
   }
 
@@ -5300,11 +5317,51 @@ export default class LinguaStudyPlugin extends Plugin {
     return this.getFullDictionaryService().openCacheFolder();
   }
 
+  async installCustomDictionaryFromFile(
+    fileName: string,
+    data: Uint8Array,
+    onProgress: (message: string) => void
+  ): Promise<CustomDictionaryInstallResult> {
+    const result = await this.getCustomDictionaryService().installFromFile(
+      fileName,
+      data,
+      onProgress
+    );
+    this.syncDictionaryShardLoaders();
+    this.refreshDictionaryViews();
+    return result;
+  }
+
+  async clearCustomDictionary(): Promise<void> {
+    await this.getCustomDictionaryService().clear();
+    this.syncDictionaryShardLoaders();
+    this.refreshDictionaryViews();
+  }
+
   getDictionarySourceLabel(): string {
-    const manifest = this.fullDictionaryService?.getStatus().manifest ?? null;
-    return manifest
-      ? `ECDICT 完整版 · ${manifest.entryCount.toLocaleString()} 词条`
+    const custom = this.customDictionaryService?.getStatus().manifest ?? null;
+    const full = this.fullDictionaryService?.getStatus().manifest ?? null;
+    const ecdict = full
+      ? `ECDICT 完整版 · ${full.entryCount.toLocaleString()} 词条`
       : `ECDICT 精简版 · ${DICTIONARY_SOURCE.entryCount.toLocaleString()} 词条`;
+    return custom
+      ? `自定义词典 · ${custom.entryCount.toLocaleString()} 词条 + ${ecdict}`
+      : ecdict;
+  }
+
+  private syncDictionaryShardLoaders(): void {
+    const loaders = [];
+    if (this.customDictionaryService?.getStatus().installed) {
+      loaders.push((key: string) =>
+        this.customDictionaryService?.readCompressedShard(key) ?? null
+      );
+    }
+    if (this.fullDictionaryService?.getStatus().installed) {
+      loaders.push((key: string) =>
+        this.fullDictionaryService?.readCompressedShard(key) ?? null
+      );
+    }
+    this.offlineDictionary.setExternalShardLoaders(loaders);
   }
 
   private refreshDictionaryViews(): void {
@@ -6021,6 +6078,13 @@ export default class LinguaStudyPlugin extends Plugin {
       throw new Error("完整版词典服务尚未初始化，请重新加载插件。");
     }
     return this.fullDictionaryService;
+  }
+
+  private getCustomDictionaryService(): CustomDictionaryService {
+    if (!this.customDictionaryService) {
+      throw new Error("自定义词典服务尚未初始化，请重新加载插件。");
+    }
+    return this.customDictionaryService;
   }
 
   private getBilibiliSessionService(): BilibiliSessionService {

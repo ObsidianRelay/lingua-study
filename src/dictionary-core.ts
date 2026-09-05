@@ -50,6 +50,11 @@ interface PackedDictionaryShard {
 
 export type ExternalDictionaryShardLoader = (key: string) => Uint8Array | null;
 
+interface ExternalDictionarySource {
+  loader: ExternalDictionaryShardLoader;
+  loaded: Map<string, PackedDictionaryShard>;
+}
+
 const INFLECTION_LABELS: Readonly<Record<string, string>> = {
   "0": "原形",
   "1": "派生形式",
@@ -180,8 +185,7 @@ function parseCompressedShard(compressed: Uint8Array): PackedDictionaryShard {
 /** 按需解压首字母分片；已经使用的分片保留在内存中，后续查询不重复解析。 */
 export class OfflineDictionary {
   private readonly loaded = new Map<string, PackedDictionaryShard>();
-  private readonly externalLoaded = new Map<string, PackedDictionaryShard>();
-  private externalShardLoader: ExternalDictionaryShardLoader | null = null;
+  private externalSources: ExternalDictionarySource[] = [];
 
   constructor(
     private readonly compressedShards: Readonly<Record<string, string>> = DICTIONARY_SHARDS
@@ -189,8 +193,12 @@ export class OfflineDictionary {
 
   /** 由桌面端注入完整版分片读取器；移动端仍保留内置精简版。 */
   setExternalShardLoader(loader: ExternalDictionaryShardLoader | null): void {
-    this.externalShardLoader = loader;
-    this.externalLoaded.clear();
+    this.setExternalShardLoaders(loader ? [loader] : []);
+  }
+
+  /** 按优先级注入多个本地词典；自定义词典可以覆盖 ECDICT 的同名单词。 */
+  setExternalShardLoaders(loaders: ExternalDictionaryShardLoader[]): void {
+    this.externalSources = loaders.map((loader) => ({ loader, loaded: new Map() }));
   }
 
   lookup(rawQuery: string): DictionaryLookupResult {
@@ -198,6 +206,23 @@ export class OfflineDictionary {
     const normalizedQuery = normalizeLookupWord(query);
     if (normalizedQuery === "") {
       return { query, normalizedQuery, entry: null, suggestions: [] };
+    }
+
+    const suggestions: string[] = [];
+    for (const source of this.externalSources) {
+      const external = this.lookupInSource(
+        normalizedQuery,
+        (key) => this.loadExternalShard(source, key)
+      );
+      if (external.entry) {
+        return {
+          query,
+          normalizedQuery,
+          entry: unpackEntry(external.entry),
+          suggestions: []
+        };
+      }
+      suggestions.push(...external.suggestions);
     }
 
     const embedded = this.lookupInSource(normalizedQuery, (key) => this.loadShard(key));
@@ -210,29 +235,11 @@ export class OfflineDictionary {
       };
     }
 
-    if (this.externalShardLoader) {
-      const external = this.lookupInSource(normalizedQuery, (key) => this.loadExternalShard(key));
-      if (external.entry) {
-        return {
-          query,
-          normalizedQuery,
-          entry: unpackEntry(external.entry),
-          suggestions: []
-        };
-      }
-      return {
-        query,
-        normalizedQuery,
-        entry: null,
-        suggestions: [...new Set([...external.suggestions, ...embedded.suggestions])].slice(0, 5)
-      };
-    }
-
     return {
       query,
       normalizedQuery,
       entry: null,
-      suggestions: embedded.suggestions
+      suggestions: [...new Set([...suggestions, ...embedded.suggestions])].slice(0, 5)
     };
   }
 
@@ -272,21 +279,18 @@ export class OfflineDictionary {
     return parsed;
   }
 
-  private loadExternalShard(key: string): PackedDictionaryShard {
-    const existing = this.externalLoaded.get(key);
+  private loadExternalShard(source: ExternalDictionarySource, key: string): PackedDictionaryShard {
+    const existing = source.loaded.get(key);
     if (existing) {
       return existing;
     }
-    if (!this.externalShardLoader) {
-      return { entries: {}, aliases: {} };
-    }
     try {
-      const compressed = this.externalShardLoader(key);
+      const compressed = source.loader(key);
       if (!compressed) {
         return { entries: {}, aliases: {} };
       }
       const parsed = parseCompressedShard(compressed);
-      this.externalLoaded.set(key, parsed);
+      source.loaded.set(key, parsed);
       return parsed;
     } catch {
       return { entries: {}, aliases: {} };

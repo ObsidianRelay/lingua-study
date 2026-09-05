@@ -30,6 +30,8 @@ await esbuild.build({
     "tests/study-core.test.ts",
     "tests/study-cache-core.test.ts",
     "tests/dictionary-core.test.ts",
+    "tests/custom-dictionary-core.test.ts",
+    "tests/custom-dictionary.test.ts",
     "tests/full-dictionary.test.ts",
     "tests/vocabulary-core.test.ts",
     "tests/vocabulary-export-core.test.ts",

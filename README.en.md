@@ -5,9 +5,9 @@
 Turn English YouTube and Bilibili videos into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 1.3.2 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.3.3 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
-## Recent updates (1.3.0–1.3.2)
+## Recent updates (1.3.0–1.3.3)
 
 - **Sentence dictation**: replay one segment, submit an answer, and review a word-level comparison and score
 - **Shadowing practice**: record along with the source audio, pause or resume, view a waveform, and play back the recording
@@ -15,6 +15,7 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - **Vocabulary export**: export the book to an Obsidian study note or paginated desktop PNG images
 - **Smooth transcript following**: keep the active segment visible during playback with less page jumping and repeated layout work
 - **Replaceable transcript imports**: keep the Bilibili subtitle button available after a transcript has been added so failed or incorrect imports can be replaced
+- **Custom dictionaries**: import CSV, TSV, or JSON dictionaries up to 100 MB and 1,000,000 entries on desktop, with custom definitions taking priority
 
 ## Features
 

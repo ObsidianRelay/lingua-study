@@ -2161,6 +2161,22 @@
   justify-content: flex-end;
 }
 
+.lingua-study-settings-section .setting-item-control.lingua-study-custom-dictionary-controls {
+  min-width: min(320px, 100%);
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.lingua-study-custom-dictionary-primary,
+.lingua-study-custom-dictionary-templates {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .lingua-study-settings-section .setting-item-control :is(input[type="text"], input[type="number"], select) {
   min-height: 34px;
   max-width: min(360px, 100%);
@@ -2263,6 +2279,11 @@
     width: 100%;
     min-width: 0;
     max-width: none;
+    justify-content: flex-start;
+  }
+
+  .lingua-study-custom-dictionary-primary,
+  .lingua-study-custom-dictionary-templates {
     justify-content: flex-start;
   }
 

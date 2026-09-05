@@ -63,3 +63,19 @@ test("精简版未收录时自动回退到本地完整版分片", async () => {
   dictionary.setExternalShardLoader(null);
   assert.equal(dictionary.lookup("rarewordx").entry, null);
 });
+
+test("多个本地词典按自定义、完整版、精简版的顺序查找", () => {
+  const customAbility = ["ability", "", "custom ability", "自定义能力", "n", [], 0, 0, ""];
+  const fullRare = ["rarewordx", "", "full rare word", "完整词典生僻词", "n", [], 0, 0, ""];
+  const custom = gzipSync(JSON.stringify({ entries: { ability: customAbility }, aliases: {} }));
+  const fullA = gzipSync(JSON.stringify({ entries: {}, aliases: {} }));
+  const fullR = gzipSync(JSON.stringify({ entries: { rarewordx: fullRare }, aliases: {} }));
+  const dictionary = new OfflineDictionary();
+  dictionary.setExternalShardLoaders([
+    (key) => key === "a" ? custom : null,
+    (key) => key === "a" ? fullA : key === "r" ? fullR : null
+  ]);
+  assert.equal(dictionary.lookup("ability").entry?.chineseTranslation, "自定义能力");
+  assert.equal(dictionary.lookup("rarewordx").entry?.chineseTranslation, "完整词典生僻词");
+  assert.ok(dictionary.lookup("study").entry);
+});

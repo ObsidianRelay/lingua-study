@@ -2,7 +2,12 @@
 
 All notable changes to Lingua Study are documented in this file.
 
-## Unreleased
+## 1.3.3 - 2026-09-05
+
+### Added
+
+- Added desktop-only custom CSV, TSV, and JSON dictionary import with downloadable templates, validation results, isolated removal, and local-only storage
+- Added layered dictionary lookup so custom entries take priority over the full and bundled ECDICT sources
 
 ## 1.3.2 - 2026-09-04
 
