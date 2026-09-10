@@ -9,14 +9,18 @@ import {
   Notice,
   parseYaml,
   Plugin,
+  requestUrl,
   setIcon,
   TFile,
   TFolder,
   type WorkspaceLeaf
 } from "obsidian";
 import {
+  DEFAULT_DESKTOP_PLAYER_WIDTH,
   DEFAULT_SETTINGS,
   LinguaStudySettingTab,
+  MAX_DESKTOP_PLAYER_WIDTH,
+  MIN_DESKTOP_PLAYER_WIDTH,
   sanitizeSettings,
   type LinguaStudySettings
 } from "./settings";
@@ -77,8 +81,10 @@ import {
 import { AsyncKeyedQueue } from "./async-keyed-queue";
 import {
   calculateAlignedScrollTop,
+  calculatePlayerResizeWidth,
   calculateTranscriptEndSpacer,
-  calculateViewportAlignedScrollDelta
+  calculateViewportAlignedScrollDelta,
+  type PlayerResizeCorner
 } from "./ui-layout-core";
 import {
   buildMobileYouTubeStartUrl,
@@ -122,6 +128,11 @@ import {
   getStudyBlockCursorRecovery
 } from "./live-preview-core";
 import { VersionedAsyncCache } from "./versioned-async-cache";
+import {
+  getPluginUpdateInfo,
+  LINGUA_STUDY_LATEST_MANIFEST_URL,
+  type PluginUpdateInfo
+} from "./update-check-core";
 import { getPlatformCapabilities, type PlatformCapabilities } from "./platform";
 import type { YtDlpTranscriptFetcher } from "./yt-dlp-core";
 import {
@@ -137,6 +148,7 @@ import {
   getShadowingActiveElapsedMs,
   getShadowingLiveWaveformLayout,
   getShadowingPlaybackProgress,
+  getShadowingSmoothedPlaybackTime,
   getShadowingRecordingProgress,
   getShadowingRecordingErrorMessage,
   getShadowingWaveformBinSize,
@@ -215,6 +227,8 @@ interface ShadowingSession {
   recordingUrl: string | null;
   recordingStartedAt: number;
   recordingAccumulatedMs: number;
+  recordingPlaybackAnchorMs: number | null;
+  recordingPlaybackAnchorSeconds: number;
   recordingSourcePosition: number;
   sourceEnded: boolean;
   uiTimer: number | null;
@@ -555,6 +569,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private shadowingPlaybackStopAt: number | null = null;
   private translationBatchRunning = false;
   private playerDockEl: HTMLElement | null = null;
+  private playerWidthSaveTimer: number | null = null;
+  private pendingDesktopPlayerWidth: number | null = null;
   private fullWidthObserver: ResizeObserver | null = null;
   private fullWidthScrollEl: HTMLElement | null = null;
   private fullWidthScrollHandler: (() => void) | null = null;
@@ -574,6 +590,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     maxWidth: string;
     marginLeft: string;
   } | null = null;
+  private interfaceThemeLayoutRefresh: ((recenterTranscript: boolean) => void) | null = null;
   private viewViewportEl: HTMLElement | null = null;
   private playerCommandTimer: number | null = null;
   private pendingPlaybackState: number | null = null;
@@ -642,6 +659,12 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       window.clearTimeout(this.transcriptAutoFollowResumeTimer);
       this.transcriptAutoFollowResumeTimer = null;
     }
+    if (this.playerWidthSaveTimer !== null) {
+      window.clearTimeout(this.playerWidthSaveTimer);
+      this.playerWidthSaveTimer = null;
+    }
+    this.pendingDesktopPlayerWidth = null;
+    this.interfaceThemeLayoutRefresh = null;
 
     if (this.messageWindow && this.messageHandler) {
       this.messageWindow.removeEventListener("message", this.messageHandler);
@@ -757,9 +780,14 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.restoreLivePreviewHostStyle();
     this.containerEl.empty();
 
-    const viewport = this.containerEl.closest<HTMLElement>(
-      ".markdown-preview-view, .markdown-source-view, .view-content"
-    ) ?? this.containerEl.parentElement;
+    // `.markdown-preview-view` 可能被 Obsidian 的“可读行长”限宽。
+    // 使用最外层的 `.view-content` 才能得到真正的叶片宽度，
+    // 保证经典主题和 Lingua Paper 都以同一可用区域计算。
+    const viewport = this.containerEl.closest<HTMLElement>(".view-content")
+      ?? this.containerEl.closest<HTMLElement>(
+        ".markdown-preview-view, .markdown-source-view"
+      )
+      ?? this.containerEl.parentElement;
     const scrollEl = this.containerEl.closest<HTMLElement>(
       ".cm-scroller, .markdown-preview-view, .view-content"
     ) ?? viewport;
@@ -774,6 +802,25 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
     const updateFullWidth = (recenterTranscript: boolean): void => {
       if (this.destroyed) {
+        return;
+      }
+      // 两套桌面主题共用同一套内容宽度；主题只能改变视觉样式。
+      // 移动端继续保留宿主原布局，避免桌面全宽计算影响窄屏设备。
+      if (this.plugin.capabilities.mobile) {
+        this.restoreLivePreviewHostStyle();
+        const previous = this.containerLayoutBefore;
+        if (previous) {
+          const layoutChanged =
+            this.containerEl.style.width !== previous.width ||
+            this.containerEl.style.maxWidth !== previous.maxWidth ||
+            this.containerEl.style.marginLeft !== previous.marginLeft;
+          this.containerEl.style.width = previous.width;
+          this.containerEl.style.maxWidth = previous.maxWidth;
+          this.containerEl.style.marginLeft = previous.marginLeft;
+          if (layoutChanged || recenterTranscript) {
+            this.scheduleTranscriptLayout(recenterTranscript);
+          }
+        }
         return;
       }
       this.preventLivePreviewClipping();
@@ -806,6 +853,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.scheduleTranscriptLayout(recenterTranscript);
       }
     };
+    this.interfaceThemeLayoutRefresh = updateFullWidth;
 
     this.fullWidthObserver = new ResizeObserver(() => updateFullWidth(true));
     this.fullWidthObserver.observe(this.containerEl);
@@ -852,6 +900,20 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     const rootClass = rootClasses.join(" ");
     const root = this.containerEl.createDiv({ cls: rootClass });
     root.dataset.linguaStudySourcePath = this.sourcePath;
+    if (!this.plugin.capabilities.mobile) {
+      const header = root.createDiv({ cls: "evs-paper-header" });
+      const title = header.createDiv({ cls: "evs-paper-title" });
+      title.createEl("h2", { text: "逐句精听" });
+      const sourceTitle = this.sourcePath
+        .split("/")
+        .pop()
+        ?.replace(/\.md$/iu, "")
+        .trim();
+      title.createDiv({
+        cls: "evs-paper-subtitle",
+        text: (sourceTitle || "Lingua Study").toLocaleUpperCase()
+      });
+    }
     const viewWindow = this.containerEl.ownerDocument.defaultView ?? window;
     if (this.fullWidthScrollFrame === null) {
       this.fullWidthScrollFrame = viewWindow.requestAnimationFrame(() => {
@@ -865,7 +927,118 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private createPlayerDock(root: HTMLElement): HTMLElement {
     const dock = root.createDiv({ cls: "evs-player-dock" });
     this.playerDockEl = dock;
+    this.applyDesktopPlayerWidth();
+    if (!this.plugin.capabilities.mobile) {
+      this.createPlayerResizeCorners(dock, root);
+    }
     return dock;
+  }
+
+  /**
+   * 四个角都是透明的拖动区，不增加可见按钮。
+   * 播放器始终居中，左侧角向左和右侧角向右都会放大。
+   */
+  private createPlayerResizeCorners(dock: HTMLElement, root: HTMLElement): void {
+    const corners: readonly PlayerResizeCorner[] = ["nw", "ne", "sw", "se"];
+    const viewDocument = dock.ownerDocument;
+    for (const corner of corners) {
+      const handle = dock.createDiv({
+        cls: `evs-player-resize-corner evs-player-resize-corner--${corner}`
+      });
+      handle.setAttribute("aria-hidden", "true");
+
+      let activePointerId: number | null = null;
+      let centerX = 0;
+      let latestWidth = 0;
+      let didResize = false;
+
+      const finishResize = (event: PointerEvent): void => {
+        if (activePointerId !== event.pointerId) {
+          return;
+        }
+        activePointerId = null;
+        dock.classList.remove("is-resizing");
+        this.scheduleTranscriptLayout(true);
+        if (!didResize) {
+          return;
+        }
+        this.scheduleDesktopPlayerWidthSave(latestWidth, true);
+      };
+
+      handle.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 || activePointerId !== null) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        activePointerId = event.pointerId;
+        const dockRect = dock.getBoundingClientRect();
+        centerX = dockRect.left + dockRect.width / 2;
+        latestWidth = Math.round(dockRect.width);
+        didResize = false;
+        dock.classList.add("is-resizing");
+        handle.setPointerCapture(event.pointerId);
+      });
+
+      this.registerDomEvent(viewDocument, "pointermove", (event) => {
+        if (activePointerId !== event.pointerId) {
+          return;
+        }
+        event.preventDefault();
+        const availableWidth = Math.max(0, root.getBoundingClientRect().width - 48);
+        const nextWidth = calculatePlayerResizeWidth(
+          centerX,
+          event.clientX,
+          availableWidth,
+          MIN_DESKTOP_PLAYER_WIDTH,
+          MAX_DESKTOP_PLAYER_WIDTH
+        );
+        if (nextWidth === latestWidth) {
+          return;
+        }
+        latestWidth = nextWidth;
+        didResize = true;
+        dock.style.setProperty("--evs-player-width", `${nextWidth}px`);
+        // 松手事件可能被嵌入式视频窗口拦截，停止拖动后仍会通过防抖保存最终尺寸。
+        this.scheduleDesktopPlayerWidthSave(nextWidth, false);
+      });
+
+      // 监听 document，拖动越过正在移动的播放器边缘后仍可连续收到事件。
+      this.registerDomEvent(viewDocument, "pointerup", finishResize);
+      this.registerDomEvent(viewDocument, "pointercancel", finishResize);
+      handle.addEventListener("lostpointercapture", finishResize);
+    }
+  }
+
+  applyDesktopPlayerWidth(width = this.plugin.settings.desktopPlayerWidth): void {
+    this.playerDockEl?.style.setProperty(
+      "--evs-player-width",
+      `${width || DEFAULT_DESKTOP_PLAYER_WIDTH}px`
+    );
+    this.scheduleTranscriptLayout(false);
+  }
+
+  applyInterfaceTheme(): void {
+    this.interfaceThemeLayoutRefresh?.(true);
+  }
+
+  private scheduleDesktopPlayerWidthSave(width: number, immediate: boolean): void {
+    const viewWindow = this.containerEl.ownerDocument.defaultView ?? window;
+    this.pendingDesktopPlayerWidth = width;
+    if (this.playerWidthSaveTimer !== null) {
+      viewWindow.clearTimeout(this.playerWidthSaveTimer);
+    }
+    this.playerWidthSaveTimer = viewWindow.setTimeout(() => {
+      this.playerWidthSaveTimer = null;
+      const pendingWidth = this.pendingDesktopPlayerWidth;
+      this.pendingDesktopPlayerWidth = null;
+      if (pendingWidth === null) {
+        return;
+      }
+      void this.plugin.updateSettings({ desktopPlayerWidth: pendingWidth }).catch(() => {
+        new Notice("播放器尺寸保存失败，重新加载插件后会恢复之前的大小。", 5_000);
+      });
+    }, immediate ? 0 : 180);
   }
 
   private createPlayerStage(dock: HTMLElement): HTMLElement {
@@ -1097,6 +1270,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     const toolbar = playerDock.createDiv({ cls: "evs-toolbar" });
     toolbar.setAttribute("aria-label", "视频播放控制");
     const primaryControls = toolbar.createDiv({ cls: "evs-primary-controls" });
+    this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
     this.playPauseButton = this.createControlButton(
       primaryControls,
       "播放",
@@ -1104,10 +1278,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       () => this.togglePlayback(),
       "evs-play-button"
     );
-    this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
     this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
-    this.createSpeedControls(toolbar);
     this.createTranscriptImportButton(toolbar, config, transcriptData !== null);
+    this.createSpeedControls(toolbar);
     this.createSourceLink(toolbar, sourceUrl);
     this.createMobileFloatingToggle(toolbar, playerDock);
 
@@ -1329,6 +1502,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     toolbar.setAttribute("aria-label", "视频播放控制");
     if (!this.plugin.capabilities.mobile) {
       const primaryControls = toolbar.createDiv({ cls: "evs-primary-controls" });
+      this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
       this.playPauseButton = this.createControlButton(
         primaryControls,
         "播放",
@@ -1336,7 +1510,6 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         () => this.togglePlayback(),
         "evs-play-button"
       );
-      this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
       this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
       this.createSpeedControls(toolbar);
     }
@@ -1449,7 +1622,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.selectSegmentForActions(index, true);
       });
 
-      const timestamp = row.createEl("button", {
+      const meta = row.createDiv({ cls: "evs-segment-meta" });
+      const timestamp = meta.createEl("button", {
         cls: "evs-timestamp",
         text: formatTimestamp(segment.start),
         attr: { "aria-label": `跳转到 ${formatTimestamp(segment.start)}` }
@@ -1461,6 +1635,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.selectSegmentForActions(index, false);
         this.jumpTo(segment.start);
       });
+      meta.createSpan({ cls: "evs-segment-state", text: "正在播放" });
 
       const content = row.createDiv({ cls: "evs-segment-content" });
       const primary = content.createDiv({ cls: "evs-segment-primary" });
@@ -1857,6 +2032,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       phase: "input"
     };
     row.classList.add("is-dictating");
+    row.querySelector<HTMLElement>(".evs-segment-state")?.setText("听写练习");
     this.segmentActionTargetPinned = true;
     this.timestampButtons.forEach((button) => (button.disabled = true));
     this.segmentEditButton!.disabled = true;
@@ -1906,6 +2082,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     session.panelEl.empty();
     row.classList.remove("is-dictating");
     row.classList.add("is-dictation-result");
+    row.querySelector<HTMLElement>(".evs-segment-state")?.setText("听写结果");
 
     const summary = session.panelEl.createDiv({ cls: "evs-dictation-summary" });
     summary.setAttribute("role", "status");
@@ -1985,6 +2162,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
     const row = this.segmentRows[session.index];
     row?.classList.remove("is-dictating", "is-dictation-result");
+    row?.querySelector<HTMLElement>(".evs-segment-state")?.setText("正在播放");
     session.panelEl.remove();
     this.dictationSession = null;
     this.segmentActionTargetPinned = false;
@@ -2218,6 +2396,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       recordingUrl: null,
       recordingStartedAt: 0,
       recordingAccumulatedMs: 0,
+      recordingPlaybackAnchorMs: null,
+      recordingPlaybackAnchorSeconds: 0,
       recordingSourcePosition: segment.start,
       sourceEnded: false,
       uiTimer: null,
@@ -2231,6 +2411,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       requestGeneration: 0
     };
     row.classList.add("is-shadowing");
+    row.querySelector<HTMLElement>(".evs-segment-state")?.setText("跟读练习");
     this.segmentActionTargetPinned = true;
     this.timestampButtons.forEach((button) => (button.disabled = true));
     this.segmentEditButton!.disabled = true;
@@ -2782,8 +2963,33 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     // WebM 录音首次播放时可能仍在解析时长，提前加载可减少解码等待。
     audio.preload = "auto";
     audio.src = objectUrl;
+    audio.addEventListener("playing", () => {
+      if (this.shadowingSession === session && session.phase === "recorded") {
+        this.startShadowingPlaybackClock(session);
+        this.renderShadowingPanel();
+        this.startShadowingWaveformAnimation(session);
+      }
+    });
+    audio.addEventListener("waiting", () => {
+      if (this.shadowingSession === session && session.phase === "recorded") {
+        this.stopShadowingPlaybackClock(session);
+        this.stopShadowingWaveformAnimation(session);
+      }
+    });
+    audio.addEventListener("pause", () => {
+      if (
+        this.shadowingSession === session
+        && session.phase === "recorded"
+        && !audio.ended
+      ) {
+        this.stopShadowingPlaybackClock(session);
+        this.stopShadowingWaveformAnimation(session);
+        this.renderShadowingPanel();
+      }
+    });
     audio.addEventListener("ended", () => {
       if (this.shadowingSession === session && session.phase === "recorded") {
+        this.stopShadowingPlaybackClock(session, true);
         this.stopShadowingWaveformAnimation(session);
         this.renderShadowingPanel();
       }
@@ -2795,6 +3001,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     });
     session.audioEl = audio;
     session.recordingUrl = objectUrl;
+    session.recordingPlaybackAnchorMs = null;
+    session.recordingPlaybackAnchorSeconds = 0;
     session.phase = "recorded";
     audio.load();
     this.renderShadowingPanel();
@@ -2826,20 +3034,68 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.stopShadowingSourcePlayback();
     if (audio.paused) {
       void audio.play()
-        .then(() => {
-          this.renderShadowingPanel();
-          this.startShadowingWaveformAnimation(session);
-        })
         .catch(() => new Notice("录音播放失败，请重新录制后再试。", 5_000));
     } else {
+      this.stopShadowingPlaybackClock(session);
       audio.pause();
-      this.stopShadowingWaveformAnimation(session);
-      this.renderShadowingPanel();
     }
+  }
+
+  private getShadowingPlaybackClockNow(): number {
+    const viewWindow = this.containerEl.ownerDocument.defaultView;
+    return viewWindow?.performance.now() ?? Date.now();
+  }
+
+  private startShadowingPlaybackClock(session: ShadowingSession): void {
+    const audio = session.audioEl;
+    if (!audio) {
+      return;
+    }
+    session.recordingPlaybackAnchorSeconds = Math.max(
+      0,
+      Number.isFinite(audio.currentTime) ? audio.currentTime : 0
+    );
+    session.recordingPlaybackAnchorMs = this.getShadowingPlaybackClockNow();
+  }
+
+  private getShadowingPlaybackDisplayTime(session: ShadowingSession): number {
+    const audio = session.audioEl;
+    if (!audio) {
+      return 0;
+    }
+    const anchorMs = session.recordingPlaybackAnchorMs;
+    if (anchorMs === null || audio.paused || audio.ended) {
+      return session.recordingPlaybackAnchorSeconds;
+    }
+    return getShadowingSmoothedPlaybackTime(
+      session.recordingPlaybackAnchorSeconds,
+      this.getShadowingPlaybackClockNow() - anchorMs,
+      audio.playbackRate,
+      audio.duration,
+      session.recordingAccumulatedMs
+    );
+  }
+
+  private stopShadowingPlaybackClock(session: ShadowingSession, ended = false): void {
+    const audio = session.audioEl;
+    if (!audio) {
+      session.recordingPlaybackAnchorMs = null;
+      session.recordingPlaybackAnchorSeconds = 0;
+      return;
+    }
+    const displayedSeconds = this.getShadowingPlaybackDisplayTime(session);
+    session.recordingPlaybackAnchorMs = null;
+    session.recordingPlaybackAnchorSeconds = ended
+      ? Math.max(0, session.recordingAccumulatedMs / 1_000)
+      : Math.max(
+        displayedSeconds,
+        Number.isFinite(audio.currentTime) ? audio.currentTime : 0
+      );
   }
 
   private pauseShadowingRecordingPlayback(session: ShadowingSession): void {
     if (session.audioEl && !session.audioEl.paused) {
+      this.stopShadowingPlaybackClock(session);
       session.audioEl.pause();
     }
     this.stopShadowingWaveformAnimation(session);
@@ -3108,7 +3364,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     const audio = session.audioEl;
     if (session.phase === "recorded" && audio) {
       playheadRatio = getShadowingPlaybackProgress(
-        audio.currentTime,
+        this.getShadowingPlaybackDisplayTime(session),
         audio.duration,
         session.recordingAccumulatedMs,
         audio.ended
@@ -3158,6 +3414,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       session.recordingUrl = null;
     }
     session.waveformPeaks = [];
+    session.recordingPlaybackAnchorMs = null;
+    session.recordingPlaybackAnchorSeconds = 0;
     this.drawShadowingWaveform(session);
   }
 
@@ -3184,6 +3442,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     session.chunks = [];
     const row = this.segmentRows[session.index];
     row?.classList.remove("is-shadowing");
+    row?.querySelector<HTMLElement>(".evs-segment-state")?.setText("正在播放");
     session.panelEl.remove();
     this.shadowingSession = null;
     this.segmentActionTargetPinned = false;
@@ -4103,7 +4362,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.playPauseButton.disabled = false;
         this.setPlayPauseVisual(this.playerState === PLAYER_STATE_PLAYING ? "pause" : "play");
       }
-      this.setStatusText("播放器未确认操作，请直接使用视频控件后重试。", false);
+      const segmentCount = this.transcript?.segments.length ?? 0;
+      this.setStatusText(`播放器已就绪 · ${segmentCount} 条英文字幕`, false);
     }, PLAYER_COMMAND_TIMEOUT_MS);
   }
 
@@ -4550,10 +4810,14 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     viewWindow.addEventListener("resize", this.transcriptViewportHandler);
     this.transcriptResizeObserver?.disconnect();
     this.transcriptResizeObserver = new ResizeObserver(() => {
-      this.scheduleTranscriptLayout(true);
+      // 拖动期间只更新右侧操作栏与底部空间，松手后再完成一次自动对齐。
+      this.scheduleTranscriptLayout(!this.playerDockEl?.classList.contains("is-resizing"));
     });
     if (this.transcriptListEl) {
       this.transcriptResizeObserver.observe(this.transcriptListEl);
+    }
+    if (this.playerDockEl) {
+      this.transcriptResizeObserver.observe(this.playerDockEl);
     }
     this.segmentRows.forEach((segmentRow) => this.transcriptResizeObserver?.observe(segmentRow));
     this.scheduleTranscriptLayout(false);
@@ -4575,6 +4839,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       }
       const shouldCenter = this.transcriptViewportNeedsCenter;
       this.transcriptViewportNeedsCenter = false;
+      this.updateSegmentActionDockInset();
       this.updateTranscriptEndSpacer();
       if (shouldCenter && this.vocabularyNavigationIndex !== null) {
         this.centerSegment(this.vocabularyNavigationIndex);
@@ -4586,6 +4851,21 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.centerActiveSegment();
       }
     });
+  }
+
+  /** 悬浮播放器开启时，让右侧字幕操作栏始终从播放器下方开始吸顶。 */
+  private updateSegmentActionDockInset(): void {
+    const actionDock = this.segmentActionDockEl;
+    const playerDock = this.playerDockEl;
+    if (!actionDock) {
+      return;
+    }
+    if (!playerDock?.classList.contains("is-floating")) {
+      actionDock.style.removeProperty("--evs-segment-action-top");
+      return;
+    }
+    const playerHeight = Math.ceil(playerDock.getBoundingClientRect().height);
+    actionDock.style.setProperty("--evs-segment-action-top", `${playerHeight + 16}px`);
   }
 
   private updateTranscriptEndSpacer(): void {
@@ -4799,10 +5079,12 @@ export default class LinguaStudyPlugin extends Plugin {
   private studyBlockRevealEventCleanup: (() => void) | null = null;
   private studyBlockRevealGeneration = 0;
   private readonly transcriptFingerprintCache = new VersionedAsyncCache<TranscriptFingerprintData>(8);
+  private updateCheckPromise: Promise<PluginUpdateInfo | null> | null = null;
 
   async onload(): Promise<void> {
     this.settings = sanitizeSettings(await this.loadData());
     await this.saveData(this.settings);
+    this.applyInterfaceTheme();
     this.translationService = new TranslationService(this.app, () => this.settings);
     this.translationCacheStore = new TranslationCacheStore(this.app);
     this.studyCacheStore = new StudyCacheStore(this.app);
@@ -5033,6 +5315,18 @@ export default class LinguaStudyPlugin extends Plugin {
     if (cacheService) {
       void cacheService.close();
     }
+    this.getPluginDocumentBody().classList.remove("lingua-study-theme-paper");
+  }
+
+  private getPluginDocumentBody(): HTMLElement {
+    return this.app.workspace.containerEl.ownerDocument.body;
+  }
+
+  private applyInterfaceTheme(): void {
+    this.getPluginDocumentBody().classList.toggle(
+      "lingua-study-theme-paper",
+      this.settings.interfaceTheme === "paper"
+    );
   }
 
   private scheduleStudyBlockReveal(file: TFile | null): void {
@@ -5158,6 +5452,27 @@ export default class LinguaStudyPlugin extends Plugin {
     this.studyBlockRevealEventCleanup = null;
   }
 
+  /**
+   * 只在设置页请求 GitHub 最新正式 Release。一次插件会话只检查一次，
+   * 失败时静默回退，不阻塞插件启动、设置或学习功能。
+   */
+  checkForAvailableUpdate(): Promise<PluginUpdateInfo | null> {
+    if (!this.updateCheckPromise) {
+      this.updateCheckPromise = requestUrl({
+        url: LINGUA_STUDY_LATEST_MANIFEST_URL,
+        method: "GET",
+        headers: { Accept: "application/json" },
+        throw: false
+      }).then((response) => {
+        if (response.status < 200 || response.status >= 300) {
+          return null;
+        }
+        return getPluginUpdateInfo(this.manifest.version, response.json);
+      }).catch(() => null);
+    }
+    return this.updateCheckPromise;
+  }
+
   getTranscriptFingerprintData(
     file: TFile,
     transcript: TranscriptFile
@@ -5181,8 +5496,16 @@ export default class LinguaStudyPlugin extends Plugin {
   async updateSettings(changes: Partial<LinguaStudySettings>): Promise<void> {
     const previousProfile = this.settings.studyProfile;
     const previousDailyNewWordLimit = this.settings.dailyNewWordLimit;
+    const previousDesktopPlayerWidth = this.settings.desktopPlayerWidth;
+    const previousInterfaceTheme = this.settings.interfaceTheme;
     this.settings = sanitizeSettings({ ...this.settings, ...changes });
     await this.saveData(this.settings);
+    if (this.settings.interfaceTheme !== previousInterfaceTheme) {
+      this.applyInterfaceTheme();
+      for (const renderer of this.studyRenderers) {
+        renderer.applyInterfaceTheme();
+      }
+    }
     if (this.settings.studyProfile !== previousProfile) {
       for (const listener of this.studyProfileListeners) {
         listener(this.settings.studyProfile);
@@ -5195,6 +5518,11 @@ export default class LinguaStudyPlugin extends Plugin {
     }
     if (this.settings.dailyNewWordLimit !== previousDailyNewWordLimit) {
       this.notifyVocabularyChanged();
+    }
+    if (this.settings.desktopPlayerWidth !== previousDesktopPlayerWidth) {
+      for (const renderer of this.studyRenderers) {
+        renderer.applyDesktopPlayerWidth(this.settings.desktopPlayerWidth);
+      }
     }
   }
 

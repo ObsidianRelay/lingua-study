@@ -2,6 +2,12 @@ import { DEFAULT_TRANSCRIPT_FOLDER, sanitizeTranscriptFolder } from "./import-co
 import type { DeepSeekModel, KimiModel, TranslationProvider } from "./translation-core";
 import { isStudyProfile, type StudyProfile } from "./study-core";
 
+export type InterfaceTheme = "classic" | "paper";
+
+export function isInterfaceTheme(value: unknown): value is InterfaceTheme {
+  return value === "classic" || value === "paper";
+}
+
 export interface LinguaStudySettings {
   transcriptFolder: string;
   ytDlpPath: string;
@@ -18,7 +24,13 @@ export interface LinguaStudySettings {
   cacheTranslations: boolean;
   studyProfile: StudyProfile;
   dailyNewWordLimit: number;
+  desktopPlayerWidth: number;
+  interfaceTheme: InterfaceTheme;
 }
+
+export const DEFAULT_DESKTOP_PLAYER_WIDTH = 860;
+export const MIN_DESKTOP_PLAYER_WIDTH = 480;
+export const MAX_DESKTOP_PLAYER_WIDTH = 1200;
 
 export const DEFAULT_SETTINGS: LinguaStudySettings = {
   transcriptFolder: DEFAULT_TRANSCRIPT_FOLDER,
@@ -37,7 +49,10 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   customSecretId: "",
   cacheTranslations: true,
   studyProfile: "cet4",
-  dailyNewWordLimit: 10
+  dailyNewWordLimit: 10,
+  desktopPlayerWidth: DEFAULT_DESKTOP_PLAYER_WIDTH,
+  // 已上线用户默认保留原界面；Lingua Paper 由用户在设置中主动启用。
+  interfaceTheme: "classic"
 };
 
 /** 读取旧配置时只保留仍受支持的字段；旧 whisperModel 会在这里被移除。 */
@@ -87,6 +102,16 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
     dailyNewWordLimit:
       typeof data.dailyNewWordLimit === "number" && Number.isFinite(data.dailyNewWordLimit)
         ? Math.min(50, Math.max(1, Math.round(data.dailyNewWordLimit)))
-        : DEFAULT_SETTINGS.dailyNewWordLimit
+        : DEFAULT_SETTINGS.dailyNewWordLimit,
+    desktopPlayerWidth:
+      typeof data.desktopPlayerWidth === "number" && Number.isFinite(data.desktopPlayerWidth)
+        ? Math.min(
+            MAX_DESKTOP_PLAYER_WIDTH,
+            Math.max(MIN_DESKTOP_PLAYER_WIDTH, Math.round(data.desktopPlayerWidth))
+          )
+        : DEFAULT_SETTINGS.desktopPlayerWidth,
+    interfaceTheme: isInterfaceTheme(data.interfaceTheme)
+      ? data.interfaceTheme
+      : DEFAULT_SETTINGS.interfaceTheme
   };
 }

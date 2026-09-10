@@ -5,10 +5,13 @@
 Turn English YouTube and Bilibili videos into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 1.3.3 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.4.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
-## Recent updates (1.3.0–1.3.3)
+## Recent updates (1.3.0–1.4.0)
 
+- **Optional appearances**: keep the classic appearance by default or switch to Lingua Paper in settings, with identical functionality in both
+- **Resizable player**: drag from any of the four player corners on desktop, with responsive controls and a saved width
+- **Update reminder**: check the latest official Release when settings opens and show the Obsidian Community plugin page entry only when an update exists
 - **Sentence dictation**: replay one segment, submit an answer, and review a word-level comparison and score
 - **Shadowing practice**: record along with the source audio, pause or resume, view a waveform, and play back the recording
 - **Vocabulary learning loop**: look up a word, save it with its video context, and schedule it for daily review
@@ -23,6 +26,7 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - Local cached Bilibili playback with Bilibili's official external player as a fallback
 - A dedicated left-ribbon Lingua Study logo for manually importing a YouTube or Bilibili link from the active note
 - Optional automatic import after pasting one standalone video link, disabled by default
+- A settings-page update check against the latest official GitHub Release, with an official Community page link shown only when a newer version is available
 - Direct Bilibili English subtitle import, with an isolated in-Obsidian login only when Bilibili requires it
 - Public manual-English caption preference with automatic English captions as fallback
 - Independent keyless YouTube mobile-client fallback when the normal page route is blocked
@@ -47,6 +51,8 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - DeepSeek, Kimi, and HTTPS OpenAI Chat Completions-compatible providers
 - Translation cache stored beside the transcript file
 - API keys selected through Obsidian SecretStorage
+
+The version check requests only the latest official Release `manifest.json` from this project's GitHub repository when the user opens Lingua Study settings. It does not upload notes, dictionaries, vocabulary, settings, or usage data, and it never downloads or overwrites plugin files by itself.
 
 ## Requirements
 

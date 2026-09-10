@@ -108,6 +108,34 @@ export function getShadowingPlaybackProgress(
   return Math.min(1, safeCurrent / duration);
 }
 
+/**
+ * 用单调时钟平滑录音回放位置。
+ * 部分 Chromium / WebKit 环境的 audio.currentTime 会低频、分段更新，
+ * 直接拿它逐帧绘制会让指针跳动。
+ */
+export function getShadowingSmoothedPlaybackTime(
+  anchorSeconds: number,
+  elapsedMs: number,
+  playbackRate: number,
+  nativeDurationSeconds: number,
+  recordedDurationMs: number
+): number {
+  const safeAnchor = Math.max(0, Number.isFinite(anchorSeconds) ? anchorSeconds : 0);
+  const safeElapsedMs = Math.max(0, Number.isFinite(elapsedMs) ? elapsedMs : 0);
+  const safePlaybackRate = Number.isFinite(playbackRate) && playbackRate > 0
+    ? playbackRate
+    : 1;
+  const recordedDurationSeconds = Number.isFinite(recordedDurationMs)
+    ? Math.max(0, recordedDurationMs / 1_000)
+    : 0;
+  const nativeDuration = Number.isFinite(nativeDurationSeconds)
+    ? Math.max(0, nativeDurationSeconds)
+    : 0;
+  const duration = recordedDurationSeconds > 0 ? recordedDurationSeconds : nativeDuration;
+  const estimated = safeAnchor + safeElapsedMs / 1_000 * safePlaybackRate;
+  return duration > 0 ? Math.min(duration, estimated) : estimated;
+}
+
 /** 录音和暂停阶段允许调整原句；申请权限和生成录音时暂时锁定。 */
 export function canAdjustShadowingSource(phase: ShadowingPhase): boolean {
   return phase !== "requesting" && phase !== "processing";

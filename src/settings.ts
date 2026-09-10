@@ -11,6 +11,7 @@ import type LinguaStudyPlugin from "./main";
 import { DEFAULT_TRANSCRIPT_FOLDER, sanitizeTranscriptFolder } from "./import-core";
 import {
   DEFAULT_SETTINGS,
+  type InterfaceTheme,
   type LinguaStudySettings
 } from "./settings-core";
 import {
@@ -23,9 +24,13 @@ import {
   CUSTOM_DICTIONARY_TEMPLATE,
   CUSTOM_DICTIONARY_TSV_TEMPLATE
 } from "./custom-dictionary-core";
+import { getDailyReviewSummary } from "./vocabulary-core";
 
 export {
+  DEFAULT_DESKTOP_PLAYER_WIDTH,
   DEFAULT_SETTINGS,
+  MAX_DESKTOP_PLAYER_WIDTH,
+  MIN_DESKTOP_PLAYER_WIDTH,
   sanitizeSettings,
   type LinguaStudySettings
 } from "./settings-core";
@@ -122,16 +127,210 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     this.containerEl.addClass("lingua-study-settings");
   }
 
-  /** 顶层只保留六个原生子页面，子页面内容仍参与 Obsidian 设置搜索。 */
+  /** 顶层按学习与导入分组；六个原生子页面仍参与 Obsidian 设置搜索。 */
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [
-      this.youtubePage(),
-      this.bilibiliPage(),
-      this.learningPage(),
-      this.documentAlignmentPage(),
-      this.translationPage(),
-      this.generalPage()
+      {
+        name: "Lingua Study",
+        searchable: false,
+        render: (setting) => {
+          setting.settingEl.addClass("lingua-study-settings-profile");
+          setting.infoEl.empty();
+          setting.controlEl.empty();
+          setting.infoEl.createDiv({ cls: "lingua-study-settings-monogram", text: "LS" });
+          const copy = setting.infoEl.createDiv({ cls: "lingua-study-settings-profile-copy" });
+          copy.createDiv({ cls: "lingua-study-settings-profile-name", text: "Lingua Study" });
+          const summary = copy.createDiv({
+            cls: "lingua-study-settings-profile-summary",
+            text: "正在读取学习数据"
+          });
+          void this.plugin.loadVocabularyBook().then(({ book }) => {
+            if (!summary.isConnected) return;
+            const review = getDailyReviewSummary(
+              book,
+              this.plugin.settings.dailyNewWordLimit,
+              new Date()
+            );
+            summary.setText(
+              `已收录生词 ${Object.keys(book.entries).length.toLocaleString()} 个 · 今日待复习 ${review.total.toLocaleString()} 个`
+            );
+          }).catch(() => {
+            if (summary.isConnected) {
+              summary.setText("学习数据暂不可用");
+            }
+          });
+          setting.controlEl.createSpan({
+            cls: "lingua-study-settings-version",
+            text: `v${this.plugin.manifest.version}`
+          });
+          const updateArea = setting.controlEl.createDiv({
+            cls: "lingua-study-settings-update",
+            attr: { "aria-live": "polite" }
+          });
+          void this.plugin.checkForAvailableUpdate().then((update) => {
+            if (!update || !updateArea.isConnected) {
+              return;
+            }
+            updateArea.createSpan({
+              cls: "lingua-study-settings-update-label",
+              text: `发现新版本 v${update.latestVersion}`
+            });
+            const updateButton = updateArea.createEl("button", {
+              cls: "lingua-study-settings-update-button",
+              text: "前往更新",
+              attr: {
+                type: "button",
+                "aria-label": `前往 Lingua Study 官方社区页面更新到 v${update.latestVersion}`
+              }
+            });
+            updateButton.addEventListener("click", () => {
+              window.open(update.communityPageUrl, "_blank", "noopener,noreferrer");
+            });
+          });
+        }
+      },
+      {
+        type: "group",
+        heading: "学习与数据",
+        cls: "lingua-study-settings-home-group",
+        items: [this.learningPage(), this.translationPage(), this.generalPage()]
+      },
+      {
+        type: "group",
+        heading: "内容导入",
+        cls: "lingua-study-settings-home-group",
+        items: [this.youtubePage(), this.bilibiliPage(), this.documentAlignmentPage()]
+      },
+      {
+        type: "group",
+        heading: "外观",
+        cls: "lingua-study-settings-home-group lingua-study-settings-appearance",
+        items: [this.appearancePage()]
+      }
     ];
+  }
+
+  private appearancePage(): SettingDefinitionPage {
+    return {
+      type: "page",
+      name: "外观",
+      desc: "切换 Lingua Study 插件外观。",
+      displayValue: () => this.plugin.settings.interfaceTheme === "paper"
+        ? "Lingua Paper"
+        : "经典主题",
+      items: [
+        {
+          type: "group",
+          heading: "选择主题",
+          cls: "lingua-study-settings-section lingua-study-settings-page-appearance",
+          items: [
+            {
+              name: "界面主题",
+              searchable: false,
+              render: (setting) => this.renderInterfaceThemePicker(setting)
+            }
+          ]
+        }
+      ]
+    };
+  }
+
+  private renderInterfaceThemePicker(setting: Setting): void {
+    const themes: ReadonlyArray<{
+      value: InterfaceTheme;
+      label: string;
+      description: string;
+    }> = [
+      {
+        value: "classic",
+        label: "经典主题",
+        description: "保留 Obsidian 原生视觉"
+      },
+      {
+        value: "paper",
+        label: "Lingua Paper",
+        description: "纸张卡片与黑白强调"
+      }
+    ];
+
+    setting.settingEl.addClass("lingua-study-settings-theme-setting");
+    setting.controlEl.empty();
+    const picker = setting.controlEl.createDiv({
+      cls: "lingua-study-settings-theme-picker"
+    });
+    picker.setAttribute("role", "group");
+    picker.setAttribute("aria-label", "界面主题");
+
+    const choices: HTMLButtonElement[] = [];
+    const syncSelection = (): void => {
+      for (const choice of choices) {
+        const selected = choice.dataset.theme === this.plugin.settings.interfaceTheme;
+        choice.classList.toggle("is-selected", selected);
+        choice.setAttribute("aria-pressed", String(selected));
+        const status = choice.querySelector<HTMLElement>(".lingua-study-settings-theme-status");
+        if (status) {
+          status.hidden = !selected;
+        }
+      }
+    };
+
+    for (const theme of themes) {
+      const choice = picker.createEl("button", {
+        cls: "lingua-study-settings-theme-choice",
+        attr: {
+          type: "button",
+          "data-theme": theme.value,
+          "aria-label": `${theme.label}：${theme.description}`
+        }
+      });
+      choices.push(choice);
+
+      const preview = choice.createDiv({
+        cls: `lingua-study-settings-theme-preview is-${theme.value}`
+      });
+      preview.setAttribute("aria-hidden", "true");
+      const previewHeader = preview.createDiv({ cls: "lingua-study-settings-theme-preview-header" });
+      previewHeader.createSpan({ cls: "lingua-study-settings-theme-preview-brand", text: "Lingua Study" });
+      previewHeader.createSpan({ cls: "lingua-study-settings-theme-preview-meta", text: "ECDICT" });
+      const previewTabs = preview.createDiv({ cls: "lingua-study-settings-theme-preview-tabs" });
+      previewTabs.createSpan({ cls: "is-active", text: "查词" });
+      previewTabs.createSpan({ text: "生词本" });
+      previewTabs.createSpan({ text: "复习" });
+      const previewCard = preview.createDiv({ cls: "lingua-study-settings-theme-preview-card" });
+      previewCard.createDiv({ cls: "lingua-study-settings-theme-preview-word", text: "language" });
+      previewCard.createDiv({ cls: "lingua-study-settings-theme-preview-line is-long" });
+      previewCard.createDiv({ cls: "lingua-study-settings-theme-preview-line" });
+
+      const caption = choice.createDiv({ cls: "lingua-study-settings-theme-caption" });
+      const captionCopy = caption.createDiv();
+      captionCopy.createDiv({ cls: "lingua-study-settings-theme-name", text: theme.label });
+      captionCopy.createDiv({ cls: "lingua-study-settings-theme-description", text: theme.description });
+      const status = caption.createSpan({
+        cls: "lingua-study-settings-theme-status",
+        text: "✓ 已选择"
+      });
+      status.hidden = true;
+
+      choice.addEventListener("click", () => {
+        if (this.plugin.settings.interfaceTheme === theme.value) {
+          return;
+        }
+        for (const item of choices) {
+          item.disabled = true;
+        }
+        void this.plugin.updateSettings({ interfaceTheme: theme.value }).then(() => {
+          syncSelection();
+        }).catch(() => {
+          new Notice("界面主题保存失败，请重新加载插件后重试。", 5_000);
+        }).finally(() => {
+          for (const item of choices) {
+            item.disabled = false;
+          }
+        });
+      });
+    }
+
+    syncSelection();
   }
 
   private youtubePage(): SettingDefinitionPage {
@@ -144,7 +343,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         {
           type: "group",
           heading: "字幕文件",
-          cls: "lingua-study-settings-section",
+          cls: "lingua-study-settings-section lingua-study-settings-page-youtube",
           items: [
             {
               name: "字幕保存文件夹",
@@ -204,7 +403,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         {
           type: "group",
           heading: "视频缓存",
-          cls: "lingua-study-settings-section",
+          cls: "lingua-study-settings-section lingua-study-settings-page-bilibili",
           visible: () => this.plugin.capabilities.bilibiliVideoCache,
           items: [
             {
@@ -320,7 +519,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         {
           type: "group",
           heading: "学习目标",
-          cls: "lingua-study-settings-section",
+          cls: "lingua-study-settings-section lingua-study-settings-page-learning",
           items: [
             {
               name: "当前备考范围",
@@ -597,7 +796,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         {
           type: "group",
           heading: "本地文稿对齐",
-          cls: "lingua-study-settings-section",
+          cls: "lingua-study-settings-section lingua-study-settings-page-alignment",
           visible: () => this.plugin.capabilities.localWhisper,
           items: [
             {
@@ -678,7 +877,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         {
           type: "group",
           heading: "服务选择",
-          cls: "lingua-study-settings-section",
+          cls: "lingua-study-settings-section lingua-study-settings-page-translation",
           items: [
             {
               name: "翻译服务",
@@ -870,7 +1069,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         {
           type: "group",
           heading: "自动化",
-          cls: "lingua-study-settings-section",
+          cls: "lingua-study-settings-section lingua-study-settings-page-general",
           items: [
             {
               name: "粘贴视频链接后自动创建学习内容（可选）",

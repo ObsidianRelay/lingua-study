@@ -254,7 +254,7 @@ export class LinguaDictionaryView extends ItemView {
     const tabs = this.contentEl.createDiv({ cls: "lingua-dictionary-tabs", attr: { role: "tablist" } });
     this.createTabButton(tabs, "lookup", "查词");
     this.createTabButton(tabs, "book", "生词本");
-    this.createTabButton(tabs, "review", `今日复习 ${summary.total}`);
+    this.createTabButton(tabs, "review", "今日复习", summary.total);
 
     const body = this.contentEl.createDiv({ cls: "lingua-dictionary-body" });
     if (this.vocabularyWarning) {
@@ -273,16 +273,28 @@ export class LinguaDictionaryView extends ItemView {
     }
   }
 
-  private createTabButton(parent: HTMLElement, tab: DictionaryTab, label: string): void {
+  private createTabButton(
+    parent: HTMLElement,
+    tab: DictionaryTab,
+    label: string,
+    badgeCount: number | null = null
+  ): void {
     const button = parent.createEl("button", {
       cls: tab === this.activeTab ? "is-active" : "",
-      text: label,
       attr: {
         role: "tab",
         "aria-selected": (tab === this.activeTab).toString()
       }
     });
     button.type = "button";
+    button.createSpan({ cls: "lingua-dictionary-tab-label", text: label });
+    if (badgeCount !== null) {
+      button.createSpan({
+        cls: "lingua-dictionary-tab-badge",
+        text: badgeCount.toLocaleString(),
+        attr: { "aria-label": `${badgeCount.toLocaleString()} 项待复习` }
+      });
+    }
     button.addEventListener("click", () => {
       this.activeTab = tab;
       this.selectedVocabularyId = null;
@@ -324,12 +336,22 @@ export class LinguaDictionaryView extends ItemView {
 
     const profileRow = parent.createDiv({ cls: "lingua-dictionary-profile" });
     profileRow.createEl("label", { text: "学习目标" });
-    const select = profileRow.createEl("select", { attr: { "aria-label": "学习目标" } });
+    const profileSelect = profileRow.createDiv({ cls: "lingua-centered-select" });
+    const select = profileSelect.createEl("select", { attr: { "aria-label": "学习目标" } });
     for (const profile of STUDY_PROFILES) {
       select.createEl("option", { value: profile, text: STUDY_PROFILE_LABELS[profile] });
     }
+    const selectText = profileSelect.createSpan({
+      cls: "lingua-centered-select-text",
+      attr: { "aria-hidden": "true" }
+    });
+    const syncSelectText = (): void => {
+      selectText.setText(select.selectedOptions[0]?.textContent ?? "");
+    };
     select.value = this.plugin.settings.studyProfile;
+    syncSelectText();
     select.addEventListener("change", () => {
+      syncSelectText();
       const profile = select.value;
       if (isStudyProfile(profile)) {
         void this.plugin.setStudyProfile(profile).catch(() => {
@@ -400,23 +422,25 @@ export class LinguaDictionaryView extends ItemView {
     if (entry.examTags.length === 0) {
       tags.createSpan({ text: "高频词" });
     }
+    const definitionCard = container.createDiv({ cls: "lingua-dictionary-definition-card" });
     if (entry.partOfSpeech) {
-      this.renderSection(container, "词性", [entry.partOfSpeech]);
+      this.renderSection(definitionCard, "词性", [entry.partOfSpeech]);
     }
     this.renderSection(
-      container,
+      definitionCard,
       "中文释义",
       entry.chineseTranslation.split("\n").filter((line) => line.trim() !== "")
     );
     if (entry.englishDefinition) {
       this.renderSection(
-        container,
+        definitionCard,
         "English definition",
         entry.englishDefinition.split("\n").filter((line) => line.trim() !== "")
       );
     }
+    const referenceGrid = container.createDiv({ cls: "lingua-dictionary-reference-grid" });
     if (entry.inflections.length > 0) {
-      const section = container.createDiv({ cls: "lingua-dictionary-section" });
+      const section = referenceGrid.createDiv({ cls: "lingua-dictionary-section" });
       section.createDiv({ cls: "lingua-dictionary-section-title", text: "词形变化" });
       const list = section.createDiv({ cls: "lingua-dictionary-inflections" });
       for (const inflection of entry.inflections) {
@@ -433,7 +457,10 @@ export class LinguaDictionaryView extends ItemView {
       frequencies.push(`BNC 词频 #${entry.bncRank.toLocaleString()}`);
     }
     if (frequencies.length > 0) {
-      this.renderSection(container, "词频参考", frequencies);
+      this.renderSection(referenceGrid, "词频参考", frequencies);
+    }
+    if (referenceGrid.childElementCount === 0) {
+      referenceGrid.remove();
     }
   }
 
@@ -480,8 +507,22 @@ export class LinguaDictionaryView extends ItemView {
       return;
     }
     const context = container.createDiv({ cls: "lingua-dictionary-context" });
-    context.createDiv({ cls: "lingua-dictionary-section-title", text: "所在原句" });
+    const header = context.createDiv({ cls: "lingua-dictionary-context-header" });
+    header.createDiv({ cls: "lingua-dictionary-section-title", text: "所在原句" });
+    if (this.lookupContext?.start !== null && this.lookupContext?.start !== undefined) {
+      header.createSpan({
+        cls: "lingua-dictionary-context-timestamp",
+        text: this.formatTimestamp(this.lookupContext.start)
+      });
+    }
     context.createDiv({ text: sentence, attr: { lang: "en" } });
+    const sourcePath = this.lookupContext?.sourcePath;
+    if (sourcePath) {
+      context.createDiv({
+        cls: "lingua-dictionary-context-source",
+        text: sourcePath
+      });
+    }
   }
 
   private renderVocabularyBook(parent: HTMLElement): void {
@@ -509,7 +550,8 @@ export class LinguaDictionaryView extends ItemView {
       this.vocabularySearch = search.value;
       this.renderVocabularyResults(results, book);
     });
-    const filter = controls.createEl("select", { attr: { "aria-label": "筛选生词" } });
+    const filterSelect = controls.createDiv({ cls: "lingua-centered-select" });
+    const filter = filterSelect.createEl("select", { attr: { "aria-label": "筛选生词" } });
     const filters: Array<[VocabularyFilter, string]> = [
       ["all", "全部"],
       ...STUDY_PROFILES.map(
@@ -521,8 +563,17 @@ export class LinguaDictionaryView extends ItemView {
     for (const [value, label] of filters) {
       filter.createEl("option", { value, text: label });
     }
+    const filterText = filterSelect.createSpan({
+      cls: "lingua-centered-select-text",
+      attr: { "aria-hidden": "true" }
+    });
+    const syncFilterText = (): void => {
+      filterText.setText(filter.selectedOptions[0]?.textContent ?? "");
+    };
     filter.value = this.vocabularyFilter;
+    syncFilterText();
     filter.addEventListener("change", () => {
+      syncFilterText();
       this.vocabularyFilter = filter.value as VocabularyFilter;
       this.renderVocabularyResults(results, book);
     });

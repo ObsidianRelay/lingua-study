@@ -2,6 +2,27 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 1.4.0 - 2026-09-10
+
+### Added
+
+- Added an optional Lingua Paper appearance while keeping the classic appearance as the default
+- Added four-corner drag resizing for the desktop video player, with the chosen width saved and shared across appearances
+- Added a settings-page update reminder that checks the latest official GitHub Release and opens the official Obsidian Community plugin page
+
+### Changed
+
+- Reorganized settings into a stable card layout with an appearance preview selector at the bottom
+- Refined the player, transcript, dictionary, vocabulary book, and review interfaces while keeping the same functionality in both appearances
+- Made player controls scale with the player width so controls stay within the panel at smaller sizes
+
+### Fixed
+
+- Prevented Obsidian themes and accent colors from changing Lingua Paper's intended black-and-white controls
+- Fixed vocabulary-card backgrounds, hover states, filter sizing, text centering, clipping, and action-button overlap
+- Smoothed recording-playback progress so the waveform pointer no longer jitters during playback
+- Fixed floating transcript actions being covered by the player control bar
+
 ## 1.3.3 - 2026-09-05
 
 ### Added

@@ -21,6 +21,7 @@ await esbuild.build({
     "tests/ui-shell.test.ts",
     "tests/ui-layout-core.test.ts",
     "tests/settings-core.test.ts",
+    "tests/update-check-core.test.ts",
     "tests/legacy-whisper-cleanup.test.ts",
     "tests/local-whisper-core.test.ts",
     "tests/live-preview-core.test.ts",

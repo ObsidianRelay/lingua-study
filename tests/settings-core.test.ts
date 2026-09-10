@@ -18,9 +18,18 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal(settings.cacheTranslations, false);
   assert.equal(settings.studyProfile, "cet4");
   assert.equal(settings.dailyNewWordLimit, 10);
+  assert.equal(settings.desktopPlayerWidth, 860);
+  assert.equal(settings.interfaceTheme, "classic");
   assert.equal("speechCloudBaseUrl" in settings, false);
   assert.equal("speechCloudModel" in settings, false);
   assert.equal("speechCloudSecretId" in settings, false);
+});
+
+test("界面主题默认保留经典样式并只接受受支持的选项", () => {
+  assert.equal(sanitizeSettings({}).interfaceTheme, "classic");
+  assert.equal(sanitizeSettings({ interfaceTheme: "classic" }).interfaceTheme, "classic");
+  assert.equal(sanitizeSettings({ interfaceTheme: "paper" }).interfaceTheme, "paper");
+  assert.equal(sanitizeSettings({ interfaceTheme: "unknown" }).interfaceTheme, "classic");
 });
 
 test("整篇文稿翻译默认关闭并保留用户选择", () => {
@@ -58,6 +67,14 @@ test("每日新词数量固定限制在 1 到 50", () => {
   assert.equal(sanitizeSettings({ dailyNewWordLimit: 200 }).dailyNewWordLimit, 50);
   assert.equal(sanitizeSettings({ dailyNewWordLimit: 9.6 }).dailyNewWordLimit, 10);
   assert.equal(sanitizeSettings({ dailyNewWordLimit: "20" }).dailyNewWordLimit, 10);
+});
+
+test("桌面播放器宽度保留用户选择并限制安全范围", () => {
+  assert.equal(sanitizeSettings({}).desktopPlayerWidth, 860);
+  assert.equal(sanitizeSettings({ desktopPlayerWidth: 720.4 }).desktopPlayerWidth, 720);
+  assert.equal(sanitizeSettings({ desktopPlayerWidth: 200 }).desktopPlayerWidth, 480);
+  assert.equal(sanitizeSettings({ desktopPlayerWidth: 1800 }).desktopPlayerWidth, 1200);
+  assert.equal(sanitizeSettings({ desktopPlayerWidth: "720" }).desktopPlayerWidth, 860);
 });
 
 test("学习目标默认四级并保留全部六种备考选择", () => {

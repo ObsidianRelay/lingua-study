@@ -3,6 +3,39 @@ export interface SubtitleRowGeometry {
   height: number;
 }
 
+export type PlayerResizeCorner = "nw" | "ne" | "sw" | "se";
+
+/**
+ * 把四角拖动换算为播放器宽度。高度仍由 CSS 的 16:9 比例决定。
+ * 播放器在文稿中始终居中，因此左侧角向左拖和右侧角向右拖都代表放大。
+ */
+export function calculatePlayerResizeWidth(
+  centerX: number,
+  pointerX: number,
+  availableWidth: number,
+  minWidth: number,
+  maxWidth: number
+): number {
+  if (
+    ![
+      centerX,
+      pointerX,
+      availableWidth,
+      minWidth,
+      maxWidth
+    ].every(Number.isFinite)
+  ) {
+    return 0;
+  }
+
+  // 播放器使用 margin-inline:auto 保持居中，因此角落到中心线的距离
+  // 正好是宽度的一半。只使用这一条稳定轴，避免横纵位移互相抢占造成抽动。
+  const requestedWidth = Math.abs(pointerX - centerX) * 2;
+  const safeMaximum = Math.max(0, Math.min(availableWidth, maxWidth));
+  const safeMinimum = Math.min(Math.max(0, minWidth), safeMaximum);
+  return Math.round(Math.min(safeMaximum, Math.max(safeMinimum, requestedWidth)));
+}
+
 /**
  * 计算外层阅读页需要滚动的距离。
  *

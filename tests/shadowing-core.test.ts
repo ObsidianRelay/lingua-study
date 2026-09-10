@@ -11,6 +11,7 @@ import {
   getShadowingPlaybackProgress,
   getShadowingRecordingProgress,
   getShadowingRecordingErrorMessage,
+  getShadowingSmoothedPlaybackTime,
   getShadowingWaveformBinSize,
   getShadowingWaveformTargetSampleCount,
   selectShadowingMimeType,
@@ -61,6 +62,14 @@ test("首次回放时使用实际录音时长避免 WebM 进度线卡顿", () =>
   assert.equal(getShadowingPlaybackProgress(4, 10, 8_000), 0.5);
   assert.equal(getShadowingPlaybackProgress(3, 6, 0), 0.5);
   assert.equal(getShadowingPlaybackProgress(6, 6, 6_100, true), 1);
+});
+
+test("录音回放指针使用单调时钟平滑前进并限制在实际录音时长内", () => {
+  assert.equal(getShadowingSmoothedPlaybackTime(2, 500, 1, 10, 8_000), 2.5);
+  assert.equal(getShadowingSmoothedPlaybackTime(2, 500, 1.5, 10, 8_000), 2.75);
+  assert.equal(getShadowingSmoothedPlaybackTime(7.8, 500, 1, 10, 8_000), 8);
+  assert.equal(getShadowingSmoothedPlaybackTime(2, 500, 1, 6, 0), 2.5);
+  assert.equal(getShadowingSmoothedPlaybackTime(Number.NaN, -1, 0, Number.NaN, 0), 0);
 });
 
 test("录音期间可以控制原句，权限和处理阶段保持锁定", () => {

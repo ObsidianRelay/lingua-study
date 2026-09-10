@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   calculateAlignedScrollTop,
+  calculatePlayerResizeWidth,
   calculateTranscriptEndSpacer,
   calculateViewportAlignedScrollDelta,
   type SubtitleRowGeometry
@@ -52,4 +53,12 @@ test("外层翻页会扣除悬浮视频高度，超高字幕则顶部对齐", ()
   assert.equal(calculateViewportAlignedScrollDelta(580, 120, 360, 700), 0);
   assert.equal(calculateViewportAlignedScrollDelta(580, 400, 360, 700), 220);
   assert.equal(calculateViewportAlignedScrollDelta(580, 120, 700, 700), 0);
+});
+
+test("播放器四角按中心距离平滑缩放并限制可用宽度", () => {
+  assert.equal(calculatePlayerResizeWidth(500, 950, 1000, 480, 1200), 900);
+  assert.equal(calculatePlayerResizeWidth(500, 50, 1000, 480, 1200), 900);
+  assert.equal(calculatePlayerResizeWidth(500, 1100, 920, 480, 1200), 920);
+  assert.equal(calculatePlayerResizeWidth(500, 490, 1000, 480, 1200), 480);
+  assert.equal(calculatePlayerResizeWidth(500, 900, 460, 480, 1200), 460);
 });

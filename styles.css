@@ -88,8 +88,10 @@
 
 .evs-player-dock {
   position: relative;
+  container-name: evs-player-dock;
+  container-type: inline-size;
   flex: 0 0 auto;
-  width: min(100%, 680px);
+  width: min(calc(100% - 48px), var(--evs-player-width, 860px));
   min-width: 0;
   max-width: 100%;
   margin-inline: auto;
@@ -2471,4 +2473,2350 @@
 
 .lingua-study-manual-video-choice:hover :is(.lingua-study-manual-video-label, .lingua-study-manual-video-url) {
   color: inherit;
+}
+
+/* Paper 专属结构始终存在，经典主题下隐藏，不影响旧界面的视觉层级。 */
+body:not(.is-mobile):not(.lingua-study-theme-paper) .evs-root:not(.evs-mobile) :is(.evs-paper-header, .evs-segment-state) {
+  display: none;
+}
+
+/*
+ * Lingua Paper UI V1
+ * 仅作用于桌面端 Lingua Study 界面。颜色继续从 Obsidian 主题变量取值，
+ * 米白纸张色只在浅色主题中作为插件局部表面，不修改全局主题。
+ */
+/*
+ * Lingua Study 的交互强调色独立于 Obsidian 外观主题。
+ * 宿主仍可控制页面背景和普通文字，但不会再把按钮、品牌标题和单词标题
+ * 染成用户设置的橙色、红色或蓝色。
+ */
+body:not(.is-mobile) :is(
+  .evs-root:not(.evs-mobile),
+  .lingua-dictionary-view
+) {
+  --lingua-paper-accent: #211e1a;
+  --lingua-paper-accent-hover: #39342e;
+  --lingua-paper-on-accent: #fff;
+  --lingua-paper-accent-soft: color-mix(in srgb, #211e1a 10%, transparent);
+  --lingua-paper-control: #e7e5e1;
+  --interactive-accent: var(--lingua-paper-accent);
+  --interactive-accent-hover: var(--lingua-paper-accent-hover);
+  --interactive-normal: var(--lingua-paper-control);
+  --interactive-hover: var(--lingua-paper-accent-soft);
+  --text-accent: var(--lingua-paper-accent);
+  --text-accent-hover: var(--lingua-paper-accent-hover);
+  --text-on-accent: var(--lingua-paper-on-accent);
+}
+
+body.theme-dark:not(.is-mobile) :is(
+  .evs-root:not(.evs-mobile),
+  .lingua-dictionary-view
+) {
+  --lingua-paper-accent: #eee7dc;
+  --lingua-paper-accent-hover: #d8cfc1;
+  --lingua-paper-on-accent: #211e1a;
+  --lingua-paper-accent-soft: color-mix(in srgb, #eee7dc 13%, transparent);
+  --lingua-paper-control: #34322f;
+}
+
+/* 经典主题只借用设置页的卡片排版，颜色和字体仍使用 Obsidian 当前主题。 */
+body:not(.is-mobile) :is(.lingua-study-settings, .setting-page:has(.lingua-study-settings-section)) {
+  --lingua-paper-bg: var(--background-primary);
+  --lingua-paper-card: var(--background-primary);
+  --lingua-paper-muted: var(--background-secondary);
+  --lingua-paper-line: var(--background-modifier-border);
+  --lingua-paper-rule: var(--background-modifier-border);
+  --lingua-paper-accent: var(--interactive-accent);
+  --lingua-paper-accent-hover: var(--interactive-accent-hover);
+  --lingua-paper-on-accent: var(--text-on-accent);
+  --lingua-paper-accent-soft: var(--background-modifier-hover);
+  --lingua-paper-danger: var(--text-error);
+  --lingua-paper-secondary-text: var(--text-muted);
+  --lingua-paper-serif: var(--font-interface);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) :is(.evs-root:not(.evs-mobile), .lingua-dictionary-view, .lingua-study-settings, .setting-page:has(.lingua-study-settings-section)) {
+  --lingua-paper-bg: color-mix(in srgb, #f3eee4 88%, var(--background-primary) 12%);
+  --lingua-paper-card: color-mix(in srgb, #faf7f0 92%, var(--background-primary) 8%);
+  --lingua-paper-muted: color-mix(in srgb, #e9e3d7 88%, var(--background-secondary) 12%);
+  --lingua-paper-line: color-mix(in srgb, var(--text-normal) 72%, transparent);
+  --lingua-paper-rule: color-mix(in srgb, var(--text-normal) 18%, transparent);
+  --lingua-paper-accent: #211e1a;
+  --lingua-paper-accent-hover: #39342e;
+  --lingua-paper-on-accent: #fff;
+  --lingua-paper-accent-soft: color-mix(in srgb, var(--lingua-paper-accent) 10%, transparent);
+  --lingua-paper-danger: color-mix(in srgb, var(--color-red) 78%, var(--text-normal) 22%);
+  --lingua-paper-secondary-text: color-mix(in srgb, var(--text-normal) 58%, transparent);
+  --lingua-paper-serif: "Iowan Old Style", "Baskerville", "Songti SC", "STSong", Georgia, serif;
+  /* 只在插件界面内统一交互色，不改写 Obsidian 全局主题。 */
+  --interactive-accent: var(--lingua-paper-accent);
+  --interactive-accent-hover: var(--lingua-paper-accent-hover);
+  --interactive-hover: var(--lingua-paper-accent-soft);
+  --text-on-accent: var(--lingua-paper-on-accent);
+}
+
+body.theme-dark.lingua-study-theme-paper:not(.is-mobile) :is(.evs-root:not(.evs-mobile), .lingua-dictionary-view, .lingua-study-settings, .setting-page:has(.lingua-study-settings-section)) {
+  --lingua-paper-bg: var(--background-primary);
+  --lingua-paper-card: color-mix(in srgb, var(--background-secondary) 76%, var(--background-primary) 24%);
+  --lingua-paper-muted: var(--background-secondary);
+  --lingua-paper-line: color-mix(in srgb, var(--text-normal) 62%, transparent);
+  --lingua-paper-accent: #eee7dc;
+  --lingua-paper-accent-hover: #d8cfc1;
+  --lingua-paper-on-accent: #211e1a;
+}
+
+/* 逐句精听：页面标题、播放器和文稿卡片。 */
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) {
+  position: relative;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--lingua-paper-bg);
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-paper-header {
+  display: flex;
+  min-height: 92px;
+  padding: 22px 24px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-paper-title h2 {
+  margin: 0;
+  color: var(--text-normal);
+  font-family: var(--lingua-paper-serif);
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-paper-subtitle {
+  max-width: min(62vw, 660px);
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) > .evs-status {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 2;
+  width: auto;
+  max-width: 34%;
+  min-height: 34px;
+  margin: 0;
+  padding: 7px 12px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lingua-paper-muted);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) > .evs-status::before {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--lingua-paper-accent);
+  content: "";
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock {
+  width: min(calc(100% - 48px), var(--evs-player-width, 860px));
+  border-color: var(--lingua-paper-line);
+  border-radius: 12px;
+  background: var(--lingua-paper-card);
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-stage {
+  border-radius: 11px 11px 0 0;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-toolbar {
+  min-height: 58px;
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid var(--lingua-paper-rule);
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls {
+  gap: 8px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(.evs-primary-controls, .evs-shadowing-source-player) .evs-icon-button {
+  border: 1px solid var(--lingua-paper-accent);
+  border-radius: 50%;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-play-button {
+  background: var(--text-normal);
+  color: var(--background-primary);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-group {
+  border-color: var(--lingua-paper-line);
+  background: transparent;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-slider-thumb {
+  background: var(--text-normal);
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-transcript {
+  display: flex;
+  padding: 18px 24px 44px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment {
+  position: relative;
+  display: block;
+  margin: 0;
+  padding: 16px 62px 16px 18px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 12px;
+  background: var(--lingua-paper-card);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment.is-active,
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment.is-vocabulary-target {
+  border-color: var(--lingua-paper-accent);
+  background: var(--lingua-paper-card);
+  box-shadow: 0 0 0 1px var(--lingua-paper-accent);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment.is-action-target:not(.is-active) {
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-meta {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 12px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-timestamp {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lingua-paper-muted);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(.evs-segment.is-active, .evs-segment.is-vocabulary-target) .evs-timestamp {
+  background: var(--lingua-paper-accent);
+  color: var(--text-on-accent);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-state {
+  display: none;
+  color: var(--lingua-paper-accent);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-smaller);
+  font-weight: 700;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(.evs-segment.is-active, .evs-segment.is-dictating, .evs-segment.is-dictation-result, .evs-segment.is-shadowing) .evs-segment-state {
+  display: inline;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-content {
+  min-width: 0;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-text {
+  padding: 12px 0 2px;
+  color: var(--text-normal);
+  font-family: var(--lingua-paper-serif);
+  font-size: clamp(1.02rem, 1.45vw, 1.22rem);
+  letter-spacing: 0.005em;
+  line-height: 1.62;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock {
+  position: sticky;
+  top: var(--evs-segment-action-top, calc(50vh - 71px));
+  z-index: 8;
+  display: flex;
+  width: 38px;
+  min-height: 142px;
+  margin: 0 8px 0 auto;
+  padding: 3px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--lingua-paper-rule);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--lingua-paper-card) 94%, transparent);
+  box-shadow: var(--shadow-s);
+  backdrop-filter: blur(8px);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock + .evs-segment {
+  margin-top: -154px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-transcript-icon-button {
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-transcript-icon-button .svg-icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.6;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-transcript-end-spacer {
+  flex: 0 0 auto;
+}
+
+/* 翻译与学习解析：在当前卡片内部延展。 */
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-translation-text {
+  margin-top: 14px;
+  padding: 14px 0 2px;
+  border: 0;
+  border-top: 1px solid var(--lingua-paper-rule);
+  border-radius: 0;
+  background: transparent;
+  line-height: 1.65;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-study-heading {
+  margin-bottom: 7px;
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-translation-copy {
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.02rem;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-study-section + .evs-study-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top-color: var(--lingua-paper-rule);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(.evs-study-exam-tip, .evs-study-extension-item, .evs-study-extension-example) {
+  border-color: var(--lingua-paper-rule);
+  background: var(--lingua-paper-muted);
+}
+
+/* 听写与跟读：沿用同一张卡片，不再形成第二层厚重背景板。 */
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(.evs-dictation-panel, .evs-shadowing-panel) {
+  width: 100%;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 0 0;
+  border: 0;
+  border-top: 1px solid var(--lingua-paper-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-dictation-input {
+  min-height: 90px;
+  border-color: var(--lingua-paper-line);
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(.evs-dictation-actions, .evs-shadowing-actions) {
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(.evs-dictation-actions, .evs-shadowing-actions) .evs-button {
+  min-width: 118px;
+  min-height: 36px;
+  border-color: var(--lingua-paper-line);
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(.evs-dictation-actions, .evs-shadowing-actions) .evs-button.mod-cta {
+  border-color: var(--text-normal);
+  background: var(--text-normal);
+  color: var(--background-primary);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-shadowing-source-player {
+  min-height: 46px;
+  padding: 4px 0;
+  gap: 7px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-shadowing-waveform {
+  border-color: var(--lingua-paper-rule);
+  border-radius: 10px;
+  background: var(--lingua-paper-muted);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-shadowing-waveform-canvas {
+  height: 72px;
+  color: var(--lingua-paper-accent);
+}
+
+/* 词典、生词本与今日复习。 */
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view {
+  padding: 18px;
+  background: var(--lingua-paper-bg);
+  color: var(--text-normal);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-header {
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--lingua-paper-rule);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-header h3 {
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.35rem;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs {
+  gap: 0;
+  margin-bottom: 16px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--lingua-paper-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs button.is-active {
+  border-color: var(--lingua-paper-accent);
+  border-radius: 8px 8px 0 0;
+  background: var(--lingua-paper-accent);
+  color: var(--text-on-accent);
+  font-weight: 700;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-search input,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-search button,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-profile select,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-controls :is(input, select) {
+  border-color: var(--lingua-paper-line);
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-controls {
+  grid-template-columns: minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 12px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-controls input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-controls select {
+  width: 92px;
+  min-width: 92px;
+  height: 32px !important;
+  min-height: 32px;
+  padding: 0 16px;
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--text-normal);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;
+  text-align-last: center;
+  background-color: transparent;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-normal) 50%),
+    linear-gradient(135deg, var(--text-normal) 50%, transparent 50%);
+  background-position:
+    calc(100% - 12px) 50%,
+    calc(100% - 8px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-controls select:hover {
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-on-accent) 50%),
+    linear-gradient(135deg, var(--text-on-accent) 50%, transparent 50%);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-controls select:is(:focus, :focus-visible) {
+  border-color: var(--lingua-paper-line) !important;
+  outline: none !important;
+  background-color: var(--background-modifier-hover);
+  box-shadow: none !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-profile {
+  border-color: var(--lingua-paper-rule);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-row h2,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-detail-header h2,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-card h2 {
+  font-family: var(--lingua-paper-serif);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-row h2 {
+  font-size: clamp(2rem, 4vw, 3.8rem);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tags span {
+  padding: 4px 10px;
+  border: 0;
+  background: var(--lingua-paper-muted);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tags span.is-current,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-icon-button.is-saved {
+  background: var(--text-normal);
+  color: var(--background-primary);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) :is(.lingua-dictionary-section, .lingua-dictionary-context) {
+  border-color: var(--lingua-paper-rule);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-context,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-context-item,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-context {
+  padding: 14px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 10px;
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-list {
+  gap: 10px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-list-item {
+  min-height: 92px;
+  padding: 14px;
+  border-color: var(--lingua-paper-line);
+  border-radius: 10px;
+  background: var(--lingua-paper-card);
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-list-item:hover {
+  border-color: var(--lingua-paper-accent);
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-list-heading strong {
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.25rem;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-list-heading span {
+  color: var(--lingua-paper-secondary-text);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-detail-status,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-summary {
+  border-radius: 999px;
+  background: var(--lingua-paper-muted);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-card {
+  padding: 26px 24px 20px;
+  border-color: var(--lingua-paper-line);
+  border-radius: 14px;
+  background: var(--lingua-paper-card);
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-card h2 {
+  margin: 22px 0 16px;
+  font-size: clamp(2.4rem, 6vw, 4.8rem);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-answer {
+  border-top-color: var(--lingua-paper-rule);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-ratings {
+  gap: 10px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-ratings button {
+  min-height: 72px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-ratings .is-again {
+  border-color: var(--lingua-paper-danger);
+  color: var(--lingua-paper-danger);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-review-ratings :is(.is-good, .is-easy) {
+  border-color: var(--lingua-paper-accent);
+  color: var(--lingua-paper-accent);
+}
+
+/* 设置首页：纸张式分组卡片；子页面继续使用 Obsidian 原生控件。 */
+body:not(.is-mobile) .lingua-study-settings {
+  background: var(--lingua-paper-bg);
+}
+
+body:not(.is-mobile) .lingua-study-settings > h2 {
+  margin-bottom: 4px;
+  font-family: var(--lingua-paper-serif);
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  letter-spacing: -0.04em;
+}
+
+body:not(.is-mobile) .lingua-study-settings > h2::after {
+  display: block;
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  content: "PREFERENCES";
+}
+
+body:not(.is-mobile) .lingua-study-settings-profile.setting-item {
+  min-height: 100px;
+  margin: 22px 0 26px;
+  padding: 16px 18px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 14px;
+  background: var(--lingua-paper-card);
+}
+
+body:not(.is-mobile) .lingua-study-settings-profile .setting-item-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-profile .setting-item-control {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-monogram {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--text-normal);
+  color: var(--background-primary);
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+body:not(.is-mobile) .lingua-study-settings-profile-name {
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+body:not(.is-mobile) .lingua-study-settings-profile-summary {
+  margin-top: 5px;
+  color: var(--text-muted);
+}
+
+body:not(.is-mobile) .lingua-study-settings-version {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--lingua-paper-muted);
+  color: var(--text-muted);
+}
+
+body:not(.is-mobile) .lingua-study-settings-update {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-update:empty {
+  display: none;
+}
+
+body:not(.is-mobile) .lingua-study-settings-update-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+body:not(.is-mobile) .lingua-study-settings-update-button {
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--lingua-paper-accent) !important;
+  border-radius: 999px !important;
+  background: var(--lingua-paper-accent) !important;
+  color: var(--lingua-paper-on-accent) !important;
+  font-weight: 650;
+}
+
+body:not(.is-mobile) .lingua-study-settings-update-button:hover {
+  background: var(--lingua-paper-accent-hover) !important;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group {
+  position: relative;
+  gap: 0;
+  margin: 52px 0 28px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 16px;
+  background: var(--lingua-paper-card);
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item-heading {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item:not(.setting-item-heading),
+body:not(.is-mobile) .lingua-study-settings .setting-item:has(.setting-item-chevron) {
+  min-height: 88px;
+  margin: 0;
+  padding: 16px 18px;
+  border: 0;
+  border-top: 1px solid var(--lingua-paper-rule);
+  border-radius: 0 !important;
+  background: transparent;
+  box-shadow: none;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item:nth-child(2),
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item-heading + .setting-item {
+  border-top: 0;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item:last-child {
+  border-bottom: 0;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) {
+  background: var(--lingua-paper-bg, var(--background-primary));
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section {
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 14px;
+  background: var(--background-primary);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-item-heading {
+  padding: 14px 16px 10px;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section .setting-item:not(.setting-item-heading) {
+  padding-right: 16px;
+  padding-left: 16px;
+}
+
+@container (min-width: 720px) {
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-dictionary-body {
+    padding: 12px 8% 28px;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-dictionary-word-row {
+    align-items: center;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-review-card {
+    max-width: 980px;
+    margin-inline: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-paper-header {
+    min-height: 112px;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) > .evs-status {
+    top: 70px;
+    right: auto;
+    left: 24px;
+    max-width: calc(100% - 48px);
+  }
+}
+
+/* Lingua Paper UI V1：按最终四张参考图收紧桌面端视觉。 */
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* 四角隐形缩放区：只改变光标，不添加可见按钮或图标。 */
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-resize-corner {
+  position: absolute;
+  z-index: 20;
+  width: 18px;
+  height: 18px;
+  touch-action: none;
+  background: transparent;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-resize-corner--nw {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-resize-corner--ne {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-resize-corner--sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-resize-corner--se {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock.is-resizing {
+  user-select: none;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock.is-resizing :is(iframe, video) {
+  pointer-events: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-stage {
+  overflow: visible;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 12px;
+  background: #000;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-frame {
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities {
+  top: 12px;
+  right: 12px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities .evs-icon-button {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 50%;
+  background: var(--lingua-paper-card);
+  color: var(--text-normal);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities .evs-icon-button:hover:not(:disabled),
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities .evs-floating-toggle[aria-pressed="true"] {
+  border-color: var(--lingua-paper-accent);
+  background: var(--lingua-paper-accent);
+  color: var(--lingua-paper-on-accent);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-toolbar {
+  min-height: 70px;
+  margin-top: 14px;
+  padding: 8px 14px;
+  flex-wrap: nowrap;
+  gap: 12px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 14px;
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls {
+  gap: 10px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls .evs-icon-button {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  min-height: 46px;
+  flex-basis: 46px;
+  border: 1px solid var(--lingua-paper-line);
+  background: transparent;
+  color: var(--text-normal);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls .evs-play-button {
+  width: 52px;
+  min-width: 52px;
+  height: 52px;
+  min-height: 52px;
+  flex-basis: 52px;
+  border-color: var(--text-normal);
+  background: var(--text-normal);
+  color: var(--background-primary);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls .evs-icon-button .svg-icon {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.8;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-seek-seconds {
+  font-size: 8px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-toolbar > .evs-add-transcript-button {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  margin-left: 0;
+  flex-basis: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-group {
+  min-width: 245px;
+  max-width: 360px;
+  height: 40px;
+  margin-left: auto;
+  padding: 3px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 999px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-slider-thumb {
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 5);
+  border-radius: 999px;
+  background: #211e1a;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-labels {
+  inset: 3px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-label {
+  line-height: 32px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-label.is-active {
+  color: #fff !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) :is(
+  .evs-primary-controls .evs-icon-button,
+  .evs-toolbar > .evs-add-transcript-button,
+  .evs-toolbar > .evs-source-link,
+  .evs-transcript-icon-button
+):hover:not(:disabled) {
+  border-color: var(--lingua-paper-accent);
+  background: var(--lingua-paper-accent);
+  color: var(--lingua-paper-on-accent);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-toolbar > .evs-source-link {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  min-height: 46px;
+  flex-basis: 46px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 词典首页：标题、下划线页签、释义卡、词形/词频双卡和原句卡。 */
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-header {
+  min-height: 48px;
+  margin-bottom: 2px;
+  padding-bottom: 0;
+  border: 0;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-header h3 {
+  font-size: 1.45rem;
+  font-style: italic;
+  letter-spacing: -0.03em;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-source {
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs {
+  display: flex;
+  gap: 22px;
+  margin-bottom: 18px;
+  border-bottom: 0;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs button {
+  display: inline-flex;
+  width: auto;
+  min-height: 40px;
+  padding: 7px 0 8px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs button.is-active {
+  border-color: var(--text-normal);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-normal);
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tab-badge {
+  display: inline-grid;
+  min-width: 25px;
+  height: 25px;
+  padding: 0 7px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--lingua-paper-danger);
+  color: white;
+  font-size: var(--font-ui-smaller);
+  font-weight: 700;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-search {
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 10px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-search input,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-search button {
+  min-height: 46px;
+  border: 1px solid var(--lingua-paper-line);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-search input {
+  padding-inline: 16px;
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.08rem;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-search button.mod-cta {
+  border-radius: 14px;
+  background: var(--text-normal);
+  color: var(--background-primary);
+  font-weight: 700;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-profile {
+  margin: 14px 0 22px;
+  padding: 10px 0;
+  border: 0;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-profile label {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-profile select {
+  box-sizing: border-box;
+  width: 70px;
+  min-width: 70px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  background-color: var(--text-normal);
+  color: var(--background-primary);
+  font-weight: 700;
+  line-height: 36px;
+  text-align: center;
+  text-align-last: center;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-row {
+  min-height: 92px;
+  align-items: center;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-row h2 {
+  font-size: clamp(2.7rem, 8cqw, 4rem);
+  line-height: 1;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-phonetic {
+  margin-top: 10px;
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.05rem;
+  font-style: italic;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-actions {
+  gap: 10px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-actions .lingua-dictionary-icon-button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 50%;
+  background: transparent;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-actions .lingua-dictionary-icon-button:first-child {
+  border-color: var(--text-normal);
+  background: var(--text-normal);
+  color: var(--background-primary);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-definition-card {
+  margin-top: 22px;
+  padding: 8px 20px 18px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 14px;
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-definition-card .lingua-dictionary-section {
+  margin-top: 0;
+  padding: 16px 0 0;
+  border: 0;
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.08rem;
+  line-height: 1.62;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-definition-card .lingua-dictionary-section + .lingua-dictionary-section {
+  margin-top: 14px;
+  border-top: 1px solid var(--lingua-paper-rule);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-definition-card .lingua-dictionary-section-title {
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-smaller);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-reference-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-reference-grid .lingua-dictionary-section {
+  min-width: 0;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 12px;
+  background: var(--lingua-paper-card);
+  line-height: 1.55;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-context {
+  margin-top: 18px;
+  padding: 18px 20px;
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.06rem;
+  line-height: 1.62;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-interface);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-context-timestamp {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--lingua-paper-muted);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-context-source {
+  margin-top: 14px;
+  padding-top: 12px;
+  overflow: hidden;
+  border-top: 1px solid var(--lingua-paper-rule);
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 设置首页：为每一行保留原生入口，同时补上参考图中的独立图标区。 */
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item:not(.setting-item-heading) .setting-item-info {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  align-items: center;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item:not(.setting-item-heading) .setting-item-info::before {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  grid-row: 1 / 3;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--lingua-paper-muted);
+  color: var(--text-normal);
+  content: "◇";
+  font-size: 1.1rem;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item:not(.setting-item-heading) .setting-item-name,
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item:not(.setting-item-heading) .setting-item-description {
+  grid-column: 2;
+}
+
+/* 设置子页面：标题区、纸张分组卡片和大尺寸原生控件。 */
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) {
+  position: relative;
+  padding: 48px 44px 42px;
+  background: var(--lingua-paper-bg);
+  color: var(--text-normal);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) :is(.setting-page-header, .setting-page-titlebar) {
+  border: 0;
+  background: var(--lingua-paper-bg);
+  box-shadow: none;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section)::before {
+  position: absolute;
+  top: 26px;
+  right: 44px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  content: "PREFERENCES";
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-translation)::before {
+  content: "TRANSLATION";
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-learning)::before {
+  content: "LEARNING & DICTIONARY";
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-youtube)::before {
+  content: "YOUTUBE";
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-bilibili)::before {
+  content: "BILIBILI";
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-alignment)::before {
+  content: "ALIGNMENT";
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-general)::before {
+  content: "GENERAL";
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-appearance)::before {
+  content: "APPEARANCE";
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) :is(.setting-page-back-button, button:has(.lucide-arrow-left), button:has(.lucide-chevron-left)) {
+  min-height: 42px;
+  padding: 8px 16px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-page-title {
+  margin-top: 42px;
+  font-family: var(--lingua-paper-serif);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-page-desc {
+  margin-top: 10px;
+  margin-bottom: 30px;
+  font-size: var(--font-ui-medium);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section {
+  position: relative;
+  gap: 0;
+  overflow: visible;
+  margin: 54px 0 30px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 16px;
+  background: var(--lingua-paper-card);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-item-heading {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section .setting-item:not(.setting-item-heading) {
+  min-height: 94px;
+  margin: 0;
+  padding: 18px 24px;
+  border: 0;
+  border-top: 1px solid var(--lingua-paper-rule);
+  border-radius: 0 !important;
+  background: transparent;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-item-heading + .setting-item {
+  border-top: 0;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-item:last-child {
+  border-bottom: 0;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-item-heading + .setting-item:last-child {
+  border-top: 0;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-name {
+  font-family: var(--lingua-paper-serif);
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-description {
+  margin-top: 6px;
+  line-height: 1.55;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control :is(input[type="text"], input[type="number"], select) {
+  min-height: 46px;
+  padding-inline: 14px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control button {
+  min-height: 42px;
+  padding-inline: 16px;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container {
+  width: 54px;
+  height: 30px;
+  border-radius: 999px;
+}
+
+@container (max-width: 620px) {
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-reference-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs {
+    gap: 14px;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-row h2 {
+    font-size: 2.6rem;
+  }
+}
+
+@media (max-width: 860px) {
+  body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-toolbar {
+    gap: 7px;
+    padding-inline: 9px;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls {
+    gap: 5px;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls .evs-icon-button {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    flex-basis: 40px;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls .evs-play-button {
+    width: 46px;
+    min-width: 46px;
+    height: 46px;
+    min-height: 46px;
+    flex-basis: 46px;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-group {
+    min-width: 210px;
+  }
+
+  body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+}
+
+/*
+ * Lingua Paper UI V1 视觉验收修正：
+ * - 页签统一为等宽圆角按钮；
+ * - 视频置顶按钮移到画面外侧；
+ * - 设置项从整组外框改为独立卡片；
+ * - 子页标题栏回到文档流，避免滚动时覆盖内容。
+ */
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs button {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs button:not(.is-active):hover {
+  border-color: var(--lingua-paper-line);
+  background: var(--lingua-paper-accent-soft);
+  color: var(--text-normal);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs button.is-active {
+  border-color: var(--lingua-paper-accent);
+  border-radius: 999px;
+  background: var(--lingua-paper-accent);
+  color: var(--lingua-paper-on-accent);
+  box-shadow: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tab-badge {
+  min-width: 22px;
+  height: 22px;
+  padding-inline: 6px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-empty,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-missing {
+  padding: 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities {
+  top: 0;
+  right: -40px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group {
+  position: static;
+  display: block;
+  margin: 0 0 30px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-item-heading {
+  position: static;
+  width: auto;
+  margin: 0 0 10px;
+  padding: 0;
+  background: transparent;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-items {
+  display: grid;
+  gap: 12px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-items > .setting-item:not(.setting-item-heading),
+body:not(.is-mobile) .lingua-study-settings .setting-item:has(.setting-item-chevron) {
+  min-height: 88px;
+  margin: 0;
+  padding: 16px 18px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 14px !important;
+  background: var(--lingua-paper-card);
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+/* 设置首页只保留外观入口，进入子页后再用可视化卡片选择主题。 */
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-appearance) .lingua-study-settings-theme-setting {
+  display: flex;
+  min-height: 0;
+  padding: 18px !important;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-appearance) .lingua-study-settings-theme-setting > .setting-item-info {
+  display: none;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-appearance) .lingua-study-settings-theme-setting > .setting-item-control {
+  display: block;
+  width: 100%;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-picker {
+  --lingua-theme-picker-ink: #211e1a;
+  --lingua-theme-picker-on-ink: #fff;
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-choice {
+  display: flex;
+  min-width: 0;
+  height: auto !important;
+  min-height: 0;
+  padding: 8px;
+  flex-direction: column;
+  gap: 10px;
+  border: 2px solid var(--background-modifier-border) !important;
+  border-radius: 12px !important;
+  background: var(--background-primary) !important;
+  color: var(--text-normal) !important;
+  box-shadow: none !important;
+  text-align: left;
+  white-space: normal;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 100ms ease;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-choice:hover {
+  border-color: color-mix(in srgb, var(--lingua-theme-picker-ink) 48%, transparent) !important;
+  background: var(--background-primary) !important;
+  color: var(--text-normal) !important;
+  box-shadow: 0 5px 14px rgb(0 0 0 / 10%) !important;
+  transform: translateY(-1px);
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-choice.is-selected {
+  border-color: var(--lingua-theme-picker-ink) !important;
+  box-shadow: 0 0 0 1px var(--lingua-theme-picker-ink) !important;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-choice:active {
+  transform: translateY(0);
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-choice:focus-visible {
+  outline: 2px solid var(--lingua-theme-picker-ink);
+  outline-offset: 3px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-choice:disabled {
+  opacity: 0.72;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview {
+  box-sizing: border-box;
+  width: 100%;
+  height: 118px;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid rgb(33 30 26 / 24%);
+  border-radius: 8px;
+  color: #211e1a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  pointer-events: none;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview.is-classic {
+  background: #f6f6f6;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview.is-paper {
+  background: #f3eee4;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-brand {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview.is-paper .lingua-study-settings-theme-preview-brand {
+  font-family: "Iowan Old Style", Baskerville, Georgia, serif;
+  font-size: 12px;
+  font-style: italic;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-meta {
+  color: #77736c;
+  font-size: 7px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-tabs {
+  display: grid;
+  margin-top: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  color: #77736c;
+  font-size: 7px;
+  text-align: center;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-tabs span {
+  padding: 3px 2px;
+  border-radius: 3px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-tabs .is-active {
+  background: #dedede;
+  color: #211e1a;
+  font-weight: 700;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview.is-paper .lingua-study-settings-theme-preview-tabs .is-active {
+  border-radius: 999px;
+  background: #211e1a;
+  color: #fff;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-card {
+  margin-top: 8px;
+  padding: 7px 8px;
+  border-top: 1px solid #d3d3d3;
+  background: #fff;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview.is-paper .lingua-study-settings-theme-preview-card {
+  border: 1px solid rgb(33 30 26 / 58%);
+  border-radius: 6px;
+  background: #faf7f0;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-word {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview.is-paper .lingua-study-settings-theme-preview-word {
+  font-family: "Iowan Old Style", Baskerville, Georgia, serif;
+  font-size: 14px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-line {
+  width: 48%;
+  height: 3px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: #b9b7b2;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-preview-line.is-long {
+  width: 78%;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-caption {
+  display: flex;
+  min-width: 0;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-name {
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+  line-height: 1.3;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-description {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.3;
+}
+
+body:not(.is-mobile) .lingua-study-settings-theme-status {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--lingua-theme-picker-ink);
+  color: var(--lingua-theme-picker-on-ink);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+body.theme-dark:not(.is-mobile) .lingua-study-settings-theme-picker {
+  --lingua-theme-picker-ink: #eee7dc;
+  --lingua-theme-picker-on-ink: #211e1a;
+}
+
+@media (max-width: 700px) {
+  body:not(.is-mobile) .lingua-study-settings-theme-picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) {
+  padding: 0 !important;
+  background: var(--lingua-paper-bg);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) > .setting-page-titlebar {
+  position: relative !important;
+  top: auto !important;
+  z-index: 1;
+  min-height: 104px;
+  margin: 0;
+  padding: 28px 44px 18px !important;
+  align-items: center;
+  background: var(--lingua-paper-bg) !important;
+  box-shadow: none !important;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) > .setting-page-content {
+  position: relative;
+  z-index: 0;
+  margin-top: 0;
+  padding: 22px 44px 42px !important;
+  background: var(--lingua-paper-bg);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-page-title {
+  margin: 0;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-page-desc {
+  margin: 8px 0 24px;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section {
+  position: static;
+  display: block;
+  margin: 0 0 30px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-item-heading {
+  position: static;
+  width: auto;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-items {
+  display: grid;
+  gap: 12px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-items > .setting-item:not(.setting-item-heading) {
+  min-height: 94px;
+  margin: 0;
+  padding: 18px 24px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 14px !important;
+  background: var(--lingua-paper-card);
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+/*
+ * Paper UI V1 settings states.
+ * Keep every card visibly interactive without implying that an informational row
+ * is itself clickable. Navigable rows still receive the stronger lift effect.
+ */
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-items > .setting-item:not(.setting-item-heading),
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-items > .setting-item:not(.setting-item-heading) {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 100ms ease;
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-items > .setting-item:not(.setting-item-heading):hover,
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-items > .setting-item:not(.setting-item-heading):hover {
+  border-color: var(--lingua-paper-accent);
+  background: color-mix(in srgb, var(--lingua-paper-card) 94%, var(--lingua-paper-accent) 6%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-items > .setting-item:has(.setting-item-chevron):hover {
+  transform: translateY(-1px);
+}
+
+body:not(.is-mobile) .lingua-study-settings-home-group > .setting-items > .setting-item:not(.setting-item-heading):focus-within,
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .lingua-study-settings-section > .setting-items > .setting-item:not(.setting-item-heading):focus-within {
+  border-color: var(--lingua-paper-accent);
+  box-shadow: 0 0 0 2px var(--lingua-paper-accent-soft);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control button {
+  color: var(--text-normal);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control button:is(.mod-warning, .mod-destructive) {
+  border-color: var(--lingua-paper-danger);
+  background: transparent;
+  color: var(--lingua-paper-danger) !important;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control button:is(.mod-warning, .mod-destructive):not(:disabled):hover {
+  border-color: var(--lingua-paper-danger);
+  background: var(--lingua-paper-danger);
+  color: #fff !important;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control button:disabled {
+  border-color: color-mix(in srgb, var(--lingua-paper-line) 45%, transparent);
+  background: var(--lingua-paper-muted);
+  color: var(--text-muted) !important;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+/*
+ * Settings navigation and selectors need their own states. Obsidian's generic
+ * button hover does not consistently cover the settings titlebar or native
+ * select controls, so keep the feedback scoped to Lingua Study's desktop UI.
+ */
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) :is(.setting-page-back-button, button:has(.lucide-arrow-left), button:has(.lucide-chevron-left)),
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control select {
+  appearance: none;
+  padding: 0 14px;
+  text-align: center;
+  text-align-last: center;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease,
+    transform 100ms ease;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) :is(.setting-page-back-button, button:has(.lucide-arrow-left), button:has(.lucide-chevron-left)):hover {
+  border-color: var(--lingua-paper-accent);
+  background: var(--lingua-paper-accent);
+  color: var(--lingua-paper-on-accent);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 12%);
+  transform: translateY(-1px);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control select:hover {
+  border-color: var(--lingua-paper-accent);
+  background-color: color-mix(in srgb, var(--lingua-paper-card) 84%, var(--lingua-paper-accent) 16%);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 10%);
+  transform: translateY(-1px);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) :is(.setting-page-back-button, button:has(.lucide-arrow-left), button:has(.lucide-chevron-left)):active,
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control select:active {
+  box-shadow: none;
+  transform: translateY(0);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) :is(.setting-page-back-button, button:has(.lucide-arrow-left), button:has(.lucide-chevron-left)):focus-visible,
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .setting-item-control select:focus-visible {
+  outline: 2px solid var(--lingua-paper-accent);
+  outline-offset: 2px;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 54px;
+  min-width: 54px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--lingua-paper-muted);
+  background-image: radial-gradient(circle 15px at center, var(--lingua-paper-accent) 0 100%, transparent 100%);
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: 30px 30px;
+  box-shadow: inset 0 0 0 1px var(--lingua-paper-accent);
+  cursor: pointer;
+  transition: background-position 140ms ease-out;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container::after {
+  content: none;
+  display: none;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container:hover {
+  background-color: color-mix(in srgb, var(--lingua-paper-muted) 82%, var(--lingua-paper-accent) 18%);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container.is-enabled {
+  background-color: var(--lingua-paper-accent);
+  background-image: radial-gradient(circle 15px at center, var(--lingua-paper-card) 0 100%, transparent 100%);
+  background-position: right center;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container.is-enabled:hover {
+  background-color: var(--lingua-paper-accent-hover);
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container:focus-visible {
+  outline: 2px solid var(--lingua-paper-accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) > .setting-page-titlebar,
+  body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) > .setting-page-content {
+    padding-right: 24px !important;
+    padding-left: 24px !important;
+  }
+}
+
+/* 两套桌面主题共用播放器尺寸与控制栏缩放；主题规则只负责颜色和造型。 */
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-toolbar {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: clamp(52px, calc(29.263px + 4.737cqw), 70px);
+  margin-top: clamp(8px, calc(0.421px + 1.579cqw), 14px);
+  padding-block: clamp(5px, calc(1.211px + 0.789cqw), 8px);
+  padding-inline: clamp(7px, calc(-1.842px + 1.842cqw), 14px);
+  gap: clamp(5px, calc(-3.842px + 1.842cqw), 12px);
+  overflow: hidden;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls {
+  flex: 0 0 auto;
+  gap: clamp(3px, calc(-5.842px + 1.842cqw), 10px);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls .evs-icon-button {
+  width: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+  min-width: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+  height: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+  min-height: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+  flex-basis: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls .evs-play-button {
+  width: clamp(38px, calc(20.316px + 3.684cqw), 52px);
+  min-width: clamp(38px, calc(20.316px + 3.684cqw), 52px);
+  height: clamp(38px, calc(20.316px + 3.684cqw), 52px);
+  min-height: clamp(38px, calc(20.316px + 3.684cqw), 52px);
+  flex-basis: clamp(38px, calc(20.316px + 3.684cqw), 52px);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-primary-controls .evs-icon-button .svg-icon {
+  width: clamp(17px, calc(10.684px + 1.316cqw), 22px);
+  height: clamp(17px, calc(10.684px + 1.316cqw), 22px);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-toolbar > .evs-add-transcript-button,
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-toolbar > .evs-source-link {
+  width: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+  min-width: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+  height: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+  min-height: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+  flex-basis: clamp(34px, calc(18.842px + 3.158cqw), 46px);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-group {
+  flex: 1 1 150px;
+  min-width: 0;
+  max-width: 360px;
+  height: clamp(32px, calc(21.895px + 2.105cqw), 40px);
+  padding: clamp(2px, calc(0.737px + 0.263cqw), 3px);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-slider-thumb {
+  top: clamp(2px, calc(0.737px + 0.263cqw), 3px);
+  bottom: clamp(2px, calc(0.737px + 0.263cqw), 3px);
+  left: clamp(2px, calc(0.737px + 0.263cqw), 3px);
+  width: calc((100% - clamp(4px, calc(1.474px + 0.526cqw), 6px)) / 5);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-labels {
+  inset: clamp(2px, calc(0.737px + 0.263cqw), 3px);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-label {
+  font-size: clamp(10px, calc(6.211px + 0.789cqw), 13px);
+  line-height: clamp(26px, calc(18.421px + 1.579cqw), 32px);
+}
+
+/*
+ * 收藏操作在纸张 UI 中始终保持描边按钮；是否已收藏由图标本身表达。
+ * 这样不会出现透明背景仍继承白色文字、导致书签图标消失的问题。
+ */
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-actions .lingua-dictionary-icon-button:is([aria-label="加入生词本"], [aria-label="更新到生词本"]) {
+  border-color: var(--lingua-paper-line) !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  color: var(--text-normal) !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-actions .lingua-dictionary-icon-button:is([aria-label="加入生词本"], [aria-label="更新到生词本"]):hover {
+  background-color: var(--lingua-paper-accent-soft) !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-actions > .lingua-dictionary-icon-button:last-child,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-word-actions > .lingua-dictionary-icon-button:last-child .svg-icon {
+  color: var(--text-normal) !important;
+  opacity: 1 !important;
+  stroke: currentColor !important;
+  stroke-width: 2.25 !important;
+}
+
+/*
+ * 生词卡片虽然使用 button 承载点击行为，但不应该套用普通按钮的整块黑色悬停效果。
+ * 仅用轻微灰度变化表示可交互，并保留状态和辅助信息原有颜色。
+ */
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-list-item .lingua-vocabulary-list-heading span {
+  color: var(--lingua-paper-secondary-text) !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) {
+  border-color: var(--lingua-paper-line) !important;
+  background: var(--lingua-paper-muted) !important;
+  background: color-mix(in srgb, var(--lingua-paper-card) 90%, var(--text-normal) 10%) !important;
+  color: var(--text-normal) !important;
+  box-shadow: none;
+  transform: none;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) .lingua-vocabulary-list-heading span {
+  color: var(--lingua-paper-secondary-text) !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) .lingua-vocabulary-list-meta {
+  color: var(--text-muted) !important;
+}
+
+/*
+ * 经典主题没有纸张表面变量，必须使用 Obsidian 的常规背景变量。
+ * 否则未定义的 --lingua-paper-card 会让整条 background 声明失效，
+ * 外观主题的通用 button:hover 规则便会重新把生词卡片染成强调色。
+ */
+body.theme-light:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view .lingua-vocabulary-list-item {
+  --button-bg-color: #fff !important;
+  --button-text-color: var(--text-normal) !important;
+  border-color: var(--background-modifier-border) !important;
+  background: #fff !important;
+  color: var(--text-normal) !important;
+}
+
+body.theme-dark:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view .lingua-vocabulary-list-item {
+  --button-bg-color: var(--background-primary) !important;
+  --button-text-color: var(--text-normal) !important;
+  background: var(--background-primary) !important;
+  color: var(--text-normal) !important;
+}
+
+/* 经典主题中的两个原生下拉框移除宿主箭头占位，保证文字以按钮本身为基准居中。 */
+body:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view :is(
+  .lingua-dictionary-profile,
+  .lingua-vocabulary-controls
+) select {
+  box-sizing: border-box !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0 12px !important;
+  font: inherit !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  text-align-last: center !important;
+  vertical-align: middle;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: none !important;
+}
+
+body:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) {
+  border-color: var(--background-modifier-border) !important;
+  background: color-mix(in srgb, var(--background-primary) 90%, var(--text-normal) 10%) !important;
+  color: var(--text-normal) !important;
+  box-shadow: none !important;
+  transform: none;
+}
+
+body:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) .lingua-vocabulary-list-heading span,
+body:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) .lingua-vocabulary-list-meta {
+  color: var(--text-muted) !important;
+}
+
+/*
+ * 最终强调色保护层：部分 Obsidian 外观主题会直接改写标题色和原生按钮底色，
+ * 因此这些可见的 Lingua Study 品牌与操作控件需要显式回到黑白体系。
+ */
+body:not(.is-mobile) .lingua-dictionary-view :is(
+  .lingua-dictionary-header h3,
+  .lingua-dictionary-word-row h2,
+  .lingua-vocabulary-detail-header h2,
+  .lingua-review-card h2
+),
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-paper-title h2 {
+  --h2-color: var(--lingua-paper-accent) !important;
+  --h3-color: var(--lingua-paper-accent) !important;
+  --text-title-h2: var(--lingua-paper-accent) !important;
+  --text-title-h3: var(--lingua-paper-accent) !important;
+  color: var(--lingua-paper-accent) !important;
+  -webkit-text-fill-color: var(--lingua-paper-accent) !important;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock .evs-transcript-icon-button,
+body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-export-button {
+  --button-bg-color: var(--lingua-paper-control) !important;
+  --button-text-color: var(--lingua-paper-accent) !important;
+  --button-hover-bg-color: var(--lingua-paper-accent) !important;
+  --button-hover-text-color: var(--lingua-paper-on-accent) !important;
+  --interactive-normal: var(--lingua-paper-control) !important;
+  --interactive-hover: var(--lingua-paper-accent-soft) !important;
+  --icon-color: var(--lingua-paper-accent) !important;
+  border-color: transparent !important;
+  background: var(--lingua-paper-control) !important;
+  color: var(--lingua-paper-accent) !important;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock .evs-transcript-icon-button:not(:disabled):hover,
+body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-export-button:not(:disabled):hover {
+  border-color: var(--lingua-paper-accent) !important;
+  background: var(--lingua-paper-accent) !important;
+  color: var(--lingua-paper-on-accent) !important;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view :is(
+  .lingua-dictionary-tabs button.is-active,
+  .lingua-dictionary-search button.mod-cta,
+  .lingua-dictionary-profile select,
+  .lingua-dictionary-tags span.is-current,
+  .lingua-review-card > button.mod-cta,
+  .lingua-review-card > .lingua-dictionary-icon-button
+) {
+  --button-bg-color: var(--lingua-paper-accent) !important;
+  --button-text-color: var(--lingua-paper-on-accent) !important;
+  --button-hover-bg-color: var(--lingua-paper-accent-hover) !important;
+  --button-hover-text-color: var(--lingua-paper-on-accent) !important;
+  --interactive-normal: var(--lingua-paper-accent) !important;
+  --interactive-hover: var(--lingua-paper-accent-hover) !important;
+  --icon-color: var(--lingua-paper-on-accent) !important;
+  border-color: var(--lingua-paper-accent) !important;
+  background: var(--lingua-paper-accent) !important;
+  color: var(--lingua-paper-on-accent) !important;
+}
+
+body:not(.is-mobile) :is(
+  .evs-root:not(.evs-mobile) .evs-segment-action-dock .evs-transcript-icon-button,
+  .lingua-dictionary-view .lingua-vocabulary-export-button,
+  .lingua-dictionary-view .lingua-dictionary-search button.mod-cta,
+  .lingua-dictionary-view .lingua-review-card > button,
+  .lingua-dictionary-view .lingua-review-card > .lingua-dictionary-icon-button
+) .svg-icon {
+  color: inherit !important;
+  stroke: currentColor !important;
+}
+
+/*
+ * 原生 select 会为不同 Obsidian 外观主题的箭头预留不同宽度，
+ * 因此用独立文字层居中显示，select 本身仍保留点击、键盘与无障碍行为。
+ */
+body:not(.is-mobile) .lingua-dictionary-view .lingua-centered-select {
+  position: relative;
+  display: inline-grid;
+  min-width: 0;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view .lingua-centered-select > select {
+  grid-area: 1 / 1;
+  width: 100%;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view .lingua-centered-select > select option {
+  color: var(--text-normal) !important;
+  -webkit-text-fill-color: var(--text-normal) !important;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view .lingua-centered-select-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 8px;
+  color: var(--text-normal) !important;
+  font: inherit;
+  line-height: 1;
+  pointer-events: none;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view .lingua-dictionary-profile .lingua-centered-select-text,
+body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-controls .lingua-centered-select:has(select:hover) .lingua-centered-select-text {
+  color: var(--lingua-paper-on-accent) !important;
 }

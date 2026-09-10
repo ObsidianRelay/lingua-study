@@ -100,21 +100,42 @@ test("字幕导入会话保留草稿并避免同一视频重复启动", async ()
   assert.match(draft, /phase === "aligning" \? "preview"/u);
 });
 
-test("设置首页使用六个原生分类并保留全部设置项", async () => {
+test("设置首页固定使用卡片布局并提供可选界面主题", async () => {
   const source = await readFile("src/settings.ts", "utf8");
   const pageDefinitions = source.match(/type: "page"/gu) ?? [];
-  assert.equal(pageDefinitions.length, 6);
+  assert.equal(pageDefinitions.length, 7);
+  assert.match(source, /setting\.settingEl\.addClass\("lingua-study-settings-profile"\)/u);
+  assert.match(source, /text: "LS"/u);
+  assert.match(source, /已收录生词/u);
+  assert.match(source, /heading: "学习与数据"[\s\S]*?items: \[this\.learningPage\(\), this\.translationPage\(\), this\.generalPage\(\)\]/u);
+  assert.match(source, /heading: "内容导入"[\s\S]*?items: \[this\.youtubePage\(\), this\.bilibiliPage\(\), this\.documentAlignmentPage\(\)\]/u);
+  assert.match(source, /heading: "外观"[\s\S]*?items: \[this\.appearancePage\(\)\]/u);
+  assert.ok(source.indexOf('heading: "外观"') > source.indexOf('heading: "内容导入"'));
   assert.match(
     source,
-    /return \[\s*this\.youtubePage\(\),\s*this\.bilibiliPage\(\),\s*this\.learningPage\(\),\s*this\.documentAlignmentPage\(\),\s*this\.translationPage\(\),\s*this\.generalPage\(\)\s*\];/u
+    /private appearancePage\(\): SettingDefinitionPage \{[\s\S]*?name: "外观"[\s\S]*?desc: "切换 Lingua Study 插件外观。"[\s\S]*?heading: "选择主题"[\s\S]*?lingua-study-settings-page-appearance/u
   );
+  assert.doesNotMatch(source, /切换逐句精听、词典和生词本的外观/u);
+  assert.match(source, /render: \(setting\) => this\.renderInterfaceThemePicker\(setting\)/u);
+  assert.match(source, /value: "classic",[\s\S]*?label: "经典主题"/u);
+  assert.match(source, /value: "paper",[\s\S]*?label: "Lingua Paper"/u);
+  assert.match(source, /cls: `lingua-study-settings-theme-preview is-\$\{theme\.value\}`/u);
+  assert.match(source, /choice\.setAttribute\("aria-pressed", String\(selected\)\)/u);
+  assert.match(source, /text: "✓ 已选择"/u);
+  assert.match(source, /this\.plugin\.updateSettings\(\{ interfaceTheme: theme\.value \}\)/u);
+  assert.match(source, /this\.plugin\.checkForAvailableUpdate\(\)/u);
+  assert.match(source, /text: `发现新版本 v\$\{update\.latestVersion\}`/u);
+  assert.match(source, /text: "前往更新"/u);
+  assert.match(source, /window\.open\(update\.communityPageUrl, "_blank", "noopener,noreferrer"\)/u);
+  assert.doesNotMatch(source, /installPlugin|updatePlugin|\.obsidian\/plugins\/lingua-study/u);
 
   for (const pageName of [
     "YouTube 字幕",
     "学习与词典",
     "文稿导入与对齐",
     "翻译服务",
-    "通用选项"
+    "通用选项",
+    "外观"
   ]) {
     assert.match(source, new RegExp(`name: "${pageName}"`, "u"));
   }
@@ -266,19 +287,47 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   );
   assert.equal(source.match(/createRoot\(/gu)?.length, 5);
   assert.ok((source.match(/fullWidthObserver\?\.disconnect\(\)/gu)?.length ?? 0) >= 3);
+  assert.match(
+    source,
+    /const viewport = this\.containerEl\.closest<HTMLElement>\("\.view-content"\)[\s\S]*?\.markdown-preview-view, \.markdown-source-view/u
+  );
   assert.match(source, /viewportWidth - 32/u);
+  const fullWidthMethod = source.slice(
+    source.indexOf("const updateFullWidth"),
+    source.indexOf("this.interfaceThemeLayoutRefresh = updateFullWidth")
+  );
+  assert.doesNotMatch(fullWidthMethod, /interfaceTheme/u);
+  assert.match(fullWidthMethod, /if \(this\.plugin\.capabilities\.mobile\)/u);
   assert.match(source, /restoreContainerLayout\(\)/u);
   assert.match(source, /list\.scrollHeight <= list\.clientHeight \+ 1/u);
   assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 3);
   assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 3);
   assert.equal(source.match(/this\.createFloatingToggle\(/gu)?.length, 2);
   assert.equal(source.match(/this\.createMobileFloatingToggle\(/gu)?.length, 3);
+  const createPlayerDockMethod = source.slice(
+    source.indexOf("private createPlayerDock"),
+    source.indexOf("private createPlayerResizeCorners")
+  );
+  assert.match(createPlayerDockMethod, /if \(!this\.plugin\.capabilities\.mobile\) \{[\s\S]*?this\.createPlayerResizeCorners\(dock, root\);/u);
+  assert.doesNotMatch(createPlayerDockMethod, /interfaceTheme/u);
+  assert.match(source, /const corners: readonly PlayerResizeCorner\[\] = \["nw", "ne", "sw", "se"\]/u);
+  assert.match(source, /cls: `evs-player-resize-corner evs-player-resize-corner--\$\{corner\}`/u);
+  assert.match(source, /handle\.setPointerCapture\(event\.pointerId\)/u);
+  assert.match(source, /calculatePlayerResizeWidth\(/u);
+  assert.match(source, /scheduleDesktopPlayerWidthSave\(latestWidth, true\)/u);
+  assert.match(source, /scheduleDesktopPlayerWidthSave\(nextWidth, false\)/u);
+  assert.match(source, /updateSettings\(\{ desktopPlayerWidth: pendingWidth \}\)/u);
+  assert.match(source, /scheduleTranscriptLayout\(!this\.playerDockEl\?\.classList\.contains\("is-resizing"\)\)/u);
   assert.match(source, /if \(!this\.plugin\.capabilities\.mobile\) \{[\s\S]*?cls: "evs-player-utilities"/u);
   assert.match(source, /utilities\.setAttribute\("aria-label", "视频置顶操作"\)/u);
   assert.doesNotMatch(source, /this\.createSourceLink\(utilities,/u);
   assert.equal(source.match(/this\.createSourceLink\(toolbar, sourceUrl\)/gu)?.length, 2);
   assert.equal(source.match(/this\.createTranscriptImportButton\(/gu)?.length, 2);
-  assert.match(source, /this\.createSpeedControls\(toolbar\);\s*this\.createTranscriptImportButton\(toolbar, config, transcriptData !== null\);\s*this\.createSourceLink\(toolbar, sourceUrl\);/u);
+  assert.match(source, /this\.createTranscriptImportButton\(toolbar, config, transcriptData !== null\);\s*this\.createSpeedControls\(toolbar\);\s*this\.createSourceLink\(toolbar, sourceUrl\);/u);
+  assert.match(
+    source,
+    /this\.createSeekButton\(primaryControls, "后退 5 秒"[\s\S]*?this\.playPauseButton = this\.createControlButton[\s\S]*?this\.createSeekButton\(primaryControls, "前进 5 秒"/u
+  );
   assert.doesNotMatch(source, /if \(!transcriptData\) \{\s*this\.createTranscriptImportButton/u);
   assert.match(source, /hasTranscript \? "替换字幕或导入文稿" : "添加字幕或导入博主文稿"/u);
   assert.match(source, /cleanupLegacyBilibiliSourceLink/u);
@@ -364,8 +413,14 @@ test("简洁样式铺开全部字幕并移除内部滚动窗口", async () => {
   assert.match(css, /background: var\(--background-primary\);/u);
   assert.match(css, /\.evs-local-status\.is-collapsed/u);
   assert.match(css, /\.evs-transcript \{[\s\S]*?overflow: visible;/u);
-  assert.match(css, /\.evs-player-dock \{[\s\S]*?position: relative;[\s\S]*?width: min\(100%, 680px\);/u);
+  assert.match(css, /\.evs-player-dock \{[\s\S]*?position: relative;[\s\S]*?container-name: evs-player-dock;[\s\S]*?container-type: inline-size;[\s\S]*?width: min\(calc\(100% - 48px\), var\(--evs-player-width, 860px\)\);/u);
   assert.match(css, /\.evs-player-dock\.is-floating \{[\s\S]*?position: sticky;[\s\S]*?top: 8px;/u);
+  assert.match(css, /body:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-player-resize-corner \{[\s\S]*?width: 18px;[\s\S]*?height: 18px;[\s\S]*?touch-action: none;[\s\S]*?background: transparent;/u);
+  assert.match(css, /body:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-player-resize-corner--nw \{[\s\S]*?cursor: nwse-resize;/u);
+  assert.match(css, /body:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-player-resize-corner--ne \{[\s\S]*?cursor: nesw-resize;/u);
+  assert.match(css, /body:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-player-dock\.is-resizing :is\(iframe, video\) \{[\s\S]*?pointer-events: none;/u);
+  assert.doesNotMatch(css, /body\.lingua-study-theme-paper[^\n]*\.evs-player-resize-corner/u);
+  assert.match(css, /body:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-toolbar \{[\s\S]*?min-height: clamp\(52px,[\s\S]*?overflow: hidden;/u);
   assert.match(css, /\.cm-preview-code-block\.cm-lang-lingua-study/u);
   assert.match(css, /\.cm-preview-code-block\.cm-lang-english-video-study/u);
   assert.match(css, /\.cm-embed-block\.cm-lang-lingua-study/u);
@@ -410,10 +465,58 @@ test("简洁样式铺开全部字幕并移除内部滚动窗口", async () => {
   assert.match(css, /\.evs-segment\.is-vocabulary-target/u);
   assert.match(css, /\.lingua-review-context-actions/u);
   assert.match(css, /\.lingua-vocabulary-list-item \{[\s\S]*?height: auto !important;[\s\S]*?min-height: 72px;/u);
+  assert.match(
+    css,
+    /\.lingua-dictionary-word-actions \.lingua-dictionary-icon-button:is\(\[aria-label="加入生词本"\], \[aria-label="更新到生词本"\]\) \{[\s\S]*?background-color: transparent !important;[\s\S]*?color: var\(--text-normal\) !important;/u
+  );
+  assert.match(
+    css,
+    /\.lingua-dictionary-word-actions > \.lingua-dictionary-icon-button:last-child \.svg-icon \{[\s\S]*?opacity: 1 !important;[\s\S]*?stroke: currentColor !important;/u
+  );
+  assert.match(
+    css,
+    /\.lingua-dictionary-view \.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?background: color-mix\([\s\S]*?var\(--lingua-paper-card\) 90%[\s\S]*?var\(--text-normal\) 10%[\s\S]*?\) !important;[\s\S]*?color: var\(--text-normal\) !important;/u
+  );
+  assert.match(css, /--lingua-paper-secondary-text: color-mix\(in srgb, var\(--text-normal\) 58%, transparent\);/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-vocabulary-list-heading span \{[\s\S]*?color: var\(--lingua-paper-secondary-text\);/u);
+  assert.match(css, /\.lingua-dictionary-view \.lingua-vocabulary-list-item \.lingua-vocabulary-list-heading span \{[\s\S]*?color: var\(--lingua-paper-secondary-text\) !important;/u);
+  assert.match(css, /\.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \.lingua-vocabulary-list-heading span \{[\s\S]*?color: var\(--lingua-paper-secondary-text\) !important;/u);
+  assert.match(
+    css,
+    /body:not\(\.is-mobile\):not\(\.lingua-study-theme-paper\) \.lingua-dictionary-view \.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?background: color-mix\(in srgb, var\(--background-primary\) 90%, var\(--text-normal\) 10%\) !important;[\s\S]*?color: var\(--text-normal\) !important;/u
+  );
+  assert.match(
+    css,
+    /body\.theme-light:not\(\.is-mobile\):not\(\.lingua-study-theme-paper\) \.lingua-dictionary-view \.lingua-vocabulary-list-item \{[\s\S]*?--button-bg-color: #fff !important;[\s\S]*?background: #fff !important;[\s\S]*?color: var\(--text-normal\) !important;/u
+  );
+  assert.match(
+    css,
+    /body\.theme-dark:not\(\.is-mobile\):not\(\.lingua-study-theme-paper\) \.lingua-dictionary-view \.lingua-vocabulary-list-item \{[\s\S]*?background: var\(--background-primary\) !important;/u
+  );
+  assert.match(
+    css,
+    /body:not\(\.is-mobile\):not\(\.lingua-study-theme-paper\) \.lingua-dictionary-view :is\([\s\S]*?\.lingua-dictionary-profile,[\s\S]*?\.lingua-vocabulary-controls[\s\S]*?\) select \{[\s\S]*?height: 34px !important;[\s\S]*?padding: 0 12px !important;[\s\S]*?line-height: 1 !important;[\s\S]*?text-align: center !important;[\s\S]*?text-align-last: center !important;[\s\S]*?appearance: none !important;[\s\S]*?background-image: none !important;/u
+  );
+  assert.match(css, /\.lingua-centered-select > select \{[\s\S]*?color: transparent !important;[\s\S]*?-webkit-text-fill-color: transparent !important;/u);
+  assert.match(css, /\.lingua-centered-select-text \{[\s\S]*?position: absolute;[\s\S]*?inset: 0;[\s\S]*?display: grid;[\s\S]*?place-items: center;/u);
+  assert.match(
+    css,
+    /body:not\(\.is-mobile\):not\(\.lingua-study-theme-paper\) \.lingua-dictionary-view \.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \.lingua-vocabulary-list-meta \{[\s\S]*?color: var\(--text-muted\) !important;/u
+  );
   assert.match(css, /\.lingua-review-ratings button \{[\s\S]*?height: auto !important;[\s\S]*?min-height: 48px;/u);
   assert.match(css, /\.lingua-dictionary-view button:not\(:disabled\):hover[\s\S]*?background: var\(--interactive-accent\) !important;/u);
   assert.match(css, /\.lingua-dictionary-profile select:hover[\s\S]*?background-color: var\(--interactive-accent\) !important;/u);
+  assert.match(css, /\.lingua-dictionary-profile select \{[\s\S]*?width: 70px;[\s\S]*?height: 36px;[\s\S]*?padding: 0 14px;[\s\S]*?line-height: 36px;[\s\S]*?text-align: center;[\s\S]*?text-align-last: center;[\s\S]*?appearance: none;/u);
   assert.match(css, /\.lingua-vocabulary-controls select:hover/u);
+  assert.match(
+    css,
+    /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-vocabulary-controls \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 92px;[\s\S]*?gap: 12px;/u
+  );
+  assert.match(
+    css,
+    /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-vocabulary-controls select \{[\s\S]*?width: 92px;[\s\S]*?height: 32px !important;[\s\S]*?padding: 0 16px;[\s\S]*?appearance: none;[\s\S]*?font-size: 13px;[\s\S]*?text-align: center;[\s\S]*?text-align-last: center;/u
+  );
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-vocabulary-controls select:is\(:focus, :focus-visible\) \{[\s\S]*?outline: none !important;[\s\S]*?box-shadow: none !important;/u);
   assert.match(css, /\.lingua-dictionary-profile select:focus-visible/u);
   assert.match(css, /\.setting-page:has\(\.lingua-study-settings-section\)[^}]*button:not\(:disabled\):not\(\.mod-warning\):not\(\.mod-destructive\):hover/u);
   assert.match(css, /\.setting-page:has\(\.lingua-study-settings-section\)\) \[hidden\] \{[\s\S]*?display: none !important;/u);
@@ -440,12 +543,17 @@ test("离线词典使用右侧独立视图且双击只绑定英文字幕正文",
   assert.match(dictionaryView, /class LinguaDictionaryView extends ItemView/u);
   assert.match(dictionaryView, /"查词"/u);
   assert.match(dictionaryView, /"生词本"/u);
-  assert.match(dictionaryView, /`今日复习 \$\{summary\.total\}`/u);
+  assert.match(dictionaryView, /this\.createTabButton\(tabs, "review", "今日复习", summary\.total\)/u);
+  assert.match(dictionaryView, /lingua-dictionary-tab-badge/u);
+  assert.match(dictionaryView, /lingua-dictionary-definition-card/u);
+  assert.match(dictionaryView, /lingua-dictionary-reference-grid/u);
+  assert.match(dictionaryView, /lingua-dictionary-context-timestamp/u);
   assert.match(dictionaryView, /bookmark-check/u);
   assert.match(dictionaryView, /回到视频原句/u);
   assert.match(dictionaryView, /for \(const profile of STUDY_PROFILES\)/u);
   assert.match(dictionaryView, /isStudyProfile\(profile\)/u);
   assert.match(dictionaryView, /STUDY_PROFILES\.map\(/u);
+  assert.match(dictionaryView, /createDiv\(\{ cls: "lingua-centered-select" \}\)[\s\S]*?createSpan\(\{[\s\S]*?cls: "lingua-centered-select-text",[\s\S]*?"aria-hidden": "true"[\s\S]*?selectedOptions\[0\]\?\.textContent/u);
   assert.doesNotMatch(source, /detachLeavesOfType\(DICTIONARY_VIEW_TYPE\)/u);
 });
 
@@ -547,6 +655,8 @@ test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async
   assert.match(source, /dock\.appendChild\(view\.primaryButton\)/u);
   assert.match(source, /dock\.appendChild\(dictationButton\)/u);
   assert.match(source, /dock\.appendChild\(shadowingButton\)/u);
+  assert.doesNotMatch(source, /row\.querySelector<HTMLElement>\("\.evs-segment-content"\)\?\.appendChild\(dock\)/u);
+  assert.match(source, /meta\.createSpan\(\{ cls: "evs-segment-state", text: "正在播放" \}\)/u);
   assert.doesNotMatch(source, /createDiv\(\{ cls: "evs-translation-actions" \}\)/u);
   assert.match(source, /"pencil", "请先选择字幕"/u);
   assert.match(source, /"languages",[\s\S]*?entry \? "显示翻译" : "翻译"/u);
@@ -569,9 +679,10 @@ test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async
   assert.match(source, /this\.requestTranslation\(index, "supplement"\)/u);
   assert.doesNotMatch(source, /segmentRestoreButtons|text: "恢复原文"/u);
 
-  assert.match(css, /\.evs-segment-action-dock \{[\s\S]*?position: sticky;[\s\S]*?top: calc\(50vh - 71px\);[\s\S]*?min-height: 142px;[\s\S]*?flex-direction: column;/u);
-  assert.match(css, /\.evs-segment-action-dock \+ \.evs-segment \{[\s\S]*?margin-top: -140px;/u);
-  assert.doesNotMatch(css, /margin:\s*0 8px -72px auto/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-segment-action-dock \{[\s\S]*?position: sticky;[\s\S]*?top: var\(--evs-segment-action-top, calc\(50vh - 71px\)\);[\s\S]*?width: 38px;[\s\S]*?flex-direction: column;/u);
+  assert.match(source, /this\.transcriptResizeObserver\.observe\(this\.playerDockEl\)/u);
+  assert.match(source, /updateSegmentActionDockInset\(\)[\s\S]*?playerHeight \+ 16/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-segment \{[\s\S]*?border: 1px solid var\(--lingua-paper-line\);[\s\S]*?border-radius: 12px;/u);
   assert.doesNotMatch(css, /\.evs-translation-actions \{/u);
   assert.doesNotMatch(css, /\.evs-segment-primary \{[^}]*grid-template-columns:/u);
   assert.match(css, /\.evs-segment\.is-action-target:not\(\.is-active\)/u);
@@ -581,6 +692,66 @@ test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async
   assert.match(css, /\.evs-study-legacy-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 32px;/u);
   assert.match(css, /\.evs-study-extension-list \{[\s\S]*?display: grid;/u);
   assert.doesNotMatch(css, /\.evs-study-extensions[^}]*display:\s*none/u);
+});
+
+test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", async () => {
+  const [source, css] = await Promise.all([
+    readFile("src/main.ts", "utf8"),
+    readFile("styles.css", "utf8")
+  ]);
+
+  assert.match(css, /--lingua-paper-accent: #211e1a;/u);
+  assert.match(css, /Lingua Study 的交互强调色独立于 Obsidian 外观主题/u);
+  assert.match(css, /--interactive-normal: var\(--lingua-paper-control\);/u);
+  assert.match(css, /--text-accent: var\(--lingua-paper-accent\);/u);
+  assert.match(css, /--h2-color: var\(--lingua-paper-accent\) !important;/u);
+  assert.match(css, /--h3-color: var\(--lingua-paper-accent\) !important;/u);
+  assert.match(css, /--button-bg-color: var\(--lingua-paper-accent\) !important;/u);
+  assert.match(css, /--button-text-color: var\(--lingua-paper-on-accent\) !important;/u);
+  assert.match(css, /\.lingua-dictionary-header h3,[\s\S]*?\.lingua-review-card h2[\s\S]*?color: var\(--lingua-paper-accent\) !important;/u);
+  assert.match(css, /\.evs-segment-action-dock \.evs-transcript-icon-button,[\s\S]*?\.lingua-vocabulary-export-button[\s\S]*?background: var\(--lingua-paper-control\) !important;/u);
+  assert.match(css, /\.lingua-review-card > button\.mod-cta,[\s\S]*?background: var\(--lingua-paper-accent\) !important;/u);
+  assert.match(css, /经典主题只借用设置页的卡片排版/u);
+  assert.match(css, /body:not\(\.is-mobile\) :is\(\.lingua-study-settings,[\s\S]*?--lingua-paper-bg: var\(--background-primary\);[\s\S]*?--lingua-paper-card: var\(--background-primary\);/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) :is\([^}]*?\.lingua-study-settings[^}]*?\) \{/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root/u);
+  assert.match(css, /body:not\(\.is-mobile\) \.lingua-study-settings-home-group/u);
+  assert.match(css, /body:not\(\.is-mobile\):not\(\.lingua-study-theme-paper\)[\s\S]*?\.evs-paper-header/u);
+  assert.doesNotMatch(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-study-settings-home-group/u);
+  assert.match(css, /--interactive-accent: var\(--lingua-paper-accent\);/u);
+  assert.match(css, /\.evs-speed-label\.is-active \{[\s\S]*?color: #fff !important;/u);
+  assert.match(css, /\.evs-player-utilities \{[\s\S]*?top: 0;[\s\S]*?right: -40px;/u);
+  assert.match(css, /\.evs-player-frame \{[\s\S]*?overflow: hidden;[\s\S]*?border-radius: inherit;/u);
+  assert.match(css, /\.lingua-dictionary-tabs \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/u);
+  assert.match(css, /\.lingua-dictionary-tabs button\.is-active \{[\s\S]*?border-radius: 999px;/u);
+  assert.match(css, /\.lingua-dictionary-empty,[\s\S]*?\.lingua-dictionary-missing \{[\s\S]*?background: transparent;/u);
+  assert.match(css, /\.lingua-study-settings-home-group \{[\s\S]*?display: block;[\s\S]*?border: 0;/u);
+  assert.match(css, /\.lingua-study-settings-home-group > \.setting-items \{[\s\S]*?display: grid;[\s\S]*?gap: 12px;[\s\S]*?background: transparent;/u);
+  assert.match(css, /\.lingua-study-settings-home-group > \.setting-items > \.setting-item:not\(\.setting-item-heading\),[\s\S]*?border: 1px solid var\(--lingua-paper-line\);[\s\S]*?border-radius: 14px !important;/u);
+  assert.match(css, /\.lingua-study-settings-theme-picker \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/u);
+  assert.match(css, /\.lingua-study-settings-theme-choice\.is-selected \{[\s\S]*?border-color: var\(--lingua-theme-picker-ink\) !important;/u);
+  assert.match(css, /\.lingua-study-settings-theme-preview\.is-classic \{[\s\S]*?background: #f6f6f6;/u);
+  assert.match(css, /\.lingua-study-settings-theme-preview\.is-paper \{[\s\S]*?background: #f3eee4;/u);
+  assert.match(css, /\.setting-page:has\(\.lingua-study-settings-page-appearance\)::before \{[\s\S]*?content: "APPEARANCE";/u);
+  assert.match(css, /\.setting-page:has\(\.lingua-study-settings-page-appearance\) \.lingua-study-settings-theme-setting > \.setting-item-info \{[\s\S]*?display: none;/u);
+  assert.match(css, /> \.setting-page-titlebar \{[\s\S]*?position: relative !important;[\s\S]*?top: auto !important;/u);
+  assert.match(css, /\.lingua-study-settings-section \{[\s\S]*?display: block;[\s\S]*?border: 0;/u);
+  assert.match(css, /\.lingua-study-settings-section > \.setting-items \{[\s\S]*?display: grid;[\s\S]*?gap: 12px;[\s\S]*?background: transparent;/u);
+  assert.match(css, /\.lingua-study-settings-section > \.setting-items > \.setting-item:not\(\.setting-item-heading\) \{[\s\S]*?border: 1px solid var\(--lingua-paper-line\);[\s\S]*?border-radius: 14px !important;/u);
+  assert.match(css, /\.lingua-study-settings-section > \.setting-items > \.setting-item:not\(\.setting-item-heading\):hover \{[\s\S]*?border-color: var\(--lingua-paper-accent\);[\s\S]*?box-shadow:/u);
+  assert.match(css, /button:is\(\.mod-warning, \.mod-destructive\) \{[\s\S]*?color: var\(--lingua-paper-danger\) !important;/u);
+  assert.match(css, /\.setting-item-control button:disabled \{[\s\S]*?color: var\(--text-muted\) !important;[\s\S]*?opacity: 0\.62;/u);
+  assert.match(css, /\.setting-page-back-button,[\s\S]*?\.setting-item-control select \{[\s\S]*?appearance: none;[\s\S]*?text-align: center;[\s\S]*?text-align-last: center;[\s\S]*?cursor: pointer;[\s\S]*?transition:/u);
+  assert.match(css, /\.setting-page-back-button,[\s\S]*?:hover \{[\s\S]*?background: var\(--lingua-paper-accent\);[\s\S]*?transform: translateY\(-1px\);/u);
+  assert.match(css, /\.setting-item-control select:hover \{[\s\S]*?border-color: var\(--lingua-paper-accent\);[\s\S]*?box-shadow:/u);
+  assert.match(css, /\.setting-item-control select:focus-visible \{[\s\S]*?outline: 2px solid var\(--lingua-paper-accent\);/u);
+  assert.match(css, /\.checkbox-container \{[\s\S]*?overflow: hidden;[\s\S]*?width: 54px;[\s\S]*?height: 30px;[\s\S]*?border: 0;[\s\S]*?background-image: radial-gradient\(circle 15px at center, var\(--lingua-paper-accent\) 0 100%, transparent 100%\);[\s\S]*?background-position: left center;[\s\S]*?background-size: 30px 30px;[\s\S]*?box-shadow: inset 0 0 0 1px var\(--lingua-paper-accent\);/u);
+  assert.match(css, /\.checkbox-container::after \{[\s\S]*?content: none;[\s\S]*?display: none;/u);
+  assert.match(css, /\.checkbox-container\.is-enabled \{[\s\S]*?background-image: radial-gradient\(circle 15px at center, var\(--lingua-paper-card\) 0 100%, transparent 100%\);[\s\S]*?background-position: right center;/u);
+  assert.doesNotMatch(source, /播放器未确认操作/u);
+  assert.match(source, /`播放器已就绪 · \$\{segmentCount\} 条英文字幕`/u);
+  assert.match(source, /classList\.toggle\([\s\S]*?"lingua-study-theme-paper"[\s\S]*?this\.settings\.interfaceTheme === "paper"/u);
+  assert.match(source, /renderer\.applyInterfaceTheme\(\)/u);
 });
 
 test("单句跟读按播放状态自动同步并使用紧凑播放器布局", async () => {
@@ -643,6 +814,10 @@ test("单句跟读按播放状态自动同步并使用紧凑播放器布局", as
   assert.match(source, /revokeObjectURL\(session\.recordingUrl\)/u);
   assert.match(source, /audio\.preload = "auto"/u);
   assert.match(source, /getShadowingPlaybackProgress\(/u);
+  assert.match(source, /audio\.addEventListener\("playing"/u);
+  assert.match(source, /audio\.addEventListener\("waiting"/u);
+  assert.match(source, /private getShadowingPlaybackDisplayTime\(session: ShadowingSession\)/u);
+  assert.match(source, /getShadowingSmoothedPlaybackTime\(/u);
   assert.match(source, /this\.closeShadowing\(false\)/u);
   assert.match(source, /"跟读录音暂时只支持电脑端"/u);
   assert.match(source, /"当前在线播放器无法逐句跟读，请先缓存视频"/u);
