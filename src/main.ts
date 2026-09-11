@@ -1641,7 +1641,6 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       const primary = content.createDiv({ cls: "evs-segment-primary" });
       const textEl = primary.createDiv({ cls: "evs-segment-text" });
       textEl.setAttribute("lang", "en");
-      textEl.setAttribute("title", "双击单词在右侧词典中查询");
       this.renderDictionaryText(textEl, segment.text, index);
 
       const fingerprint = fingerprints[index] ?? "";
@@ -1752,6 +1751,12 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       this.plugin.clearDictionaryHighlight();
     }
     textEl.empty();
+    if (!this.plugin.settings.enableDoubleClickLookup) {
+      textEl.removeAttribute("title");
+      textEl.appendText(text);
+      return;
+    }
+    textEl.setAttribute("title", "双击单词在右侧词典中查询");
     for (const token of tokenizeDictionaryText(text)) {
       if (!token.isWord) {
         textEl.appendText(token.text);
@@ -1779,6 +1784,17 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         });
       });
     }
+  }
+
+  /** 设置切换后立即刷新现有字幕，不要求用户重新打开笔记。 */
+  refreshDictionaryLookupSetting(): void {
+    const segments = this.transcript?.segments ?? [];
+    this.segmentTextEls.forEach((textEl, index) => {
+      const segment = segments[index];
+      if (segment) {
+        this.renderDictionaryText(textEl, segment.text, index);
+      }
+    });
   }
 
   /**
@@ -5498,6 +5514,7 @@ export default class LinguaStudyPlugin extends Plugin {
     const previousDailyNewWordLimit = this.settings.dailyNewWordLimit;
     const previousDesktopPlayerWidth = this.settings.desktopPlayerWidth;
     const previousInterfaceTheme = this.settings.interfaceTheme;
+    const previousDoubleClickLookup = this.settings.enableDoubleClickLookup;
     this.settings = sanitizeSettings({ ...this.settings, ...changes });
     await this.saveData(this.settings);
     if (this.settings.interfaceTheme !== previousInterfaceTheme) {
@@ -5522,6 +5539,14 @@ export default class LinguaStudyPlugin extends Plugin {
     if (this.settings.desktopPlayerWidth !== previousDesktopPlayerWidth) {
       for (const renderer of this.studyRenderers) {
         renderer.applyDesktopPlayerWidth(this.settings.desktopPlayerWidth);
+      }
+    }
+    if (this.settings.enableDoubleClickLookup !== previousDoubleClickLookup) {
+      if (!this.settings.enableDoubleClickLookup) {
+        this.clearDictionaryHighlight();
+      }
+      for (const renderer of this.studyRenderers) {
+        renderer.refreshDictionaryLookupSetting();
       }
     }
   }

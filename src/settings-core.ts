@@ -26,6 +26,7 @@ export interface LinguaStudySettings {
   dailyNewWordLimit: number;
   desktopPlayerWidth: number;
   interfaceTheme: InterfaceTheme;
+  enableDoubleClickLookup: boolean;
 }
 
 export const DEFAULT_DESKTOP_PLAYER_WIDTH = 860;
@@ -52,7 +53,9 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   dailyNewWordLimit: 10,
   desktopPlayerWidth: DEFAULT_DESKTOP_PLAYER_WIDTH,
   // 已上线用户默认保留原界面；Lingua Paper 由用户在设置中主动启用。
-  interfaceTheme: "classic"
+  interfaceTheme: "classic",
+  // 老用户升级后继续保持原有双击查词行为，可在设置中主动关闭。
+  enableDoubleClickLookup: true
 };
 
 /** 读取旧配置时只保留仍受支持的字段；旧 whisperModel 会在这里被移除。 */
@@ -112,6 +115,10 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
         : DEFAULT_SETTINGS.desktopPlayerWidth,
     interfaceTheme: isInterfaceTheme(data.interfaceTheme)
       ? data.interfaceTheme
-      : DEFAULT_SETTINGS.interfaceTheme
+      : DEFAULT_SETTINGS.interfaceTheme,
+    enableDoubleClickLookup:
+      typeof data.enableDoubleClickLookup === "boolean"
+        ? data.enableDoubleClickLookup
+        : DEFAULT_SETTINGS.enableDoubleClickLookup
   };
 }

@@ -152,6 +152,7 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
     "customBaseUrl",
     "customModel",
     "autoImportPastedVideoLinks",
+    "enableDoubleClickLookup",
     "cacheTranslations"
   ]) {
     assert.match(source, new RegExp(`key: "${settingKey}"`, "u"));
@@ -538,6 +539,8 @@ test("离线词典使用右侧独立视图且双击只绑定英文字幕正文",
   assert.match(source, /existingLeaf\.detach\(\)/u);
   assert.match(source, /tokenizeDictionaryText\(text\)/u);
   assert.match(source, /wordEl\.addEventListener\("dblclick"/u);
+  assert.match(source, /if \(!this\.plugin\.settings\.enableDoubleClickLookup\)/u);
+  assert.match(source, /renderer\.refreshDictionaryLookupSetting\(\)/u);
   assert.match(source, /activateDictionaryHighlight/u);
   assert.match(source, /clearDictionaryHighlight/u);
   assert.match(dictionaryView, /class LinguaDictionaryView extends ItemView/u);

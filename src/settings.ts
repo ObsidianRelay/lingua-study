@@ -539,8 +539,17 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           cls: "lingua-study-settings-section",
           items: [
             {
+              name: "字幕双击查词",
+              desc: "关闭后，双击英文字幕不会调用 Lingua Study 查词或自动打开右侧词典栏；手动打开离线词典、生词本和今日复习的命令仍可使用。",
+              control: {
+                type: "toggle",
+                key: "enableDoubleClickLookup",
+                defaultValue: DEFAULT_SETTINGS.enableDoubleClickLookup
+              }
+            },
+            {
               name: "ECDICT 精简版",
-              desc: `已内置 ${DICTIONARY_SOURCE.entryCount.toLocaleString()} 个考试和高频词条。双击英文字幕中的单词即可查词，不调用翻译服务，也不会产生费用。`
+              desc: `已内置 ${DICTIONARY_SOURCE.entryCount.toLocaleString()} 个考试和高频词条。开启字幕双击查词后，双击英文单词即可查询；不调用翻译服务，也不会产生费用。`
             },
             {
               name: "ECDICT 完整版",
@@ -1230,6 +1239,11 @@ export class LinguaStudySettingTab extends PluginSettingTab {
 
     if (key === "autoImportPastedVideoLinks" && typeof value === "boolean") {
       await this.plugin.updateSettings({ autoImportPastedVideoLinks: value });
+      return;
+    }
+
+    if (key === "enableDoubleClickLookup" && typeof value === "boolean") {
+      await this.plugin.updateSettings({ enableDoubleClickLookup: value });
       return;
     }
 

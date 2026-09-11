@@ -20,9 +20,15 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal(settings.dailyNewWordLimit, 10);
   assert.equal(settings.desktopPlayerWidth, 860);
   assert.equal(settings.interfaceTheme, "classic");
+  assert.equal(settings.enableDoubleClickLookup, true);
   assert.equal("speechCloudBaseUrl" in settings, false);
   assert.equal("speechCloudModel" in settings, false);
   assert.equal("speechCloudSecretId" in settings, false);
+});
+
+test("双击查词开关兼容旧设置", () => {
+  assert.equal(sanitizeSettings({ enableDoubleClickLookup: false }).enableDoubleClickLookup, false);
+  assert.equal(sanitizeSettings({ enableDoubleClickLookup: "false" }).enableDoubleClickLookup, true);
 });
 
 test("界面主题默认保留经典样式并只接受受支持的选项", () => {
