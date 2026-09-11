@@ -2,6 +2,18 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 1.4.2 - 2026-09-11
+
+### Fixed
+
+- Changed the update reminder to open Lingua Study's detail page inside Obsidian, where Obsidian provides the official update action, instead of opening the Community website in a browser
+
+## 1.4.1 - 2026-09-11
+
+### Added
+
+- Added an optional setting to disable double-click dictionary lookup in transcript text while keeping the dictionary, vocabulary book, and review commands available
+
 ## 1.4.0 - 2026-09-10
 
 ### Added
