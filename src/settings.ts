@@ -180,11 +180,11 @@ export class LinguaStudySettingTab extends PluginSettingTab {
               text: "前往更新",
               attr: {
                 type: "button",
-                "aria-label": `前往 Lingua Study 官方社区页面更新到 v${update.latestVersion}`
+                "aria-label": `在 Obsidian 中打开 Lingua Study 插件页面并更新到 v${update.latestVersion}`
               }
             });
             updateButton.addEventListener("click", () => {
-              window.open(update.communityPageUrl, "_blank", "noopener,noreferrer");
+              window.open(update.updatePageUrl, "_blank", "noopener,noreferrer");
             });
           });
         }

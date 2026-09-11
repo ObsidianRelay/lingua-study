@@ -1,13 +1,13 @@
 export const LINGUA_STUDY_PLUGIN_ID = "lingua-study";
 export const LINGUA_STUDY_LATEST_MANIFEST_URL =
   "https://github.com/ObsidianRelay/lingua-study/releases/latest/download/manifest.json";
-export const LINGUA_STUDY_COMMUNITY_PAGE_URL =
-  "https://community.obsidian.md/plugins/lingua-study";
+export const LINGUA_STUDY_UPDATE_PAGE_URI =
+  "obsidian://show-plugin?id=lingua-study";
 
 export interface PluginUpdateInfo {
   currentVersion: string;
   latestVersion: string;
-  communityPageUrl: string;
+  updatePageUrl: string;
 }
 
 interface ReleaseManifest {
@@ -64,6 +64,6 @@ export function getPluginUpdateInfo(
   return {
     currentVersion,
     latestVersion: releaseManifest.version,
-    communityPageUrl: LINGUA_STUDY_COMMUNITY_PAGE_URL
+    updatePageUrl: LINGUA_STUDY_UPDATE_PAGE_URI
   };
 }

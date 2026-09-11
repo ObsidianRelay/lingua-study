@@ -26,7 +26,7 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - Local cached Bilibili playback with Bilibili's official external player as a fallback
 - A dedicated left-ribbon Lingua Study logo for manually importing a YouTube or Bilibili link from the active note
 - Optional automatic import after pasting one standalone video link, disabled by default
-- A settings-page update check against the latest official GitHub Release, with an official Community page link shown only when a newer version is available
+- A settings-page update check against the latest official GitHub Release, opening the plugin page inside Obsidian only when a newer version is available
 - Direct Bilibili English subtitle import, with an isolated in-Obsidian login only when Bilibili requires it
 - Public manual-English caption preference with automatic English captions as fallback
 - Independent keyless YouTube mobile-client fallback when the normal page route is blocked

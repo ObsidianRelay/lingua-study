@@ -126,7 +126,8 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
   assert.match(source, /this\.plugin\.checkForAvailableUpdate\(\)/u);
   assert.match(source, /text: `发现新版本 v\$\{update\.latestVersion\}`/u);
   assert.match(source, /text: "前往更新"/u);
-  assert.match(source, /window\.open\(update\.communityPageUrl, "_blank", "noopener,noreferrer"\)/u);
+  assert.match(source, /window\.open\(update\.updatePageUrl, "_blank", "noopener,noreferrer"\)/u);
+  assert.doesNotMatch(source, /community\.obsidian\.md\/plugins\/lingua-study/u);
   assert.doesNotMatch(source, /installPlugin|updatePlugin|\.obsidian\/plugins\/lingua-study/u);
 
   for (const pageName of [

@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   getPluginUpdateInfo,
   isNewerPluginVersion,
-  LINGUA_STUDY_COMMUNITY_PAGE_URL
+  LINGUA_STUDY_UPDATE_PAGE_URI
 } from "../src/update-check-core";
 
 test("只把语义版本号中更新的正式版识别为可用更新", () => {
@@ -23,8 +23,12 @@ test("只接受 Lingua Study 的新版正式 Release manifest", () => {
   }), {
     currentVersion: "1.3.3",
     latestVersion: "1.4.0",
-    communityPageUrl: LINGUA_STUDY_COMMUNITY_PAGE_URL
+    updatePageUrl: LINGUA_STUDY_UPDATE_PAGE_URI
   });
+  assert.equal(
+    LINGUA_STUDY_UPDATE_PAGE_URI,
+    "obsidian://show-plugin?id=lingua-study"
+  );
   assert.equal(getPluginUpdateInfo("1.4.0", {
     id: "lingua-study",
     version: "1.4.0"
