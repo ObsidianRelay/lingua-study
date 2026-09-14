@@ -968,6 +968,15 @@ export class LinguaStudySettingTab extends PluginSettingTab {
               }
             },
             {
+              name: "划词翻译",
+              desc: "选中字幕中的英文句子后显示翻译悬浮窗。",
+              control: {
+                type: "toggle",
+                key: "enableSelectionTranslation",
+                defaultValue: DEFAULT_SETTINGS.enableSelectionTranslation
+              }
+            },
+            {
               name: "整篇文稿翻译",
               desc: "开启后翻译未缓存的整篇文稿，并产生多次 API 请求。",
               control: {
@@ -1325,6 +1334,11 @@ export class LinguaStudySettingTab extends PluginSettingTab {
 
     if (key === "translateWholeTranscript" && typeof value === "boolean") {
       await this.plugin.updateSettings({ translateWholeTranscript: value });
+      return;
+    }
+
+    if (key === "enableSelectionTranslation" && typeof value === "boolean") {
+      await this.plugin.updateSettings({ enableSelectionTranslation: value });
       return;
     }
 

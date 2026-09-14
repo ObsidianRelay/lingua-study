@@ -34,6 +34,7 @@ export interface LinguaStudySettings {
   desktopPlayerWidth: number;
   interfaceTheme: InterfaceTheme;
   enableDoubleClickLookup: boolean;
+  enableSelectionTranslation: boolean;
 }
 
 export const DEFAULT_DESKTOP_PLAYER_WIDTH = 860;
@@ -65,7 +66,9 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   // 已上线用户默认保留原界面；Lingua Paper 由用户在设置中主动启用。
   interfaceTheme: "classic",
   // 老用户升级后继续保持原有双击查词行为，可在设置中主动关闭。
-  enableDoubleClickLookup: true
+  enableDoubleClickLookup: true,
+  // 保留 1.5.0 的字幕划词翻译行为，用户可在设置中主动关闭。
+  enableSelectionTranslation: true
 };
 
 /** 读取旧配置时只保留仍受支持的字段；旧 whisperModel 会在这里被移除。 */
@@ -135,6 +138,10 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
     enableDoubleClickLookup:
       typeof data.enableDoubleClickLookup === "boolean"
         ? data.enableDoubleClickLookup
-        : DEFAULT_SETTINGS.enableDoubleClickLookup
+        : DEFAULT_SETTINGS.enableDoubleClickLookup,
+    enableSelectionTranslation:
+      typeof data.enableSelectionTranslation === "boolean"
+        ? data.enableSelectionTranslation
+        : DEFAULT_SETTINGS.enableSelectionTranslation
   };
 }

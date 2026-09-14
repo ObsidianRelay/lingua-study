@@ -156,6 +156,7 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
     "customModel",
     "autoImportPastedVideoLinks",
     "enableDoubleClickLookup",
+    "enableSelectionTranslation",
     "cacheTranslations"
   ]) {
     assert.match(source, new RegExp(`key: "${settingKey}"`, "u"));
@@ -763,6 +764,8 @@ test("字幕多词选区直接显示悬浮翻译且不会误触第一个单词�
   const css = await readFile("styles.css", "utf8");
 
   assert.match(source, /textEl\.onpointerup =/u);
+  assert.match(source, /if \(!this\.plugin\.settings\.enableSelectionTranslation\)/u);
+  assert.match(source, /textEl\.onpointerup = null/u);
   assert.match(source, /if \(\/\\s\/u\.test\(selectedText\)\)/u);
   assert.match(source, /this\.showSelectionTranslationPopover\(textEl\)/u);
   assert.doesNotMatch(source, /text: "翻译选中句子"/u);

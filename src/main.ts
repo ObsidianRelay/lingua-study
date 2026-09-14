@@ -2040,6 +2040,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   }
 
   private registerSelectionTranslation(textEl: HTMLElement): void {
+    if (!this.plugin.settings.enableSelectionTranslation) {
+      textEl.onpointerup = null;
+      return;
+    }
     textEl.onpointerup = (event) => {
       if (event.button !== 0) {
         return;
@@ -2050,6 +2054,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   /** 参考 Vocabulary SRS：多词选区完成后直接弹出悬浮窗并自动翻译。 */
   private showSelectionTranslationPopover(textEl: HTMLElement): void {
+    if (!this.plugin.settings.enableSelectionTranslation) {
+      this.hideSelectionTranslationPopover();
+      return;
+    }
     const selection = textEl.ownerDocument.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
       return;
@@ -6071,6 +6079,7 @@ export default class LinguaStudyPlugin extends Plugin {
     const previousDesktopPlayerWidth = this.settings.desktopPlayerWidth;
     const previousInterfaceTheme = this.settings.interfaceTheme;
     const previousDoubleClickLookup = this.settings.enableDoubleClickLookup;
+    const previousSelectionTranslation = this.settings.enableSelectionTranslation;
     this.settings = sanitizeSettings({ ...this.settings, ...changes });
     await this.saveData(this.settings);
     if (this.settings.interfaceTheme !== previousInterfaceTheme) {
@@ -6100,7 +6109,10 @@ export default class LinguaStudyPlugin extends Plugin {
         renderer.applyDesktopPlayerWidth(this.settings.desktopPlayerWidth);
       }
     }
-    if (this.settings.enableDoubleClickLookup !== previousDoubleClickLookup) {
+    if (
+      this.settings.enableDoubleClickLookup !== previousDoubleClickLookup ||
+      this.settings.enableSelectionTranslation !== previousSelectionTranslation
+    ) {
       if (!this.settings.enableDoubleClickLookup) {
         this.clearDictionaryHighlight();
       }
