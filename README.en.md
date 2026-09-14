@@ -5,10 +5,11 @@
 Turn English YouTube and Bilibili videos into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 1.5.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.5.1 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
-## Recent updates (1.3.0–1.5.0)
+## Recent updates (1.3.0–1.5.1)
 
+- **Selection-translation toggle**: disable the automatic transcript-selection popover without affecting double-click lookup or the manual translation command
 - **Local-video study**: import local MP4 files from the existing Lingua Study entry and automatically match same-name SRT/VTT subtitles
 - **Selection translation**: use Baidu Translate, DeepSeek, Kimi, or an OpenAI-compatible service in a draggable floating card
 - **FSRS-6 scheduling**: plan reviews with the real FSRS-6 algorithm and a configurable target retention
@@ -46,7 +47,7 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - Play, pause, seek backward or forward by five seconds
 - Playback speeds from 0.75x to 2x
 - Clickable timestamps, automatic highlighting, and page-level transcript following without an internal scrolling window
-- Per-segment translation that runs only after the user clicks a translation button
+- Per-segment button translation plus an optional automatic transcript-selection popover
 - Four-part study cards with translation, vocabulary and collocations, grammar patterns, and exam-focused tips
 - Junior-high and senior-high English, CET-4, CET-6, TEM-4, TEM-8, IELTS, and TOEFL study profiles with separate local caches
 - A bundled offline English-Chinese dictionary opened by double-clicking a transcript word
