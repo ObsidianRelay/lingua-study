@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import test from "node:test";
 import {
+  buildBaiduTranslationForm,
   buildTranslationRequestBody,
+  createMd5Hex,
   createSegmentFingerprint,
   getTranslationCachePath,
   normalizeChatCompletionsUrl,
+  parseBaiduTranslationResponse,
   parseTranslationResponse,
   readCompletionFinishReason,
   translationHttpError,
+  validateBaiduSourceText,
   validateTranslationConfiguration
 } from "../src/translation-core";
 
@@ -33,6 +37,8 @@ test("校验 DeepSeek 和中转站配置", () => {
   assert.throws(
     () => validateTranslationConfiguration({
       translationProvider: "disabled",
+      baiduAppId: "",
+      baiduSecretId: "",
       deepSeekModel: "deepseek-v4-flash",
       deepSeekSecretId: "",
       kimiModel: "kimi-k2.6",
@@ -46,6 +52,8 @@ test("校验 DeepSeek 和中转站配置", () => {
 
   const deepSeek = validateTranslationConfiguration({
     translationProvider: "deepseek",
+    baiduAppId: "",
+    baiduSecretId: "",
     deepSeekModel: "deepseek-v4-flash",
     deepSeekSecretId: "evs-deepseek",
     kimiModel: "kimi-k2.6",
@@ -59,6 +67,8 @@ test("校验 DeepSeek 和中转站配置", () => {
 
   const kimi = validateTranslationConfiguration({
     translationProvider: "kimi",
+    baiduAppId: "",
+    baiduSecretId: "",
     deepSeekModel: "deepseek-v4-flash",
     deepSeekSecretId: "",
     kimiModel: "kimi-k2.6",
@@ -72,6 +82,8 @@ test("校验 DeepSeek 和中转站配置", () => {
   assert.equal(kimi.secretId, "evs-kimi");
   assert.throws(() => validateTranslationConfiguration({
     translationProvider: "kimi",
+    baiduAppId: "",
+    baiduSecretId: "",
     deepSeekModel: "deepseek-v4-flash",
     deepSeekSecretId: "",
     kimiModel: "kimi-k2.6",
@@ -84,6 +96,8 @@ test("校验 DeepSeek 和中转站配置", () => {
   assert.throws(
     () => validateTranslationConfiguration({
       translationProvider: "openai-compatible",
+      baiduAppId: "",
+      baiduSecretId: "",
       deepSeekModel: "deepseek-v4-flash",
       deepSeekSecretId: "",
       kimiModel: "kimi-k2.6",
@@ -97,6 +111,8 @@ test("校验 DeepSeek 和中转站配置", () => {
 
   const relay = validateTranslationConfiguration({
     translationProvider: "openai-compatible",
+    baiduAppId: "",
+    baiduSecretId: "",
     deepSeekModel: "deepseek-v4-flash",
     deepSeekSecretId: "",
     kimiModel: "kimi-k2.6",
@@ -107,6 +123,77 @@ test("校验 DeepSeek 和中转站配置", () => {
   });
   assert.equal(relay.endpoint, "https://relay.example/v1/chat/completions");
   assert.equal(relay.model, "relay-model");
+});
+
+test("校验百度翻译配置并使用独立安全凭据", () => {
+  assert.throws(() => validateTranslationConfiguration({
+    translationProvider: "baidu",
+    baiduAppId: "",
+    baiduSecretId: "",
+    deepSeekModel: "deepseek-v4-flash",
+    deepSeekSecretId: "",
+    kimiModel: "kimi-k2.6",
+    kimiSecretId: "",
+    customBaseUrl: "",
+    customModel: "",
+    customSecretId: ""
+  }), /AppID/u);
+
+  const baidu = validateTranslationConfiguration({
+    translationProvider: "baidu",
+    baiduAppId: " 123456 ",
+    baiduSecretId: "evs-baidu",
+    deepSeekModel: "deepseek-v4-flash",
+    deepSeekSecretId: "",
+    kimiModel: "kimi-k2.6",
+    kimiSecretId: "",
+    customBaseUrl: "",
+    customModel: "",
+    customSecretId: ""
+  });
+  assert.equal(baidu.provider, "baidu");
+  assert.equal(baidu.appId, "123456");
+  assert.equal(baidu.secretId, "evs-baidu");
+  assert.equal(baidu.model, "general");
+});
+
+test("构建并解析百度通用翻译请求", () => {
+  assert.equal(
+    createMd5Hex("2015063000000001apple654781234567890"),
+    "a1a7461d92e5194c5cae3182b5b24de1"
+  );
+  assert.equal(createMd5Hex("你好"), "7eca689f0d3389d9dea66ae112e5cfd7");
+  const body = new URLSearchParams(buildBaiduTranslationForm(
+    "2015063000000001",
+    "Hello & welcome.",
+    "65478",
+    "abc123"
+  ));
+  assert.equal(body.get("q"), "Hello & welcome.");
+  assert.equal(body.get("from"), "en");
+  assert.equal(body.get("to"), "zh");
+  assert.equal(body.get("appid"), "2015063000000001");
+  assert.equal(body.get("sign"), "abc123");
+
+  assert.equal(parseBaiduTranslationResponse({
+    from: "en",
+    to: "zh",
+    trans_result: [{ src: "Hello.", dst: " 你好。 " }]
+  }), "你好。");
+  assert.equal(parseBaiduTranslationResponse({
+    trans_result: [{ dst: "第一行" }, { dst: "第二行" }]
+  }), "第一行\n第二行");
+  assert.throws(
+    () => parseBaiduTranslationResponse({ error_code: "54001", error_msg: "Invalid Sign" }),
+    /AppID、密钥或签名/u
+  );
+  assert.throws(() => parseBaiduTranslationResponse({ trans_result: [] }), /没有返回译文/u);
+});
+
+test("百度翻译拒绝空文本和超过 6000 字节的原文", () => {
+  assert.equal(validateBaiduSourceText("  Hello.  "), "Hello.");
+  assert.throws(() => validateBaiduSourceText("   "), /没有可翻译/u);
+  assert.throws(() => validateBaiduSourceText("中".repeat(2_001)), /6000 字节/u);
 });
 
 test("DeepSeek 与 Kimi 请求关闭思考模式，中转站请求不携带专属参数", () => {

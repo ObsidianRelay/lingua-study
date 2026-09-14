@@ -55,6 +55,11 @@ class MockElement {
 }
 
 const mockWorkspace = {
+  containerEl: {
+    ownerDocument: {
+      body: new MockElement()
+    }
+  },
   on() { return { unload() {} }; },
   getActiveFile() { return null; },
   getActiveViewOfType() { return null; },

@@ -60,7 +60,7 @@ function validateCache(value: unknown, videoId: string): TranslationCacheFile {
     if (
       typeof entry.sourceText !== "string" || entry.sourceText.trim() === "" ||
       typeof entry.text !== "string" || entry.text.trim() === "" ||
-      (provider !== "deepseek" && provider !== "kimi" && provider !== "openai-compatible" && provider !== "imported-document") ||
+      (provider !== "baidu" && provider !== "deepseek" && provider !== "kimi" && provider !== "openai-compatible" && provider !== "imported-document") ||
       typeof entry.model !== "string" || entry.model.trim() === "" ||
       typeof entry.updatedAt !== "string" || entry.updatedAt.trim() === ""
     ) {

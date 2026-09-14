@@ -5,6 +5,7 @@ import {
   DICTIONARY_SOURCE,
   OfflineDictionary,
   extractLookupWord,
+  inferLemmaCandidates,
   normalizeLookupWord,
   tokenizeDictionaryText
 } from "../src/dictionary-core";
@@ -38,11 +39,64 @@ test("离线词典保留词形变化并为拼写误差提供建议", () => {
   const study = dictionary.lookup("study").entry;
   assert.equal(study?.word, "study");
   assert.ok(study?.inflections.some((item) => item.value === "studies"));
+  assert.equal(dictionary.lookup("studied").entry?.word, "study");
+  assert.equal(dictionary.lookup("running").entry?.word, "run");
+  assert.equal(dictionary.lookup("went").entry?.word, "go");
+  assert.equal(dictionary.lookup("children").entry?.word, "child");
+  assert.equal(dictionary.lookup("better").entry?.word, "good");
 
   const missing = dictionary.lookup("studyy");
   assert.equal(missing.entry, null);
   assert.ok(missing.suggestions.some((word) => word.toLowerCase() === "study"));
   assert.equal(dictionary.lookup("zzzzzznotaword").entry, null);
+});
+
+test("本地词形还原覆盖规则变化和 Issue 中的不规则示例", () => {
+  assert.deepEqual(inferLemmaCandidates("studied").slice(0, 1), ["study"]);
+  assert.ok(inferLemmaCandidates("running").includes("run"));
+  assert.ok(inferLemmaCandidates("boxes").includes("box"));
+  assert.ok(inferLemmaCandidates("bigger").includes("big"));
+  assert.deepEqual(inferLemmaCandidates("went"), ["go"]);
+  assert.deepEqual(inferLemmaCandidates("children"), ["child"]);
+  assert.deepEqual(inferLemmaCandidates("better"), ["good", "well"]);
+  assert.deepEqual(inferLemmaCandidates("him"), ["he"]);
+});
+
+test("查词优先使用明确词形关系，并为无 forms 的自定义词典推断原形", () => {
+  const pack = (word: string, exchange = "") =>
+    [word, "", `${word} definition`, `${word} 释义`, "", [], 0, 0, exchange];
+  const shards: Record<string, ReturnType<typeof gzipSync>> = {
+    b: gzipSync(JSON.stringify({
+      entries: { better: pack("better", "0:good/1:r") },
+      aliases: {}
+    })),
+    g: gzipSync(JSON.stringify({ entries: { good: pack("good") }, aliases: {} })),
+    r: gzipSync(JSON.stringify({ entries: { run: pack("run") }, aliases: {} })),
+    s: gzipSync(JSON.stringify({ entries: { study: pack("study") }, aliases: {} })),
+    w: gzipSync(JSON.stringify({
+      entries: { wander: pack("wander") },
+      aliases: { went: "wander" }
+    }))
+  };
+  const dictionary = new OfflineDictionary({});
+  dictionary.setExternalShardLoader((key) => shards[key] ?? null);
+
+  assert.equal(dictionary.lookup("better").entry?.word, "good");
+  assert.equal(dictionary.lookup("running").entry?.word, "run");
+  assert.equal(dictionary.lookup("studied").entry?.word, "study");
+  assert.equal(dictionary.lookup("went").entry?.word, "wander");
+
+  const customDirect = new OfflineDictionary({});
+  customDirect.setExternalShardLoaders([{
+    loader: (key) => key === "b"
+      ? gzipSync(JSON.stringify({
+        entries: { better: pack("better"), good: pack("good") },
+        aliases: {}
+      }))
+      : null,
+    resolveDirectInflections: false
+  }]);
+  assert.equal(customDirect.lookup("better").entry?.word, "better");
 });
 
 test("双击词提取只接受一个英文词", () => {

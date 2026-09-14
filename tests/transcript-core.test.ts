@@ -34,3 +34,16 @@ test("手工编辑保留首次原文且不改变时间轴", () => {
     text: "It get started."
   });
 });
+
+test("字幕校验接受插件生成的本地视频来源但拒绝任意协议", () => {
+  const local = validateTranscript({
+    ...transcript,
+    videoId: "abcdefghijk",
+    sourceUrl: "lingua-local://abcdefghijk"
+  });
+  assert.equal(local.sourceUrl, "lingua-local://abcdefghijk");
+  assert.throws(
+    () => validateTranscript({ ...transcript, sourceUrl: "file:///Users/test/video.mp4" }),
+    /HTTPS\/本地视频来源/u
+  );
+});

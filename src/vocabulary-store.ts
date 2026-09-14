@@ -7,11 +7,13 @@ import {
   introduceVocabularyEntry,
   rateVocabularyEntry,
   removeVocabularyEntry,
+  updateVocabularyEntry,
   updateVocabularyNote,
   validateVocabularyBook,
   type ReviewRating,
   type VocabularyAddInput,
-  type VocabularyBookFile
+  type VocabularyBookFile,
+  type VocabularyEditInput
 } from "./vocabulary-core";
 
 export interface VocabularyBookLoadResult {
@@ -58,12 +60,23 @@ export class VocabularyStore {
     return this.mutate((book) => updateVocabularyNote(book, id, note));
   }
 
+  async update(id: string, input: VocabularyEditInput): Promise<VocabularyBookFile> {
+    return this.mutate((book) => updateVocabularyEntry(book, id, input));
+  }
+
   async introduce(id: string, now: Date): Promise<VocabularyBookFile> {
     return this.mutate((book) => introduceVocabularyEntry(book, id, now));
   }
 
-  async rate(id: string, rating: ReviewRating, now: Date): Promise<VocabularyBookFile> {
-    return this.mutate((book) => rateVocabularyEntry(book, id, rating, now));
+  async rate(
+    id: string,
+    rating: ReviewRating,
+    now: Date,
+    requestRetention: number
+  ): Promise<VocabularyBookFile> {
+    return this.mutate((book) =>
+      rateVocabularyEntry(book, id, rating, now, requestRetention)
+    );
   }
 
   private async mutate(

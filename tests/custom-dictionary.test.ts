@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { OfflineDictionary } from "../src/dictionary-core";
 import {
   CustomDictionaryService,
   getCustomDictionaryCacheFolder,
@@ -29,22 +30,28 @@ test("自定义词典文件原子安装为可读取的分片并可独立删除",
     const result = await service.installFromFile(
       "my-words.csv",
       new TextEncoder().encode([
-        "word,phonetic,definition,translation,pos,tags",
-        "ability,əˈbɪləti,custom explanation,自定义能力,n,cet4",
+        "word,phonetic,definition,translation,pos,tags,forms",
+        "ability,əˈbɪləti,custom explanation,自定义能力,n,cet4,abilities",
+        "capacity,,another explanation,容量,n,cet4,abilities",
         "rarewordx,,an uncommon word,测试生僻词,n,toefl",
         "bad row,,missing both,,n,cet4"
       ].join("\n")),
       () => undefined
     );
-    assert.equal(result.manifest.entryCount, 2);
+    assert.equal(result.manifest.entryCount, 3);
     assert.equal(result.manifest.skippedRows, 1);
     assert.equal(result.manifest.sourceFileName, "my-words.csv");
+    assert.ok(result.warnings.some((warning) => /同时属于 ability 和 capacity/u.test(warning)));
     assert.ok(await verifyCustomDictionaryPackage(cache));
     const shard = JSON.parse(
       gunzipSync(await readFile(join(cache, "a.json.gz"))).toString("utf8")
-    ) as { entries: Record<string, unknown> };
+    ) as { entries: Record<string, unknown>; aliases: Record<string, string> };
     assert.ok(shard.entries.ability);
+    assert.equal(shard.aliases.abilities, "ability");
     assert.ok(service.readCompressedShard("r"));
+    const dictionary = new OfflineDictionary();
+    dictionary.setExternalShardLoader((key) => service.readCompressedShard(key));
+    assert.equal(dictionary.lookup("abilities").entry?.chineseTranslation, "自定义能力");
 
     await service.clear();
     assert.equal(service.getStatus().installed, false);

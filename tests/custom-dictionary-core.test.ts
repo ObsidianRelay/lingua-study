@@ -19,6 +19,7 @@ test("CSV、TSV 和 JSON 模板均可直接导入", () => {
     assert.equal(parsed.entries[0]?.normalizedWord, "dedication");
     assert.equal(parsed.entries[0]?.translation, "奉献");
     assert.deepEqual(parsed.entries[0]?.tags, ["cet4", "ielts"]);
+    assert.deepEqual(parsed.entries[0]?.forms, ["dedications"]);
   }
 });
 
@@ -34,6 +35,14 @@ test("自定义词典支持中文表头、带逗号的引号字段和重复词�
   assert.equal(parsed.entries[0]?.definition, "to learn, examine or review");
   assert.deepEqual(parsed.entries[0]?.tags, ["cet4", "toefl"]);
   assert.equal(parsed.entries[1]?.normalizedWord, "long-term");
+});
+
+test("自定义词典接受初中 zk 和高中 gk 标签", () => {
+  const parsed = parseCustomDictionaryCsv([
+    "word,translation,tags",
+    "study,学习,zk gk cet4"
+  ].join("\n"));
+  assert.deepEqual(parsed.entries[0]?.tags, ["zk", "gk", "cet4"]);
 });
 
 test("自定义词典报告无效行并拒绝缺失关键表头", () => {
@@ -97,4 +106,23 @@ test("JSON 支持词条数组、entries 包装和中文字段", () => {
     () => parseCustomDictionaryJson('{"word":"focus"}'),
     /顶层必须/u
   );
+});
+
+test("自定义词典接受 forms、aliases 和中文词形字段", () => {
+  const csv = parseCustomDictionaryCsv([
+    "word,translation,forms",
+    "study,学习,studies|studied|studying|study|123"
+  ].join("\n"));
+  assert.deepEqual(csv.entries[0]?.forms, ["studies", "studied", "studying"]);
+  assert.match(csv.warnings[0] ?? "", /忽略无效词形 123/u);
+
+  const tsv = parseCustomDictionaryTsv(
+    "word\ttranslation\taliases\ngo\t去\tgoes went gone"
+  );
+  assert.deepEqual(tsv.entries[0]?.forms, ["goes", "went", "gone"]);
+
+  const json = parseCustomDictionaryJson(JSON.stringify([
+    { word: "child", translation: "孩子", 别名: ["children", "child"] }
+  ]));
+  assert.deepEqual(json.entries[0]?.forms, ["children"]);
 });

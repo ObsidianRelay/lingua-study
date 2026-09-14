@@ -5,7 +5,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { get as httpsGet } from "node:https";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, extname, isAbsolute, join } from "node:path";
 import { requestUrl } from "obsidian";
 import type { BilibiliVideoLink } from "./import-core";
 import {
@@ -72,6 +72,12 @@ export interface BilibiliCacheResult {
   link: BilibiliVideoLink;
   cached: CachedBilibiliVideo;
   reused: boolean;
+}
+
+export interface LocalVideoPlaybackAsset {
+  fileUrl: string;
+  filePath: string;
+  title: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -179,6 +185,38 @@ export class BilibiliCacheService {
       return null;
     }
     return this.readCachedVideo(videoId, page);
+  }
+
+  async exposeExternalMp4(
+    filePath: string,
+    localId: string
+  ): Promise<LocalVideoPlaybackAsset> {
+    if (!/^[A-Za-z0-9_-]{11}$/u.test(localId)) {
+      throw new Error("本地视频 ID 格式不正确。");
+    }
+    if (!isAbsolute(filePath) || extname(filePath).toLowerCase() !== ".mp4") {
+      throw new Error("本地视频路径无效，目前只支持电脑中的 MP4 文件。");
+    }
+    let info;
+    try {
+      info = await stat(filePath);
+    } catch {
+      throw new Error("找不到本地视频，文件可能已被移动或删除。");
+    }
+    if (!info.isFile() || info.size <= 0) {
+      throw new Error("本地视频不是有效文件。");
+    }
+    const publicName = `local-${localId}.mp4`;
+    const baseUrl = await this.exposeLocalAssets([{
+      filePath,
+      fileName: publicName,
+      contentType: "video/mp4"
+    }]);
+    return {
+      fileUrl: `${baseUrl}${encodeURIComponent(publicName)}`,
+      filePath,
+      title: basename(filePath)
+    };
   }
 
   async openCacheFolder(): Promise<void> {
@@ -539,7 +577,6 @@ export class BilibiliCacheService {
       if (
         asset.fileName === "" ||
         basename(asset.fileName) !== asset.fileName ||
-        basename(asset.filePath) !== asset.fileName ||
         !/^[\w.+-]+$/u.test(asset.fileName)
       ) {
         throw new Error("本地播放文件名不安全，已拒绝开放。");

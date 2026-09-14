@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildBilibiliStudyBlock,
   addTranscriptToBilibiliStudyBlock,
+  buildLocalVideoStudyBlock,
   buildStudyBlock,
   chooseAvailableTranscriptPath,
   cleanSubtitleText,
@@ -11,6 +12,7 @@ import {
   extractBilibiliVideosFromStudyBlocks,
   extractInitialPlayerResponse,
   extractInnerTubeConfig,
+  extractLocalVideoIdsFromStudyBlocks,
   extractTranscriptPathsFromStudyBlocks,
   extractYouTubeLinks,
   extractSupportedVideoLinks,
@@ -29,6 +31,7 @@ import {
   parseYouTubeLink,
   planStudyBlockAppend,
   removeMatchingVideoLinkFromLine,
+  replaceLocalVideoPathInStudyBlock,
   removeVisibleBilibiliLinksFromMarkdown,
   sanitizeTranscriptFolder,
   selectEnglishCaptionTrack,
@@ -311,6 +314,27 @@ test("B站学习代码块可以安全加入字幕路径", () => {
     ),
     `before\n${buildBilibiliStudyBlock(link, "Lingua Study/Transcripts/BV1B7411m7LV-p2.json")}\nafter`
   );
+});
+
+test("本地视频代码块安全保存带空格路径并支持重新关联", () => {
+  const block = buildLocalVideoStudyBlock({
+    localId: "abcdefghijk",
+    videoPath: "/Users/test/My Episode.mp4",
+    transcriptPath: "Lingua Study/Transcripts/local-abcdefghijk.json"
+  });
+  assert.equal(
+    block,
+    "```lingua-study\nplatform: local\nid: abcdefghijk\nvideo: \"/Users/test/My Episode.mp4\"\ntranscript: \"Lingua Study/Transcripts/local-abcdefghijk.json\"\n```"
+  );
+  assert.deepEqual(extractLocalVideoIdsFromStudyBlocks(block), ["abcdefghijk"]);
+  assert.equal(
+    replaceLocalVideoPathInStudyBlock(block, "abcdefghijk", "/Volumes/TV/New Episode.mp4"),
+    block.replace(
+      "video: \"/Users/test/My Episode.mp4\"",
+      "video: \"/Volumes/TV/New Episode.mp4\""
+    )
+  );
+  assert.equal(replaceLocalVideoPathInStudyBlock(block, "missing-id1", "/tmp/a.mp4"), null);
 });
 
 test("优先选择人工英文字幕，其次英文自动字幕", () => {

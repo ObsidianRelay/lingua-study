@@ -39,8 +39,8 @@ test("正式版保持桌面限定且移动端测试框架只按需加载电脑�
   assert.match(settings, /visible: \(\) => this\.plugin\.capabilities\.mobile/u);
   assert.match(settings, /name: mobile \? "B站视频与字幕" : "B站视频与登录"/u);
   assert.match(settings, /displayValue: mobile \? "在线播放 · 匿名字幕" : "匿名优先 · 需要时登录"/u);
-  assert.match(settings, /不会在手机或平板缓存视频，也不使用插件内登录或 Whisper/u);
-  assert.match(settings, /移动端只通过 YouTube 在线字幕接口获取公开字幕/u);
+  assert.match(settings, /移动端支持在线播放和匿名字幕；登录、缓存与自动对齐仅限电脑端/u);
+  assert.match(settings, /移动端优先在线获取，失败时可导入 SRT\/VTT/u);
 });
 
 test("YouTube 独立移动端回退不打包固定 InnerTube key", async () => {
@@ -146,8 +146,10 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
     "ytDlpPath",
     "studyProfile",
     "dailyNewWordLimit",
+    "fsrsRequestRetention",
     "translationProvider",
     "translateWholeTranscript",
+    "baiduAppId",
     "deepSeekModel",
     "kimiModel",
     "customBaseUrl",
@@ -160,17 +162,26 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
   }
 
   assert.match(source, /visible: \(\) => this\.plugin\.settings\.translationProvider === "deepseek"/u);
+  assert.match(source, /visible: \(\) => this\.plugin\.settings\.translationProvider === "baidu"/u);
   assert.match(source, /visible: \(\) => this\.plugin\.settings\.translationProvider === "kimi"/u);
   assert.match(source, /visible: \(\) => this\.plugin\.settings\.translationProvider === "openai-compatible"/u);
   assert.match(source, /kimi: "Kimi 官方（国内）"/u);
+  assert.match(source, /baidu: "百度翻译 API"/u);
+  assert.match(source, /this\.plugin\.settings\.baiduSecretId/u);
   assert.match(source, /this\.plugin\.settings\.kimiSecretId/u);
   assert.match(source, /Whisper Base English 模型/u);
-  assert.match(source, /只负责把用户手动粘贴或上传的文稿与视频时间轴对齐/u);
+  assert.match(source, /管理手动文稿的本地时间轴对齐/u);
   assert.match(source, /options: STUDY_PROFILE_LONG_LABELS/u);
   assert.match(source, /isStudyProfile\(value\)/u);
   assert.match(source, /refreshBilibiliStatusIndicators/u);
   assert.match(source, /name: "ECDICT 完整版"/u);
   assert.match(source, /text: "下载完整版"/u);
+  assert.match(source, /"更新完整版"/u);
+  assert.match(source, /FullDictionaryUpdateModal/u);
+  assert.match(source, /检测到 ECDICT 完整词典有新版本/u);
+  assert.match(source, /text: "立即更新"/u);
+  assert.match(source, /text: "稍后再说"/u);
+  assert.match(source, /current\.updateAvailable && !this\.dictionaryUpdatePromptHandled/u);
   assert.match(source, /installFullDictionary/u);
   assert.doesNotMatch(source, /从本地文件安装|installFullDictionaryFromLocalFile/u);
   assert.match(source, /name: "导入自定义词典（CSV \/ TSV \/ JSON）"/u);
@@ -181,11 +192,11 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
   assert.match(source, /lingua-study-custom-dictionary-primary/u);
   assert.match(source, /lingua-study-custom-dictionary-templates/u);
   assert.match(source, /installCustomDictionaryFromFile/u);
-  assert.match(source, /文件只在本机处理，不会上传/u);
+  assert.match(source, /文件仅在本机处理/u);
   assert.match(source, /ClearCustomDictionaryModal/u);
-  assert.match(source, /支持断点续传和自动重试/u);
+  assert.match(source, /下载后离线使用/u);
   assert.match(source, /ClearFullDictionaryModal/u);
-  assert.match(source, /支持断点续传和自动重试/u);
+  assert.match(source, /文件保存在系统缓存，不参与 Obsidian Sync/u);
   assert.doesNotMatch(source, /从本地文件安装|installFullDictionaryFromLocalFile/u);
   assert.doesNotMatch(source, /this\.display\(\)/u);
 });
@@ -218,11 +229,31 @@ test("左侧 Logo 提供手动视频创建入口并保留可选自动化", async
   assert.match(source, /import-video-from-current-note/u);
   assert.match(source, /setAttribute\("aria-label", "Lingua Study"\)/u);
   assert.doesNotMatch(source, /从当前笔记的视频链接创建语言学习内容/u);
-  assert.match(settings, /默认关闭：粘贴链接后点击左侧 Lingua Study Logo 手动创建/u);
+  assert.match(settings, /开启后，粘贴单个完整的 B站或 YouTube 链接会自动导入/u);
   assert.match(settings, /key: "autoImportPastedVideoLinks"/u);
   assert.match(css, /\.side-dock-ribbon-action\.lingua-study-ribbon-action:hover/u);
   assert.match(css, /mask-image: var\(--lingua-study-logo-mask\)/u);
   assert.match(css, /\.lingua-study-manual-video-choice/u);
+});
+
+test("电脑端可选择本地 MP4 与同名字幕并在路径失效后重新关联", async () => {
+  const [main, importer, cache] = await Promise.all([
+    readFile("src/main.ts", "utf8"),
+    readFile("src/local-video-import.ts", "utf8"),
+    readFile("src/bilibili-cache.ts", "utf8")
+  ]);
+  assert.match(main, /import\("\.\/local-video-import"\)/u);
+  assert.match(main, /id: "import-local-video"/u);
+  assert.doesNotMatch(main, /this\.addRibbonIcon\("file-video", "导入本地视频"/u);
+  assert.match(main, /links\.length === 0[\s\S]*this\.openLocalVideoImport\(view\)/u);
+  assert.match(main, /config\.kind === "local"/u);
+  assert.match(main, /text: "重新选择视频"/u);
+  assert.match(importer, /findMatchingLocalSubtitleNames/u);
+  assert.match(importer, /properties: \["openDirectory"\]/u);
+  assert.match(importer, /text: "批量生成学习资料"/u);
+  assert.match(importer, /text: "生成学习资料"/u);
+  assert.match(importer, /replaceLocalVideoPathInStudyBlock/u);
+  assert.match(cache, /exposeExternalMp4/u);
 });
 
 test("设置页样式统一导航卡片、状态和窄窗口布局", async () => {
@@ -287,7 +318,7 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
     source,
     /this\.transcriptProgrammaticScrollUntil = Date\.now\(\) \+ TRANSCRIPT_SMOOTH_SCROLL_GUARD_MS/u
   );
-  assert.equal(source.match(/createRoot\(/gu)?.length, 5);
+  assert.equal(source.match(/createRoot\(/gu)?.length, 7);
   assert.ok((source.match(/fullWidthObserver\?\.disconnect\(\)/gu)?.length ?? 0) >= 3);
   assert.match(
     source,
@@ -302,8 +333,8 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.match(fullWidthMethod, /if \(this\.plugin\.capabilities\.mobile\)/u);
   assert.match(source, /restoreContainerLayout\(\)/u);
   assert.match(source, /list\.scrollHeight <= list\.clientHeight \+ 1/u);
-  assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 3);
-  assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 3);
+  assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 4);
+  assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 4);
   assert.equal(source.match(/this\.createFloatingToggle\(/gu)?.length, 2);
   assert.equal(source.match(/this\.createMobileFloatingToggle\(/gu)?.length, 3);
   const createPlayerDockMethod = source.slice(
@@ -597,10 +628,19 @@ test("生词本使用独立串行存储、导出笔记与长图并注册两个�
   assert.match(dictionaryView, /this\.plugin\.exportVocabularyBookToImages\(\)/u);
   assert.match(dictionaryView, /!this\.plugin\.capabilities\.desktop/u);
   assert.doesNotMatch(dictionaryView, /playVocabularyContext|播放本句|播放这一句/u);
+  assert.match(dictionaryView, /class VocabularyEditModal extends Modal/u);
+  assert.match(dictionaryView, /"编辑生词"/u);
+  assert.match(dictionaryView, /this\.plugin\.updateVocabularyEntry\(previousId, input\)/u);
   assert.match(store, /private readonly writeQueue = new AsyncKeyedQueue/u);
   assert.match(store, /this\.app\.vault\.process/u);
+  assert.match(store, /async update\(id: string, input: VocabularyEditInput\)/u);
   assert.match(core, /Lingua Study\/Vocabulary\/wordbook\.json/u);
-  assert.match(core, /10 \* 60 \* 1_000/u);
+  assert.match(core, /export function updateVocabularyEntry\(/u);
+  assert.match(core, /delete entries\[id\]/u);
+  assert.match(core, /FSRS_ALGORITHM_VERSION = "FSRS-6"/u);
+  assert.match(core, /default_w\.length !== 21/u);
+  assert.match(core, /serializeFsrsReviewLog/u);
+  assert.match(dictionaryView, /previewVocabularyRating/u);
   assert.match(exportCore, /Lingua Study\/Vocabulary\/生词本\.md/u);
   assert.match(exportCore, /lingua-study-vocabulary-export/u);
   assert.match(exportCore, /\[!lingua-word\]/u);
@@ -632,6 +672,8 @@ test("生词本使用独立串行存储、导出笔记与长图并注册两个�
   assert.match(css, /\.lingua-vocabulary-export-note \.callout\[data-callout="lingua-word"\] \{/u);
   assert.match(css, /--callout-icon: lucide-book-open;/u);
   assert.match(css, /\.callout\[data-callout="lingua-word"\] > \.callout-content/u);
+  assert.match(css, /\.lingua-vocabulary-edit-form \{/u);
+  assert.match(css, /\.lingua-vocabulary-edit-tags \{/u);
 });
 
 test("知识卡保留旧译文并且只有用户点击才请求分析", async () => {
@@ -676,6 +718,8 @@ test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async
   assert.match(source, /由原句中的“\$\{extension\.anchor\}”延伸/u);
   assert.match(source, /this\.handlePrimaryTranslationAction\(index\)/u);
   assert.match(source, /this\.plugin\.settings\.translateWholeTranscript/u);
+  assert.match(source, /this\.plugin\.settings\.translationProvider === "baidu"[\s\S]*?this\.plugin\.translateSentence\(segment\.text\)/u);
+  assert.match(source, /百度翻译只生成中文译文/u);
   assert.match(source, /requestWholeTranscriptTranslation\(pendingIndices\)/u);
   assert.match(source, /for \(const index of pendingIndices\)/u);
   assert.match(source, /已有结果会自动跳过/u);
@@ -696,6 +740,42 @@ test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async
   assert.match(css, /\.evs-study-legacy-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 32px;/u);
   assert.match(css, /\.evs-study-extension-list \{[\s\S]*?display: grid;/u);
   assert.doesNotMatch(css, /\.evs-study-extensions[^}]*display:\s*none/u);
+});
+
+test("Markdown 选中文本可通过命令调用当前翻译服务", async () => {
+  const source = await readFile("src/main.ts", "utf8");
+  const css = await readFile("styles.css", "utf8");
+
+  assert.match(source, /id: "translate-selected-text"/u);
+  assert.match(source, /name: "翻译选中的英文文本"/u);
+  assert.match(source, /editor\.getSelection\(\)\.trim\(\)/u);
+  assert.match(source, /new SelectionTranslationModal/u);
+  assert.match(source, /this\.openSelectionTranslation\(sourceText\)/u);
+  assert.match(source, /this\.app\.workspace\.on\("editor-menu"/u);
+  assert.match(source, /使用 Lingua Study 翻译选中文本/u);
+  assert.match(source, /\(\) => this\.translateSentence\(sourceText\)/u);
+  assert.match(source, /navigator\.clipboard\.writeText\(result\.text\)/u);
+  assert.match(css, /\.lingua-study-selection-translation-text \{/u);
+});
+
+test("字幕多词选区直接显示悬浮翻译且不会误触第一个单词查词", async () => {
+  const source = await readFile("src/main.ts", "utf8");
+  const css = await readFile("styles.css", "utf8");
+
+  assert.match(source, /textEl\.onpointerup =/u);
+  assert.match(source, /if \(\/\\s\/u\.test\(selectedText\)\)/u);
+  assert.match(source, /this\.showSelectionTranslationPopover\(textEl\)/u);
+  assert.doesNotMatch(source, /text: "翻译选中句子"/u);
+  assert.match(source, /this\.openSelectionTranslationPopover\(sourceText, rangeRect, viewDocument, viewWindow\)/u);
+  assert.match(source, /class SelectionTranslationModal extends Modal/u);
+  assert.match(source, /"aria-label": "选中文本翻译"/u);
+  assert.match(source, /this\.plugin\.translateSentence\(sourceText\)/u);
+  assert.match(source, /this\.hideSelectionTranslationPopover\(\)/u);
+  assert.match(source, /header\.addEventListener\("pointerdown"/u);
+  assert.match(source, /viewDocument\.addEventListener\("pointermove", movePopover\)/u);
+  assert.doesNotMatch(css, /\.lingua-study-selection-translate-action \{/u);
+  assert.match(css, /\.lingua-study-selection-translation-popover \{/u);
+  assert.match(css, /cursor: move;/u);
 });
 
 test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", async () => {

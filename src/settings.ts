@@ -24,7 +24,11 @@ import {
   CUSTOM_DICTIONARY_TEMPLATE,
   CUSTOM_DICTIONARY_TSV_TEMPLATE
 } from "./custom-dictionary-core";
-import { getDailyReviewSummary } from "./vocabulary-core";
+import {
+  MAX_FSRS_REQUEST_RETENTION,
+  MIN_FSRS_REQUEST_RETENTION,
+  getDailyReviewSummary
+} from "./vocabulary-core";
 
 export {
   DEFAULT_DESKTOP_PLAYER_WIDTH,
@@ -92,6 +96,30 @@ class ClearFullDictionaryModal extends Modal {
   }
 }
 
+class FullDictionaryUpdateModal extends Modal {
+  constructor(app: App, private readonly onConfirm: () => void) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText("更新 ECDICT 完整词典？");
+    this.contentEl.createEl("p", {
+      text: "检测到 ECDICT 完整词典有新版本，更新后将支持“初中英语”和“高中英语”标签。是否现在更新？"
+    });
+    const actions = this.contentEl.createDiv({ cls: "lingua-study-import-actions" });
+    const update = actions.createEl("button", { cls: "mod-cta", text: "立即更新" });
+    actions.createEl("button", { text: "稍后再说" }).addEventListener("click", () => this.close());
+    update.addEventListener("click", () => {
+      this.close();
+      this.onConfirm();
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
 class ClearCustomDictionaryModal extends Modal {
   constructor(app: App, private readonly onConfirm: () => Promise<void>) {
     super(app);
@@ -121,6 +149,7 @@ class ClearCustomDictionaryModal extends Modal {
 
 export class LinguaStudySettingTab extends PluginSettingTab {
   private readonly bilibiliStatusEls = new Set<HTMLElement>();
+  private dictionaryUpdatePromptHandled = false;
 
   constructor(app: App, private readonly plugin: LinguaStudyPlugin) {
     super(app, plugin);
@@ -337,7 +366,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return {
       type: "page",
       name: "YouTube 字幕",
-      desc: "管理字幕保存位置、在线获取和电脑端 yt-dlp 回退。",
+      desc: "设置字幕保存和获取方式。",
       displayValue: "字幕获取与保存",
       items: [
         {
@@ -347,7 +376,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "字幕保存文件夹",
-              desc: "一键导入创建的本地字幕 JSON 会保存在这里。留空或路径无效时使用默认文件夹。",
+              desc: "一键导入的字幕保存在这里；留空使用默认文件夹。",
               control: {
                 type: "text",
                 key: "transcriptFolder",
@@ -364,7 +393,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "yt-dlp 程序路径（可选）",
-              desc: "直接获取失败时，插件会先自动寻找电脑上的 yt-dlp。只有自动找不到时才需要填写完整路径，例如 /opt/homebrew/bin/yt-dlp 或 C:\\Tools\\yt-dlp.exe。",
+              desc: "自动寻找失败时，再填写 yt-dlp 的完整路径。",
               visible: () => this.plugin.capabilities.ytDlp,
               control: {
                 type: "text",
@@ -375,14 +404,14 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "移动端获取方式",
-              desc: "手机和平板使用 YouTube 在线字幕接口；如果在线获取失败，可手动选择 SRT 或 VTT 字幕。yt-dlp 仅在电脑端启用。",
+              desc: "移动端优先在线获取，失败时可导入 SRT/VTT。",
               visible: () => this.plugin.capabilities.mobile
             },
             {
               name: "网络与隐私",
               desc: this.plugin.capabilities.mobile
-                ? "移动端只通过 YouTube 在线字幕接口获取公开字幕，不使用 Cookie、Google 登录、用户 API Key、作者服务器或遥测。该接口并非官方稳定 API，可能随 YouTube 更新而失效。"
-                : "插件和本机 yt-dlp 只向 YouTube 获取字幕，不使用 Cookie、Google 登录、用户 API Key、作者服务器或遥测。普通公开视频使用非官方公开字幕接口，可能随 YouTube 更新而失效。"
+                ? "仅获取公开字幕，不使用账号、Cookie 或 API Key；接口可能失效。"
+                : "仅获取字幕，不使用账号或 Cookie；公开接口可能失效。"
             }
           ]
         }
@@ -396,8 +425,8 @@ export class LinguaStudySettingTab extends PluginSettingTab {
       type: "page",
       name: mobile ? "B站视频与字幕" : "B站视频与登录",
       desc: mobile
-        ? "管理 B站字幕与在线播放。"
-        : "管理 B站字幕、在线播放和电脑端专用功能。",
+        ? "设置 B站字幕与播放。"
+        : "设置 B站字幕、播放与登录。",
       displayValue: mobile ? "在线播放 · 匿名字幕" : "匿名优先 · 需要时登录",
       items: [
         {
@@ -408,11 +437,11 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "缓存位置",
-              desc: `视频缓存在电脑的系统缓存目录，不会写入笔记库或参与 Obsidian 同步：${this.plugin.getBilibiliCacheFolder()}`
+              desc: `缓存位于系统目录，不参与 Obsidian 同步：${this.plugin.getBilibiliCacheFolder()}`
             },
             {
               name: "管理缓存视频",
-              desc: "打开所有 B站缓存视频所在的文件夹。可以在系统文件管理器中查看并自行删除；删除后笔记会自动退回在线播放器。",
+              desc: "打开缓存文件夹；删除文件后改用在线播放。",
               render: (setting) => {
                 setting.addButton((button) => {
                   button.setButtonText("打开缓存文件夹").onClick(async () => {
@@ -438,12 +467,12 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "插件内登录状态",
-              desc: "先匿名读取字幕；只有 B站明确要求登录时才需要在 Obsidian 内登录。登录会话与 Chrome 分开，仅保存在这台电脑。",
+              desc: "优先匿名获取；需要时使用插件独立登录。",
               render: (setting) => this.renderBilibiliStatus(setting)
             },
             {
               name: "管理插件内账号",
-              desc: "登录窗口由 Obsidian 桌面端打开。清除登录只退出 Lingua Study 的独立会话，不影响 Chrome 或其他浏览器。",
+              desc: "登录仅用于 Lingua Study，不影响其他浏览器。",
               render: (setting) => {
                 setting.addButton((button) => {
                   button.setButtonText("在 Obsidian 内登录").onClick(async () => {
@@ -488,7 +517,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "在线播放与匿名字幕",
-              desc: "手机和平板可使用 B站在线播放器并尝试匿名读取英文字幕。插件内登录、本地视频缓存和 Whisper 自动对齐仅支持电脑端。"
+              desc: "移动端支持在线播放和匿名字幕；登录、缓存与自动对齐仅限电脑端。"
             }
           ]
         },
@@ -500,8 +529,8 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             {
               name: "网络与空间限制",
               desc: mobile
-                ? "在线播放器和英文字幕直接使用 B站公开接口，不会在手机或平板缓存视频，也不使用插件内登录或 Whisper。接口或平台规则变化仍可能导致播放或字幕获取失败。"
-                : "视频缓存仍来自 B站公开接口，通常最高为 480P，单个视频缓存上限 2 GB。英文字幕直接从 B站接口读取，不需要 Chrome 扩展，也不使用 Whisper；接口或平台规则变化仍可能导致获取失败。"
+                ? "使用 B站公开接口，可能因平台变化而失效。"
+                : "缓存视频通常最高 480P、单个不超过 2 GB；公开接口可能失效。"
             }
           ]
         }
@@ -513,7 +542,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return {
       type: "page",
       name: "学习与词典",
-      desc: "选择备考范围，并管理离线词典和每日生词数量。",
+      desc: "设置学习目标、词典和复习。",
       displayValue: () => this.studyProfileLabel(),
       items: [
         {
@@ -523,7 +552,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "当前备考范围",
-              desc: "决定句子知识卡的讲解深度和生词归类。各目标采用对应备考方向讲解，不代表官方固定词表；词典侧栏也可以快捷切换。",
+              desc: "影响知识卡讲解方向和生词分类。",
               control: {
                 type: "dropdown",
                 key: "studyProfile",
@@ -540,7 +569,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "字幕双击查词",
-              desc: "关闭后，双击英文字幕不会调用 Lingua Study 查词或自动打开右侧词典栏；手动打开离线词典、生词本和今日复习的命令仍可使用。",
+              desc: "关闭后不再双击查词；词典与生词本仍可手动打开。",
               control: {
                 type: "toggle",
                 key: "enableDoubleClickLookup",
@@ -549,11 +578,11 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "ECDICT 精简版",
-              desc: `已内置 ${DICTIONARY_SOURCE.entryCount.toLocaleString()} 个考试和高频词条。开启字幕双击查词后，双击英文单词即可查询；不调用翻译服务，也不会产生费用。`
+              desc: `内置 ${DICTIONARY_SOURCE.entryCount.toLocaleString()} 个词条，完全离线且不产生费用。`
             },
             {
               name: "ECDICT 完整版",
-              desc: "点击下载后优先安装已生成的压缩词典包，不可用时自动回退到 ECDICT 官方 CSV；支持断点续传和自动重试。文件保存在系统缓存目录，不写入笔记库、不参与 Obsidian Sync。",
+              desc: "下载后离线使用；文件保存在系统缓存，不参与 Obsidian Sync。",
               visible: () => this.plugin.capabilities.fullDictionary,
               render: (setting) => {
                 const status = setting.controlEl.createSpan({
@@ -571,13 +600,19 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                   const current = this.plugin.getFullDictionaryStatus();
                   status.classList.remove("is-success", "is-warning", "is-error");
                   if (current.manifest) {
-                    status.setText(`已安装 · ${current.manifest.entryCount.toLocaleString()} 词条 · ${(current.manifest.compressedBytes / 1024 / 1024).toFixed(1)} MB`);
-                    status.classList.add("is-success");
+                    if (current.updateAvailable) {
+                      status.setText(`已安装旧版 · ${current.manifest.entryCount.toLocaleString()} 词条 · 有可用更新`);
+                      status.classList.add("is-warning");
+                    } else {
+                      status.setText(`已安装 · ${current.manifest.entryCount.toLocaleString()} 词条 · ${(current.manifest.compressedBytes / 1024 / 1024).toFixed(1)} MB`);
+                      status.classList.add("is-success");
+                    }
                   } else {
                     status.setText("尚未下载");
                     status.classList.add("is-warning");
                   }
-                  download.hidden = current.installed;
+                  download.setText(current.updateAvailable ? "更新完整版" : "下载完整版");
+                  download.hidden = current.installed && !current.updateAvailable;
                   open.hidden = !current.installed;
                   remove.hidden = !current.installed;
                 };
@@ -598,14 +633,15 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                   new Notice(`ECDICT 完整版已安装，共 ${result.manifest.entryCount.toLocaleString()} 个词条。`, 7_000);
                   refresh();
                 };
-                download.addEventListener("click", () => {
+                const install = (): void => {
                   setBusy(true);
                   status.classList.remove("is-success", "is-warning", "is-error");
                   void this.plugin.installFullDictionary((message) => status.setText(message))
                     .then(showInstallSuccess)
                     .catch(showInstallError)
                     .finally(() => setBusy(false));
-                });
+                };
+                download.addEventListener("click", install);
                 open.addEventListener("click", () => {
                   void this.plugin.openFullDictionaryFolder().catch(() => {
                     new Notice("无法打开词典缓存目录，请检查系统文件管理器权限。", 6_000);
@@ -619,11 +655,19 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                   }).open();
                 });
                 refresh();
+                const current = this.plugin.getFullDictionaryStatus();
+                if (current.updateAvailable && !this.dictionaryUpdatePromptHandled) {
+                  this.dictionaryUpdatePromptHandled = true;
+                  window.setTimeout(() => {
+                    if (!setting.settingEl.isConnected) return;
+                    new FullDictionaryUpdateModal(this.app, install).open();
+                  }, 0);
+                }
               }
             },
             {
               name: "导入自定义词典（CSV / TSV / JSON）",
-              desc: "导入后，自定义释义会优先于 ECDICT。文件只在本机处理，不会上传或参与 Obsidian Sync。三种格式均使用 word、phonetic、definition、translation、pos、tags 字段；word 必填，两个释义字段至少填写一项。",
+              desc: "导入 CSV、TSV 或 JSON；自定义释义优先，支持 forms/aliases，文件仅在本机处理。",
               visible: () => this.plugin.capabilities.fullDictionary,
               render: (setting) => {
                 setting.controlEl.addClass("lingua-study-custom-dictionary-controls");
@@ -699,11 +743,14 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                     ))
                     .then((result) => {
                       const skipped = result.manifest.skippedRows;
-                      const warning = skipped > 0
-                        ? `，另有 ${skipped.toLocaleString()} 行未导入：${result.warnings.join("；")}`
+                      const importSummary = skipped > 0
+                        ? `，另有 ${skipped.toLocaleString()} 行未导入`
+                        : "";
+                      const warning = result.warnings.length > 0
+                        ? `，提示：${result.warnings.join("；")}`
                         : "";
                       new Notice(
-                        `自定义词典已导入，共 ${result.manifest.entryCount.toLocaleString()} 个词条${warning}。`,
+                        `自定义词典已导入，共 ${result.manifest.entryCount.toLocaleString()} 个词条${importSummary}${warning}。`,
                         8_000
                       );
                       refresh();
@@ -770,12 +817,12 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "移动端词典",
-              desc: "手机和平板继续使用内置 ECDICT 精简版。完整版词典和自定义词典的导入、缓存管理暂仅支持电脑端。",
+              desc: "移动端使用精简词典；完整和自定义词典仅限电脑端管理。",
               visible: () => this.plugin.capabilities.mobile
             },
             {
               name: "每日新词数量",
-              desc: "每天最多在复习队列中引入多少个从未学习过的新词；已经到期的旧词不受此限制。",
+              desc: "限制每天进入复习队列的新词数量；到期词不受影响。",
               control: {
                 type: "number",
                 key: "dailyNewWordLimit",
@@ -783,10 +830,26 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                 min: 1,
                 max: 50,
                 step: 1,
-                validate: (value) =>
+                  validate: (value) =>
                   Number.isInteger(value) && value >= 1 && value <= 50
                     ? undefined
                     : "请输入 1–50 之间的整数。"
+              }
+            },
+            {
+              name: "FSRS-6 目标留存率",
+              desc: "数值越高，复习越频繁；仅影响后续评分。",
+              control: {
+                type: "number",
+                key: "fsrsRequestRetention",
+                defaultValue: DEFAULT_SETTINGS.fsrsRequestRetention,
+                min: MIN_FSRS_REQUEST_RETENTION,
+                max: MAX_FSRS_REQUEST_RETENTION,
+                step: 0.01,
+                validate: (value) =>
+                  value >= MIN_FSRS_REQUEST_RETENTION && value <= MAX_FSRS_REQUEST_RETENTION
+                    ? undefined
+                    : "请输入 0.70–0.99 之间的数值。"
               }
             }
           ]
@@ -799,7 +862,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return {
       type: "page",
       name: "文稿导入与对齐",
-      desc: "管理用户手动上传文稿与视频的本地时间轴对齐。",
+      desc: "管理手动文稿的本地时间轴对齐。",
       displayValue: "仅用于手动文稿",
       items: [
         {
@@ -810,7 +873,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "Whisper Base English 模型",
-              desc: `仅在用户手动上传文稿并选择自动对齐时使用。首次使用需确认下载；音视频不会上传。运行文件位于：${this.plugin.getWhisperAlignmentCacheFolder()}`,
+              desc: `用于手动文稿对齐；音视频不会上传。目录：${this.plugin.getWhisperAlignmentCacheFolder()}`,
               render: (setting) => {
                 const status = setting.controlEl.createSpan({
                   cls: "lingua-study-settings-status",
@@ -830,7 +893,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "管理本地模型",
-              desc: "可以打开缓存目录或清除本地模型；不会影响已经生成的字幕。",
+              desc: "打开目录或清除模型；不影响已有字幕。",
               render: (setting) => {
                 setting.addButton((button) => {
                   button.setButtonText("打开缓存目录").onClick(() => {
@@ -857,7 +920,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "手动时间轴",
-              desc: "手机和平板可以导入已带时间轴的 SRT/VTT 字幕。需要本地视频缓存的 Whisper 自动对齐暂仅支持电脑端。"
+              desc: "移动端可导入 SRT/VTT；Whisper 自动对齐仅限电脑端。"
             }
           ]
         },
@@ -868,7 +931,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "与 B站字幕获取相互独立",
-              desc: "B站官方字幕通过 B站接口直接读取，不调用 Whisper。这里的模型只负责把用户手动粘贴或上传的文稿与视频时间轴对齐。"
+              desc: "仅用于手动文稿对齐，不处理 B站官方字幕。"
             }
           ]
         }
@@ -880,7 +943,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return {
       type: "page",
       name: "翻译服务",
-      desc: "配置翻译提供方、模型、安全凭据和连接测试。",
+      desc: "设置翻译服务和 API 凭据。",
       displayValue: () => this.translationProviderLabel(),
       items: [
         {
@@ -890,13 +953,14 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "翻译服务",
-              desc: "选择生成中文译文和学习知识卡所使用的服务。",
+              desc: "百度仅翻译；AI 服务还可生成学习知识卡。",
               control: {
                 type: "dropdown",
                 key: "translationProvider",
                 defaultValue: DEFAULT_SETTINGS.translationProvider,
                 options: {
                   disabled: "关闭翻译",
+                  baidu: "百度翻译 API",
                   deepseek: "DeepSeek 官方",
                   kimi: "Kimi 官方（国内）",
                   "openai-compatible": "OpenAI 兼容中转站"
@@ -905,12 +969,54 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "整篇文稿翻译",
-              desc: "关闭时，翻译按钮只处理当前选择的句子；开启后，点击翻译会按顺序处理整篇文稿中尚未翻译的句子，并跳过已有缓存。整篇模式会产生多次 API 请求和相应费用。",
+              desc: "开启后翻译未缓存的整篇文稿，并产生多次 API 请求。",
               control: {
                 type: "toggle",
                 key: "translateWholeTranscript",
                 defaultValue: DEFAULT_SETTINGS.translateWholeTranscript
               }
+            }
+          ]
+        },
+        {
+          type: "group",
+          heading: "百度翻译 API",
+          cls: "lingua-study-settings-section",
+          visible: () => this.plugin.settings.translationProvider === "baidu",
+          items: [
+            {
+              name: "API 地址",
+              desc: "固定的百度官方地址。",
+              render: (setting) => {
+                setting.addText((text) => {
+                  text.setValue("https://fanyi-api.baidu.com").setDisabled(true);
+                });
+              }
+            },
+            {
+              name: "百度翻译 AppID",
+              desc: "在百度翻译开放平台获取。",
+              control: {
+                type: "text",
+                key: "baiduAppId",
+                defaultValue: DEFAULT_SETTINGS.baiduAppId,
+                placeholder: "填写 AppID"
+              }
+            },
+            {
+              name: "百度翻译密钥",
+              desc: "保存在 Obsidian 安全凭据库中。",
+              render: (setting) => {
+                new SecretComponent(this.app, setting.controlEl)
+                  .setValue(this.plugin.settings.baiduSecretId)
+                  .onChange(async (value) => {
+                    await this.plugin.updateSettings({ baiduSecretId: value });
+                  });
+              }
+            },
+            {
+              name: "功能范围",
+              desc: "支持句子、整篇字幕和 Markdown 选区；不生成知识卡。"
             }
           ]
         },
@@ -922,7 +1028,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "API 地址",
-              desc: "Moonshot 国内官方固定地址，不会保存到插件配置中。",
+              desc: "固定的 Moonshot 国内官方地址。",
               render: (setting) => {
                 setting.addText((text) => {
                   text.setValue("https://api.moonshot.cn/v1").setDisabled(true);
@@ -931,7 +1037,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "模型",
-              desc: "使用 Kimi 官方当前的 K2.6 模型。",
+              desc: "使用 Kimi K2.6。",
               control: {
                 type: "dropdown",
                 key: "kimiModel",
@@ -943,7 +1049,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "Kimi API Key",
-              desc: "选择已有安全凭据，或在控件中创建新凭据；与其他翻译服务的 API Key 分开保存。",
+              desc: "保存在 Obsidian 安全凭据库中。",
               render: (setting) => {
                 new SecretComponent(this.app, setting.controlEl)
                   .setValue(this.plugin.settings.kimiSecretId)
@@ -962,7 +1068,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "API 地址",
-              desc: "官方固定地址，不会保存到插件配置中。",
+              desc: "固定的 DeepSeek 官方地址。",
               render: (setting) => {
                 setting.addText((text) => {
                   text.setValue("https://api.deepseek.com").setDisabled(true);
@@ -984,7 +1090,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "DeepSeek API Key",
-              desc: "选择已有安全凭据，或在控件中创建新凭据；插件配置只记录凭据名称。",
+              desc: "保存在 Obsidian 安全凭据库中。",
               render: (setting) => {
                 new SecretComponent(this.app, setting.controlEl)
                   .setValue(this.plugin.settings.deepSeekSecretId)
@@ -1003,7 +1109,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "API 地址",
-              desc: "例如 https://example.com/v1；也可以填写完整的 /chat/completions 地址。",
+              desc: "填写 /v1 或完整的 /chat/completions 地址。",
               control: {
                 type: "text",
                 key: "customBaseUrl",
@@ -1012,7 +1118,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "模型名称",
-              desc: "填写中转站提供的准确模型 ID。",
+              desc: "填写中转站提供的模型 ID。",
               control: {
                 type: "text",
                 key: "customModel",
@@ -1021,7 +1127,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "中转站 API Key",
-              desc: "该凭据与 DeepSeek 官方凭据分开保存，切换服务时不会互相覆盖。",
+              desc: "单独保存在 Obsidian 安全凭据库中。",
               render: (setting) => {
                 new SecretComponent(this.app, setting.controlEl)
                   .setValue(this.plugin.settings.customSecretId)
@@ -1039,7 +1145,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "测试连接",
-              desc: "发送固定短句 “Thank you for using Lingua Study.”，不会读取当前笔记。",
+              desc: "发送固定测试短句，不读取当前笔记。",
               visible: () => this.plugin.settings.translationProvider !== "disabled",
               render: (setting) => {
                 setting.addButton((button) => {
@@ -1060,7 +1166,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             },
             {
               name: "隐私与费用提醒",
-              desc: "API Key 保存在 Obsidian 安全凭据库中。测试连接和翻译可能产生费用；使用官方服务时字幕会发送给对应服务商，第三方中转站也会收到你主动发送的英文字幕，请只使用可信服务。"
+              desc: "凭据存入安全库；请求可能计费，并会把文本发送给所选服务。"
             }
           ]
         }
@@ -1072,7 +1178,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return {
       type: "page",
       name: "通用选项",
-      desc: "管理手动创建、可选的粘贴自动导入和本地翻译缓存。",
+      desc: "设置导入方式和翻译缓存。",
       displayValue: "手动创建与缓存",
       items: [
         {
@@ -1082,7 +1188,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "粘贴视频链接后自动创建学习内容（可选）",
-              desc: "默认关闭：粘贴链接后点击左侧 Lingua Study Logo 手动创建。开启后，粘贴单个完整的 B站或 YouTube 视频链接会立即开始导入；普通文字中的链接和一次粘贴多个链接不会触发。",
+              desc: "开启后，粘贴单个完整的 B站或 YouTube 链接会自动导入。",
               control: {
                 type: "toggle",
                 key: "autoImportPastedVideoLinks",
@@ -1098,7 +1204,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "保存翻译缓存",
-              desc: "开启后，翻译结果保存在字幕文件旁边的独立 JSON 中；重新打开笔记时仍默认隐藏。",
+              desc: "将译文保存到字幕旁的 JSON；重新打开时默认隐藏。",
               control: {
                 type: "toggle",
                 key: "cacheTranslations",
@@ -1158,6 +1264,9 @@ export class LinguaStudySettingTab extends PluginSettingTab {
   }
 
   private translationProviderLabel(): string {
+    if (this.plugin.settings.translationProvider === "baidu") {
+      return "百度翻译 API";
+    }
     if (this.plugin.settings.translationProvider === "deepseek") {
       return "DeepSeek 官方";
     }
@@ -1200,9 +1309,14 @@ export class LinguaStudySettingTab extends PluginSettingTab {
       return;
     }
 
+    if (key === "fsrsRequestRetention" && typeof value === "number") {
+      await this.plugin.updateSettings({ fsrsRequestRetention: value });
+      return;
+    }
+
     if (
       key === "translationProvider" &&
-      (value === "disabled" || value === "deepseek" || value === "kimi" || value === "openai-compatible")
+      (value === "disabled" || value === "baidu" || value === "deepseek" || value === "kimi" || value === "openai-compatible")
     ) {
       await this.plugin.updateSettings({ translationProvider: value });
       this.refreshDomState();
@@ -1211,6 +1325,11 @@ export class LinguaStudySettingTab extends PluginSettingTab {
 
     if (key === "translateWholeTranscript" && typeof value === "boolean") {
       await this.plugin.updateSettings({ translateWholeTranscript: value });
+      return;
+    }
+
+    if (key === "baiduAppId" && typeof value === "string") {
+      await this.plugin.updateSettings({ baiduAppId: value.trim() });
       return;
     }
 

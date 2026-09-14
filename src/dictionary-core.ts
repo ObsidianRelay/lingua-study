@@ -50,9 +50,16 @@ interface PackedDictionaryShard {
 
 export type ExternalDictionaryShardLoader = (key: string) => Uint8Array | null;
 
+export interface ExternalDictionarySourceConfig {
+  loader: ExternalDictionaryShardLoader;
+  /** 完整 ECDICT 可以把自身收录的变形词重定向到 exchange 中的原形。 */
+  resolveDirectInflections: boolean;
+}
+
 interface ExternalDictionarySource {
   loader: ExternalDictionaryShardLoader;
   loaded: Map<string, PackedDictionaryShard>;
+  resolveDirectInflections: boolean;
 }
 
 const INFLECTION_LABELS: Readonly<Record<string, string>> = {
@@ -64,7 +71,60 @@ const INFLECTION_LABELS: Readonly<Record<string, string>> = {
   i: "现在分词",
   "3": "第三人称单数",
   r: "比较级",
-  t: "最高级"
+  t: "最高级",
+  x: "自定义词形"
+};
+
+/**
+ * ECDICT 的 exchange 字段通常会提供 `0:原形`，但少数常见不规则词没有这项。
+ * 这里只补齐无法通过词典元数据表达的高置信度关系；直接词条和用户填写的 aliases
+ * 仍然拥有更高优先级，避免把普通单词误判成另一个词。
+ */
+const IRREGULAR_LEMMA_CANDIDATES: Readonly<Record<string, readonly string[]>> = {
+  am: ["be"],
+  is: ["be"],
+  are: ["be"],
+  was: ["be"],
+  were: ["be"],
+  been: ["be"],
+  being: ["be"],
+  has: ["have"],
+  had: ["have"],
+  having: ["have"],
+  did: ["do"],
+  done: ["do"],
+  doing: ["do"],
+  went: ["go"],
+  gone: ["go"],
+  ran: ["run"],
+  driven: ["drive"],
+  eaten: ["eat"],
+  ate: ["eat"],
+  drank: ["drink"],
+  drunk: ["drink"],
+  began: ["begin"],
+  begun: ["begin"],
+  sang: ["sing"],
+  sung: ["sing"],
+  swam: ["swim"],
+  swum: ["swim"],
+  children: ["child"],
+  mice: ["mouse"],
+  feet: ["foot"],
+  teeth: ["tooth"],
+  geese: ["goose"],
+  men: ["man"],
+  women: ["woman"],
+  data: ["datum"],
+  worse: ["bad"],
+  worst: ["bad"],
+  better: ["good", "well"],
+  best: ["good", "well"],
+  me: ["i"],
+  him: ["he"],
+  us: ["we"],
+  his: ["he"],
+  their: ["they"]
 };
 
 export { DICTIONARY_SOURCE };
@@ -136,6 +196,104 @@ function parseInflections(exchange: string): DictionaryEntry["inflections"] {
   return inflections;
 }
 
+function parseDictionaryBaseForms(exchange: string): string[] {
+  const forms: string[] = [];
+  const seen = new Set<string>();
+  for (const part of exchange.split("/")) {
+    const separator = part.indexOf(":");
+    if (separator < 1 || part.slice(0, separator) !== "0") {
+      continue;
+    }
+    const normalized = normalizeLookupWord(part.slice(separator + 1));
+    if (normalized !== "" && !seen.has(normalized)) {
+      seen.add(normalized);
+      forms.push(normalized);
+    }
+  }
+  return forms;
+}
+
+function isDoubledConsonant(value: string): boolean {
+  if (value.length < 2) return false;
+  const last = value.at(-1) ?? "";
+  return last === value.at(-2) && /^[b-df-hj-np-tv-z]$/u.test(last);
+}
+
+function addLemmaCandidate(candidates: string[], seen: Set<string>, candidate: string): void {
+  if (
+    candidate.length < 1 ||
+    seen.has(candidate) ||
+    !/^[a-z]+(?:['-][a-z]+)*$/u.test(candidate)
+  ) {
+    return;
+  }
+  seen.add(candidate);
+  candidates.push(candidate);
+}
+
+/**
+ * 为未提供 forms/aliases 的自定义词典生成保守的英文词形候选。
+ * 候选只有在当前词典中确实存在对应原形时才会生效，不会凭空创建词条。
+ */
+export function inferLemmaCandidates(value: string): string[] {
+  const word = normalizeLookupWord(value);
+  if (word === "") return [];
+  const irregular = IRREGULAR_LEMMA_CANDIDATES[word];
+  if (irregular) return [...irregular];
+
+  const candidates: string[] = [];
+  const seen = new Set<string>([word]);
+  const add = (candidate: string): void => addLemmaCandidate(candidates, seen, candidate);
+
+  if (word.endsWith("ied") && word.length > 4) {
+    add(`${word.slice(0, -3)}y`);
+  }
+  if (word.endsWith("ying") && word.length > 5) {
+    add(`${word.slice(0, -4)}ie`);
+  }
+  if (word.endsWith("ing") && word.length > 5) {
+    const stem = word.slice(0, -3);
+    if (isDoubledConsonant(stem)) add(stem.slice(0, -1));
+    add(`${stem}e`);
+    add(stem);
+  }
+  if (word.endsWith("ed") && word.length > 4) {
+    const stem = word.slice(0, -2);
+    if (isDoubledConsonant(stem)) add(stem.slice(0, -1));
+    add(`${stem}e`);
+    add(stem);
+  }
+  if (word.endsWith("ies") && word.length > 4) {
+    add(`${word.slice(0, -3)}y`);
+  }
+  if (word.endsWith("es") && word.length > 3) {
+    add(word.slice(0, -1));
+    add(word.slice(0, -2));
+  }
+  if (word.endsWith("s") && !word.endsWith("ss") && word.length > 3) {
+    add(word.slice(0, -1));
+  }
+  if (word.endsWith("ier") && word.length > 4) {
+    add(`${word.slice(0, -3)}y`);
+  }
+  if (word.endsWith("iest") && word.length > 5) {
+    add(`${word.slice(0, -4)}y`);
+  }
+  if (word.endsWith("er") && word.length > 4) {
+    const stem = word.slice(0, -2);
+    if (isDoubledConsonant(stem)) add(stem.slice(0, -1));
+    add(`${stem}e`);
+    add(stem);
+  }
+  if (word.endsWith("est") && word.length > 5) {
+    const stem = word.slice(0, -3);
+    if (isDoubledConsonant(stem)) add(stem.slice(0, -1));
+    add(`${stem}e`);
+    add(stem);
+  }
+  return candidates;
+}
+
 function unpackEntry(entry: PackedDictionaryEntry): DictionaryEntry {
   return {
     word: entry[0],
@@ -193,12 +351,22 @@ export class OfflineDictionary {
 
   /** 由桌面端注入完整版分片读取器；移动端仍保留内置精简版。 */
   setExternalShardLoader(loader: ExternalDictionaryShardLoader | null): void {
-    this.setExternalShardLoaders(loader ? [loader] : []);
+    this.setExternalShardLoaders(loader
+      ? [{ loader, resolveDirectInflections: true }]
+      : []);
   }
 
   /** 按优先级注入多个本地词典；自定义词典可以覆盖 ECDICT 的同名单词。 */
-  setExternalShardLoaders(loaders: ExternalDictionaryShardLoader[]): void {
-    this.externalSources = loaders.map((loader) => ({ loader, loaded: new Map() }));
+  setExternalShardLoaders(
+    loaders: Array<ExternalDictionaryShardLoader | ExternalDictionarySourceConfig>
+  ): void {
+    this.externalSources = loaders.map((source) => ({
+      loader: typeof source === "function" ? source : source.loader,
+      loaded: new Map(),
+      resolveDirectInflections: typeof source === "function"
+        ? true
+        : source.resolveDirectInflections
+    }));
   }
 
   lookup(rawQuery: string): DictionaryLookupResult {
@@ -212,7 +380,8 @@ export class OfflineDictionary {
     for (const source of this.externalSources) {
       const external = this.lookupInSource(
         normalizedQuery,
-        (key) => this.loadExternalShard(source, key)
+        (key) => this.loadExternalShard(source, key),
+        source.resolveDirectInflections
       );
       if (external.entry) {
         return {
@@ -225,7 +394,7 @@ export class OfflineDictionary {
       suggestions.push(...external.suggestions);
     }
 
-    const embedded = this.lookupInSource(normalizedQuery, (key) => this.loadShard(key));
+    const embedded = this.lookupInSource(normalizedQuery, (key) => this.loadShard(key), true);
     if (embedded.entry) {
       return {
         query,
@@ -245,11 +414,25 @@ export class OfflineDictionary {
 
   private lookupInSource(
     normalizedQuery: string,
-    load: (key: string) => PackedDictionaryShard
+    load: (key: string) => PackedDictionaryShard,
+    resolveDirectInflections: boolean
   ): { entry: PackedDictionaryEntry | null; suggestions: string[] } {
     const queryShard = load(shardKey(normalizedQuery));
     const direct = queryShard.entries[normalizedQuery];
     if (direct) {
+      const resolved = this.findExistingLemma(
+        resolveDirectInflections
+          ? [
+            ...parseDictionaryBaseForms(direct[8]),
+            ...(IRREGULAR_LEMMA_CANDIDATES[normalizedQuery] ?? [])
+          ]
+          : parseDictionaryBaseForms(direct[8]),
+        normalizedQuery,
+        load
+      );
+      if (resolved) {
+        return { entry: resolved, suggestions: [] };
+      }
       return { entry: direct, suggestions: [] };
     }
     const lemma = queryShard.aliases[normalizedQuery];
@@ -259,10 +442,31 @@ export class OfflineDictionary {
         return { entry: lemmaEntry, suggestions: [] };
       }
     }
+    const inferred = this.findExistingLemma(
+      inferLemmaCandidates(normalizedQuery),
+      normalizedQuery,
+      load
+    );
+    if (inferred) {
+      return { entry: inferred, suggestions: [] };
+    }
     return {
       entry: null,
       suggestions: this.findSuggestions(queryShard, normalizedQuery, load)
     };
+  }
+
+  private findExistingLemma(
+    candidates: readonly string[],
+    normalizedQuery: string,
+    load: (key: string) => PackedDictionaryShard
+  ): PackedDictionaryEntry | null {
+    for (const candidate of candidates) {
+      if (candidate === normalizedQuery) continue;
+      const entry = load(shardKey(candidate)).entries[candidate];
+      if (entry) return entry;
+    }
+    return null;
   }
 
   private loadShard(key: string): PackedDictionaryShard {

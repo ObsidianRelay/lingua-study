@@ -131,7 +131,7 @@ function packEntry(entry: CustomDictionaryEntryInput): PackedDictionaryEntry {
     entry.tags,
     0,
     0,
-    ""
+    entry.forms.map((form) => `x:${form}`).join("/")
   ];
 }
 
@@ -234,11 +234,29 @@ export class CustomDictionaryService {
     await mkdir(staging, { recursive: true });
     try {
       const entriesByShard = new Map<string, Record<string, PackedDictionaryEntry>>();
+      const aliasesByShard = new Map<string, Record<string, string>>();
       for (const key of SHARD_KEYS) {
         entriesByShard.set(key, Object.create(null) as Record<string, PackedDictionaryEntry>);
+        aliasesByShard.set(key, Object.create(null) as Record<string, string>);
       }
       for (const entry of parsed.entries) {
         entriesByShard.get(shardKey(entry.normalizedWord))![entry.normalizedWord] = packEntry(entry);
+      }
+      for (const entry of parsed.entries) {
+        for (const form of entry.forms) {
+          if (entriesByShard.get(shardKey(form))![form]) continue;
+          const aliases = aliasesByShard.get(shardKey(form))!;
+          const existingLemma = aliases[form];
+          if (existingLemma && existingLemma !== entry.normalizedWord) {
+            if (parsed.warnings.length < 5) {
+              parsed.warnings.push(
+                `词形 ${form} 同时属于 ${existingLemma} 和 ${entry.normalizedWord}，已保留前者`
+              );
+            }
+            continue;
+          }
+          aliases[form] = entry.normalizedWord;
+        }
       }
 
       let compressedBytes = 0;
@@ -246,7 +264,7 @@ export class CustomDictionaryService {
         onProgress(`正在生成自定义词典索引… ${index + 1}/${SHARD_KEYS.length}`);
         const compressed = await gzipAsync(JSON.stringify({
           entries: entriesByShard.get(key),
-          aliases: Object.create(null) as Record<string, string>
+          aliases: aliasesByShard.get(key)
         }), { level: 9 });
         compressedBytes += compressed.byteLength;
         await writeFile(join(staging, `${key}.json.gz`), compressed);

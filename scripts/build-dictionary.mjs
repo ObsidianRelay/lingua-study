@@ -121,7 +121,7 @@ for await (const line of input) {
   }
 
   const tags = rawTags.trim().split(/\s+/u).filter((tag) =>
-    tag === "cet4" || tag === "cet6" || tag === "ielts"
+    tag === "zk" || tag === "gk" || tag === "cet4" || tag === "cet6" || tag === "ielts"
   );
   const bncRank = positiveRank(bnc);
   const frequencyRank = positiveRank(frq);

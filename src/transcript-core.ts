@@ -33,8 +33,11 @@ export function validateTranscript(value: unknown): TranscriptFile {
   ) {
     throw new Error("videoId 格式不正确，应为 11 位 YouTube ID 或有效的 B站 BV 号。");
   }
-  if (typeof data.sourceUrl !== "string" || !data.sourceUrl.startsWith("https://")) {
-    throw new Error("sourceUrl 缺失或不是 HTTPS 链接。");
+  const sourceUrl = typeof data.sourceUrl === "string" ? data.sourceUrl : "";
+  const validSourceUrl = sourceUrl.startsWith("https://") ||
+    /^lingua-local:\/\/[A-Za-z0-9_-]{11}$/u.test(sourceUrl);
+  if (!validSourceUrl) {
+    throw new Error("sourceUrl 缺失，或不是受支持的 HTTPS/本地视频来源。");
   }
   if (typeof data.language !== "string" || data.language.trim() === "") {
     throw new Error("language 不能为空。");
@@ -92,7 +95,7 @@ export function validateTranscript(value: unknown): TranscriptFile {
   return {
     version: 1,
     videoId: data.videoId,
-    sourceUrl: data.sourceUrl,
+    sourceUrl,
     language: data.language.trim(),
     segments
   };

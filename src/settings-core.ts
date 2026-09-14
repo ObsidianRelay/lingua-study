@@ -1,6 +1,10 @@
 import { DEFAULT_TRANSCRIPT_FOLDER, sanitizeTranscriptFolder } from "./import-core";
 import type { DeepSeekModel, KimiModel, TranslationProvider } from "./translation-core";
 import { isStudyProfile, type StudyProfile } from "./study-core";
+import {
+  DEFAULT_FSRS_REQUEST_RETENTION,
+  sanitizeFsrsRequestRetention
+} from "./vocabulary-core";
 
 export type InterfaceTheme = "classic" | "paper";
 
@@ -14,6 +18,8 @@ export interface LinguaStudySettings {
   autoImportPastedVideoLinks: boolean;
   translationProvider: TranslationProvider;
   translateWholeTranscript: boolean;
+  baiduAppId: string;
+  baiduSecretId: string;
   deepSeekModel: DeepSeekModel;
   deepSeekSecretId: string;
   kimiModel: KimiModel;
@@ -24,6 +30,7 @@ export interface LinguaStudySettings {
   cacheTranslations: boolean;
   studyProfile: StudyProfile;
   dailyNewWordLimit: number;
+  fsrsRequestRetention: number;
   desktopPlayerWidth: number;
   interfaceTheme: InterfaceTheme;
   enableDoubleClickLookup: boolean;
@@ -41,6 +48,8 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   translationProvider: "disabled",
   // 默认只处理用户当前选择的句子，避免新用户误触整篇翻译并产生额外费用。
   translateWholeTranscript: false,
+  baiduAppId: "",
+  baiduSecretId: "",
   deepSeekModel: "deepseek-v4-flash",
   deepSeekSecretId: "",
   kimiModel: "kimi-k2.6",
@@ -51,6 +60,7 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   cacheTranslations: true,
   studyProfile: "cet4",
   dailyNewWordLimit: 10,
+  fsrsRequestRetention: DEFAULT_FSRS_REQUEST_RETENTION,
   desktopPlayerWidth: DEFAULT_DESKTOP_PLAYER_WIDTH,
   // 已上线用户默认保留原界面；Lingua Paper 由用户在设置中主动启用。
   interfaceTheme: "classic",
@@ -77,7 +87,7 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
         ? data.autoImportPastedVideoLinks
         : DEFAULT_SETTINGS.autoImportPastedVideoLinks,
     translationProvider:
-      provider === "deepseek" || provider === "kimi" ||
+      provider === "baidu" || provider === "deepseek" || provider === "kimi" ||
         provider === "openai-compatible" || provider === "disabled"
         ? provider
         : DEFAULT_SETTINGS.translationProvider,
@@ -85,6 +95,8 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
       typeof data.translateWholeTranscript === "boolean"
         ? data.translateWholeTranscript
         : DEFAULT_SETTINGS.translateWholeTranscript,
+    baiduAppId: typeof data.baiduAppId === "string" ? data.baiduAppId.trim() : "",
+    baiduSecretId: typeof data.baiduSecretId === "string" ? data.baiduSecretId : "",
     deepSeekModel:
       model === "deepseek-v4-flash" || model === "deepseek-v4-pro"
         ? model
@@ -106,6 +118,10 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
       typeof data.dailyNewWordLimit === "number" && Number.isFinite(data.dailyNewWordLimit)
         ? Math.min(50, Math.max(1, Math.round(data.dailyNewWordLimit)))
         : DEFAULT_SETTINGS.dailyNewWordLimit,
+    fsrsRequestRetention:
+      typeof data.fsrsRequestRetention === "number" && Number.isFinite(data.fsrsRequestRetention)
+        ? sanitizeFsrsRequestRetention(data.fsrsRequestRetention)
+        : DEFAULT_SETTINGS.fsrsRequestRetention,
     desktopPlayerWidth:
       typeof data.desktopPlayerWidth === "number" && Number.isFinite(data.desktopPlayerWidth)
         ? Math.min(

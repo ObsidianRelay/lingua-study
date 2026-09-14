@@ -1,13 +1,13 @@
 import { STUDY_PROFILES, type StudyProfile } from "./study-core";
 
 export const CUSTOM_DICTIONARY_TEMPLATE = [
-  "word,phonetic,definition,translation,pos,tags",
-  "dedication,ˌdedɪˈkeɪʃn,the quality of being committed,奉献,n,cet4 ielts"
+  "word,phonetic,definition,translation,pos,tags,forms",
+  "dedication,ˌdedɪˈkeɪʃn,the quality of being committed,奉献,n,cet4 ielts,dedications"
 ].join("\n");
 
 export const CUSTOM_DICTIONARY_TSV_TEMPLATE = [
-  "word\tphonetic\tdefinition\ttranslation\tpos\ttags",
-  "dedication\tˌdedɪˈkeɪʃn\tthe quality of being committed\t奉献\tn\tcet4 ielts"
+  "word\tphonetic\tdefinition\ttranslation\tpos\ttags\tforms",
+  "dedication\tˌdedɪˈkeɪʃn\tthe quality of being committed\t奉献\tn\tcet4 ielts\tdedications"
 ].join("\n");
 
 export const CUSTOM_DICTIONARY_JSON_TEMPLATE = JSON.stringify([
@@ -17,7 +17,8 @@ export const CUSTOM_DICTIONARY_JSON_TEMPLATE = JSON.stringify([
     definition: "the quality of being committed",
     translation: "奉献",
     pos: "n",
-    tags: ["cet4", "ielts"]
+    tags: ["cet4", "ielts"],
+    forms: ["dedications"]
   }
 ], null, 2);
 
@@ -31,6 +32,7 @@ export interface CustomDictionaryEntryInput {
   translation: string;
   partOfSpeech: string;
   tags: StudyProfile[];
+  forms: string[];
 }
 
 export interface CustomDictionaryParseResult {
@@ -46,7 +48,8 @@ const HEADER_ALIASES = {
   definition: ["definition", "english definition", "英文释义"],
   translation: ["translation", "chinese translation", "中文释义", "翻译"],
   partOfSpeech: ["pos", "part of speech", "词性"],
-  tags: ["tags", "tag", "考试标签", "标签"]
+  tags: ["tags", "tag", "考试标签", "标签"],
+  forms: ["forms", "form", "aliases", "alias", "inflections", "词形", "词形变化", "别名"]
 } as const;
 
 function normalizeHeader(value: string): string {
@@ -144,6 +147,24 @@ function parseTags(value: string): StudyProfile[] {
   return [...valid];
 }
 
+function parseForms(value: string, normalizedWord: string): {
+  forms: string[];
+  invalid: string[];
+} {
+  const forms = new Set<string>();
+  const invalid: string[] = [];
+  for (const raw of cleanField(value).split(/[\s,/|;]+/u)) {
+    if (raw === "") continue;
+    const normalized = normalizeHeadword(raw);
+    if (!/^[a-z]+(?:['-][a-z]+)*$/u.test(normalized)) {
+      invalid.push(raw);
+    } else if (normalized !== normalizedWord) {
+      forms.add(normalized);
+    }
+  }
+  return { forms: [...forms], invalid };
+}
+
 interface RawDictionaryRow {
   location: string;
   word: string;
@@ -152,6 +173,7 @@ interface RawDictionaryRow {
   translation: string;
   partOfSpeech: string;
   tags: string;
+  forms: string;
   invalidReason?: string;
 }
 
@@ -169,6 +191,7 @@ function buildParseResult(
     const normalizedWord = normalizeHeadword(word);
     const definition = cleanField(row.definition);
     const translation = cleanField(row.translation);
+    const parsedForms = parseForms(row.forms, normalizedWord);
     let reason = row.invalidReason ?? "";
     if (reason === "" && normalizedWord === "") {
       reason = "单词为空";
@@ -194,6 +217,9 @@ function buildParseResult(
     if (entryMap.has(normalizedWord)) {
       duplicateRows += 1;
     }
+    if (parsedForms.invalid.length > 0 && warnings.length < 5) {
+      warnings.push(`${row.location}：已忽略无效词形 ${parsedForms.invalid.slice(0, 3).join("、")}`);
+    }
     entryMap.set(normalizedWord, {
       word,
       normalizedWord,
@@ -201,7 +227,8 @@ function buildParseResult(
       definition,
       translation,
       partOfSpeech: cleanField(row.partOfSpeech),
-      tags: parseTags(cleanField(row.tags))
+      tags: parseTags(cleanField(row.tags)),
+      forms: parsedForms.forms
     });
   }
 
@@ -234,6 +261,7 @@ function parseCustomDictionaryDelimited(
   const translationIndex = findHeaderIndex(headers, HEADER_ALIASES.translation);
   const partOfSpeechIndex = findHeaderIndex(headers, HEADER_ALIASES.partOfSpeech);
   const tagsIndex = findHeaderIndex(headers, HEADER_ALIASES.tags);
+  const formsIndex = findHeaderIndex(headers, HEADER_ALIASES.forms);
   if (wordIndex < 0) {
     throw new Error(`${formatLabel} 缺少 word（单词）列。`);
   }
@@ -252,7 +280,8 @@ function parseCustomDictionaryDelimited(
     definition: getField(row, definitionIndex),
     translation: getField(row, translationIndex),
     partOfSpeech: getField(row, partOfSpeechIndex),
-    tags: getField(row, tagsIndex)
+    tags: getField(row, tagsIndex),
+    forms: getField(row, formsIndex)
   }));
   return buildParseResult(rows, formatLabel.toLocaleLowerCase("en-US") as "csv" | "tsv");
 }
@@ -327,6 +356,7 @@ export function parseCustomDictionaryJson(value: string): CustomDictionaryParseR
         translation: "",
         partOfSpeech: "",
         tags: "",
+        forms: "",
         invalidReason: "词条必须是 JSON 对象"
       };
     }
@@ -337,7 +367,8 @@ export function parseCustomDictionaryJson(value: string): CustomDictionaryParseR
       definition: getJsonField(entry, HEADER_ALIASES.definition),
       translation: getJsonField(entry, HEADER_ALIASES.translation),
       partOfSpeech: getJsonField(entry, HEADER_ALIASES.partOfSpeech),
-      tags: getJsonField(entry, HEADER_ALIASES.tags)
+      tags: getJsonField(entry, HEADER_ALIASES.tags),
+      forms: getJsonField(entry, HEADER_ALIASES.forms)
     };
   });
   return buildParseResult(rows, "json");

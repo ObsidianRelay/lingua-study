@@ -16,6 +16,7 @@ const indexPath = join(sourceFolder, "dictionary-index.json");
 const manifest = JSON.parse(await readFile(indexPath, "utf8"));
 if (
   manifest.version !== 1 ||
+  manifest.tagSchemaVersion !== 2 ||
   manifest.project !== "skywind3000/ECDICT" ||
   typeof manifest.revision !== "string" ||
   !/^[0-9a-f]{12}$/u.test(manifest.revision) ||
@@ -31,7 +32,7 @@ const fileNames = [
   ...shardKeys.map((key) => `${key}.json.gz`)
 ];
 const outputPath = resolve(
-  process.argv[3] ?? join("release", `ecdict-${manifest.revision}.zip`)
+  process.argv[3] ?? join("release", `ecdict-${manifest.revision}-tags-v${manifest.tagSchemaVersion}.zip`)
 );
 const archive = new JSZip();
 const fixedDate = new Date("1980-01-01T00:00:00.000Z");

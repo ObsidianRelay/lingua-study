@@ -18,6 +18,7 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal(settings.cacheTranslations, false);
   assert.equal(settings.studyProfile, "cet4");
   assert.equal(settings.dailyNewWordLimit, 10);
+  assert.equal(settings.fsrsRequestRetention, 0.9);
   assert.equal(settings.desktopPlayerWidth, 860);
   assert.equal(settings.interfaceTheme, "classic");
   assert.equal(settings.enableDoubleClickLookup, true);
@@ -67,12 +68,35 @@ test("Kimi 使用独立模型与安全凭据并兼容旧设置", () => {
   assert.equal(sanitizeSettings({ kimiModel: "unknown" }).kimiModel, "kimi-k2.6");
 });
 
+test("百度翻译使用独立 AppID 与安全凭据并兼容旧设置", () => {
+  const defaults = sanitizeSettings({ translationProvider: "baidu" });
+  assert.equal(defaults.translationProvider, "baidu");
+  assert.equal(defaults.baiduAppId, "");
+  assert.equal(defaults.baiduSecretId, "");
+
+  const configured = sanitizeSettings({
+    translationProvider: "baidu",
+    baiduAppId: " 123456 ",
+    baiduSecretId: "evs-baidu"
+  });
+  assert.equal(configured.baiduAppId, "123456");
+  assert.equal(configured.baiduSecretId, "evs-baidu");
+});
+
 test("每日新词数量固定限制在 1 到 50", () => {
   assert.equal(sanitizeSettings({ dailyNewWordLimit: 20 }).dailyNewWordLimit, 20);
   assert.equal(sanitizeSettings({ dailyNewWordLimit: 0 }).dailyNewWordLimit, 1);
   assert.equal(sanitizeSettings({ dailyNewWordLimit: 200 }).dailyNewWordLimit, 50);
   assert.equal(sanitizeSettings({ dailyNewWordLimit: 9.6 }).dailyNewWordLimit, 10);
   assert.equal(sanitizeSettings({ dailyNewWordLimit: "20" }).dailyNewWordLimit, 10);
+});
+
+test("FSRS-6 目标留存率限制在 0.70 到 0.99", () => {
+  assert.equal(sanitizeSettings({ fsrsRequestRetention: 0.86 }).fsrsRequestRetention, 0.86);
+  assert.equal(sanitizeSettings({ fsrsRequestRetention: 0.2 }).fsrsRequestRetention, 0.7);
+  assert.equal(sanitizeSettings({ fsrsRequestRetention: 2 }).fsrsRequestRetention, 0.99);
+  assert.equal(sanitizeSettings({ fsrsRequestRetention: 0.904 }).fsrsRequestRetention, 0.9);
+  assert.equal(sanitizeSettings({ fsrsRequestRetention: "0.95" }).fsrsRequestRetention, 0.9);
 });
 
 test("桌面播放器宽度保留用户选择并限制安全范围", () => {
@@ -83,9 +107,9 @@ test("桌面播放器宽度保留用户选择并限制安全范围", () => {
   assert.equal(sanitizeSettings({ desktopPlayerWidth: "720" }).desktopPlayerWidth, 860);
 });
 
-test("学习目标默认四级并保留全部六种备考选择", () => {
+test("学习目标默认四级并保留全部八种备考选择", () => {
   assert.equal(sanitizeSettings({}).studyProfile, "cet4");
-  for (const profile of ["cet4", "cet6", "tem4", "tem8", "ielts", "toefl"] as const) {
+  for (const profile of ["zk", "gk", "cet4", "cet6", "tem4", "tem8", "ielts", "toefl"] as const) {
     assert.equal(sanitizeSettings({ studyProfile: profile }).studyProfile, profile);
   }
   assert.equal(sanitizeSettings({ studyProfile: "gre" }).studyProfile, "cet4");

@@ -13,9 +13,11 @@ import {
 import {
   buildDailyReviewQueue,
   getDailyReviewSummary,
+  previewVocabularyRating,
   type ReviewRating,
   type VocabularyBookFile,
   type VocabularyContext,
+  type VocabularyEditInput,
   type VocabularyEntry
 } from "./vocabulary-core";
 import type LinguaStudyPlugin from "./main";
@@ -77,6 +79,111 @@ class VocabularyTextModal extends Modal {
       });
     });
     window.setTimeout(() => textarea.focus(), 0);
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+class VocabularyEditModal extends Modal {
+  constructor(
+    app: LinguaStudyPlugin["app"],
+    private readonly entry: VocabularyEntry,
+    private readonly onSave: (input: VocabularyEditInput) => Promise<void>
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText(`编辑 ${this.entry.word}`);
+    this.modalEl.addClass("lingua-vocabulary-edit-modal");
+    this.contentEl.createEl("p", {
+      text: "保存后会保留原有视频语境和复习进度，并作为个人版本持续保留；以后再次加入同一个词时只补充语境，不会用词典内容覆盖。"
+    });
+    const form = this.contentEl.createEl("form", { cls: "lingua-vocabulary-edit-form" });
+    const createInput = (
+      labelText: string,
+      initialValue: string,
+      maximum: number
+    ): HTMLInputElement => {
+      const label = form.createEl("label", { cls: "lingua-vocabulary-edit-field" });
+      label.createSpan({ text: labelText });
+      const input = label.createEl("input", { type: "text" });
+      input.value = initialValue;
+      input.maxLength = maximum;
+      return input;
+    };
+    const createTextarea = (
+      labelText: string,
+      initialValue: string,
+      maximum: number
+    ): HTMLTextAreaElement => {
+      const label = form.createEl("label", { cls: "lingua-vocabulary-edit-field" });
+      label.createSpan({ text: labelText });
+      const textarea = label.createEl("textarea");
+      textarea.value = initialValue;
+      textarea.maxLength = maximum;
+      return textarea;
+    };
+
+    const word = createInput("单词", this.entry.word, 120);
+    const phonetic = createInput("音标", this.entry.phonetic, 200);
+    const partOfSpeech = createInput("词性", this.entry.partOfSpeech, 200);
+    const chineseTranslation = createTextarea(
+      "中文释义",
+      this.entry.chineseTranslation,
+      10_000
+    );
+    const englishDefinition = createTextarea(
+      "English definition",
+      this.entry.englishDefinition,
+      10_000
+    );
+    const personalNote = createTextarea("个人备注", this.entry.personalNote, 10_000);
+
+    const tags = form.createDiv({ cls: "lingua-vocabulary-edit-tags" });
+    tags.createDiv({ cls: "lingua-vocabulary-edit-label", text: "考试标签" });
+    const selectedTags = new Set(this.entry.examTags);
+    const tagInputs = new Map<StudyProfile, HTMLInputElement>();
+    for (const profile of STUDY_PROFILES) {
+      const label = tags.createEl("label");
+      const checkbox = label.createEl("input", { type: "checkbox" });
+      checkbox.checked = selectedTags.has(profile);
+      label.createSpan({ text: STUDY_PROFILE_LABELS[profile] });
+      tagInputs.set(profile, checkbox);
+    }
+
+    const error = form.createDiv({
+      cls: "lingua-vocabulary-modal-error",
+      attr: { role: "alert" }
+    });
+    const actions = form.createDiv({ cls: "lingua-vocabulary-modal-actions" });
+    const cancel = actions.createEl("button", { text: "取消" });
+    cancel.type = "button";
+    cancel.addEventListener("click", () => this.close());
+    const save = actions.createEl("button", { text: "保存" });
+    save.type = "submit";
+    save.addClass("mod-cta");
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      error.empty();
+      save.disabled = true;
+      const examTags = STUDY_PROFILES.filter((profile) => tagInputs.get(profile)?.checked);
+      void this.onSave({
+        word: word.value,
+        phonetic: phonetic.value,
+        partOfSpeech: partOfSpeech.value,
+        chineseTranslation: chineseTranslation.value,
+        englishDefinition: englishDefinition.value,
+        examTags,
+        personalNote: personalNote.value
+      }).then(() => this.close()).catch((caught) => {
+        save.disabled = false;
+        error.setText(caught instanceof Error ? caught.message : "保存失败，请重试。");
+      });
+    });
+    window.setTimeout(() => word.focus(), 0);
   }
 
   onClose(): void {
@@ -408,6 +515,12 @@ export class LinguaDictionaryView extends ItemView {
     heading.createEl("h2", { text: entry.word });
     if (entry.phonetic) {
       heading.createDiv({ cls: "lingua-dictionary-phonetic", text: `/ ${entry.phonetic} /` });
+    }
+    if (result.normalizedQuery !== normalizeLookupWord(entry.word)) {
+      heading.createDiv({
+        cls: "lingua-dictionary-form-match",
+        text: `词形还原：${result.query} → ${entry.word}`
+      });
     }
     const actions = title.createDiv({ cls: "lingua-dictionary-word-actions" });
     const speak = this.createIconButton(actions, "volume-2", `朗读 ${entry.word}`);
@@ -782,6 +895,20 @@ export class LinguaDictionaryView extends ItemView {
     }
     const speak = this.createIconButton(header, "volume-2", `朗读 ${entry.word}`);
     speak.addEventListener("click", () => this.plugin.speakDictionaryWord(entry.word));
+    const edit = this.createIconButton(header, "pencil", "编辑生词");
+    edit.addEventListener("click", () => {
+      new VocabularyEditModal(this.plugin.app, entry, async (input) => {
+        const previousId = entry.id;
+        this.selectedVocabularyId = normalizeLookupWord(input.word);
+        try {
+          await this.plugin.updateVocabularyEntry(previousId, input);
+          new Notice("个人版本已保存；以后再次加入时只补充语境。", 4_000);
+        } catch (caught) {
+          this.selectedVocabularyId = previousId;
+          throw caught;
+        }
+      }).open();
+    });
 
     const status = parent.createDiv({ cls: "lingua-vocabulary-detail-status" });
     status.createSpan({ text: this.reviewStatusLabel(entry) });
@@ -931,11 +1058,19 @@ export class LinguaDictionaryView extends ItemView {
       });
     }
     const ratings = card.createDiv({ cls: "lingua-review-ratings" });
+    const now = new Date();
+    const interval = (rating: ReviewRating): string =>
+      previewVocabularyRating(
+        entry,
+        rating,
+        now,
+        this.plugin.settings.fsrsRequestRetention
+      ).intervalLabel;
     const options: Array<[ReviewRating, string, string]> = [
-      ["again", "忘记", "10 分钟"],
-      ["hard", "困难", this.nextIntervalLabel(entry, "hard")],
-      ["good", "记得", this.nextIntervalLabel(entry, "good")],
-      ["easy", "熟练", this.nextIntervalLabel(entry, "easy")]
+      ["again", "忘记", interval("again")],
+      ["hard", "困难", interval("hard")],
+      ["good", "记得", interval("good")],
+      ["easy", "熟练", interval("easy")]
     ];
     for (const [rating, label, interval] of options) {
       const button = ratings.createEl("button", { cls: `is-${rating}` });
@@ -1013,14 +1148,6 @@ export class LinguaDictionaryView extends ItemView {
         void this.prepareReviewCard();
       }
     }, delay);
-  }
-
-  private nextIntervalLabel(entry: VocabularyEntry, rating: Exclude<ReviewRating, "again">): string {
-    if (entry.review.intervalDays <= 0) {
-      return rating === "hard" ? "1 天" : rating === "good" ? "3 天" : "7 天";
-    }
-    const multiplier = rating === "hard" ? 1.2 : rating === "good" ? 2.5 : 3.5;
-    return `${Math.min(3_650, Math.max(1, Math.ceil(entry.review.intervalDays * multiplier)))} 天`;
   }
 
   private reviewStatusLabel(entry: VocabularyEntry): string {

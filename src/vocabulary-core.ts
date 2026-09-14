@@ -1,13 +1,55 @@
 import type { DictionaryEntry } from "./dictionary-core";
-import { normalizeLookupWord } from "./dictionary-core";
+import { extractLookupWord, normalizeLookupWord } from "./dictionary-core";
 import { isStudyProfile, type StudyProfile } from "./study-core";
+import {
+  Rating,
+  S_MIN,
+  State,
+  createEmptyCard,
+  default_w,
+  fsrs,
+  type Card,
+  type CardInput,
+  type Grade,
+  type ReviewLog
+} from "ts-fsrs";
 
 export const VOCABULARY_BOOK_VERSION = 1 as const;
 export const VOCABULARY_BOOK_PATH = "Lingua Study/Vocabulary/wordbook.json";
 export const MAX_REVIEW_INTERVAL_DAYS = 3_650;
+export const FSRS_ALGORITHM_VERSION = "FSRS-6" as const;
+export const DEFAULT_FSRS_REQUEST_RETENTION = 0.9;
+export const MIN_FSRS_REQUEST_RETENTION = 0.7;
+export const MAX_FSRS_REQUEST_RETENTION = 0.99;
 
 export type ReviewRating = "again" | "hard" | "good" | "easy";
 export type VocabularyReviewPhase = "new" | "learning" | "review";
+
+export interface VocabularyFsrsCard {
+  due: string;
+  stability: number;
+  difficulty: number;
+  elapsed_days: number;
+  scheduled_days: number;
+  learning_steps: number;
+  reps: number;
+  lapses: number;
+  state: State;
+  last_review?: string;
+}
+
+export interface VocabularyFsrsReviewLog {
+  rating: Rating;
+  state: State;
+  due: string;
+  stability: number;
+  difficulty: number;
+  elapsed_days: number;
+  last_elapsed_days: number;
+  scheduled_days: number;
+  learning_steps: number;
+  review: string;
+}
 
 export interface VocabularyContext {
   sentence: string;
@@ -29,6 +71,10 @@ export interface VocabularyReviewState {
   reviewCount: number;
   lapses: number;
   lastReviewedAt: string | null;
+  /** FSRS-6 的完整记忆状态；旧生词会在下一次评分时自动补齐。 */
+  fsrsCard?: VocabularyFsrsCard;
+  /** 保留原始评分历史，便于以后调优参数或排查复习结果。 */
+  reviewLogs?: VocabularyFsrsReviewLog[];
 }
 
 export interface VocabularyEntry {
@@ -42,6 +88,8 @@ export interface VocabularyEntry {
   examTags: StudyProfile[];
   studyProfiles: StudyProfile[];
   personalNote: string;
+  /** 用户通过完整编辑窗口确认过内容；再次加入时不再用词典字段覆盖。 */
+  userEdited: boolean;
   contexts: VocabularyContext[];
   createdAt: string;
   lastSeenAt: string;
@@ -63,11 +111,26 @@ export interface VocabularyAddInput {
   now: Date;
 }
 
+export interface VocabularyEditInput {
+  word: string;
+  phonetic: string;
+  partOfSpeech: string;
+  chineseTranslation: string;
+  englishDefinition: string;
+  examTags: StudyProfile[];
+  personalNote: string;
+}
+
 export interface DailyReviewSummary {
   dueLearning: number;
   dueReview: number;
   availableNew: number;
   total: number;
+}
+
+export interface VocabularyRatingPreview {
+  dueAt: string;
+  intervalLabel: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,6 +147,78 @@ function isIsoDate(value: unknown): value is string {
 
 function isNonNegativeFinite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isFsrsState(value: unknown): value is State {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 3;
+}
+
+function isFsrsRating(value: unknown): value is Rating {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 4;
+}
+
+function validateFsrsCard(value: unknown): VocabularyFsrsCard {
+  if (!isRecord(value)) {
+    throw new Error("FSRS-6 卡片状态格式不正确");
+  }
+  if (
+    !isIsoDate(value.due) ||
+    !isNonNegativeFinite(value.stability) ||
+    !isNonNegativeFinite(value.difficulty) ||
+    !isNonNegativeFinite(value.elapsed_days) ||
+    !isNonNegativeFinite(value.scheduled_days) ||
+    !isNonNegativeFinite(value.learning_steps) ||
+    !Number.isSafeInteger(value.reps) || Number(value.reps) < 0 ||
+    !Number.isSafeInteger(value.lapses) || Number(value.lapses) < 0 ||
+    !isFsrsState(value.state) ||
+    (value.last_review !== undefined && !isIsoDate(value.last_review))
+  ) {
+    throw new Error("FSRS-6 卡片状态包含无效字段");
+  }
+  return {
+    due: value.due,
+    stability: value.stability,
+    difficulty: value.difficulty,
+    elapsed_days: value.elapsed_days,
+    scheduled_days: value.scheduled_days,
+    learning_steps: value.learning_steps,
+    reps: Number(value.reps),
+    lapses: Number(value.lapses),
+    state: value.state,
+    ...(value.last_review === undefined ? {} : { last_review: value.last_review })
+  };
+}
+
+function validateFsrsReviewLog(value: unknown): VocabularyFsrsReviewLog {
+  if (!isRecord(value)) {
+    throw new Error("FSRS-6 复习日志格式不正确");
+  }
+  if (
+    !isFsrsRating(value.rating) ||
+    !isFsrsState(value.state) ||
+    !isIsoDate(value.due) ||
+    !isNonNegativeFinite(value.stability) ||
+    !isNonNegativeFinite(value.difficulty) ||
+    !isNonNegativeFinite(value.elapsed_days) ||
+    !isNonNegativeFinite(value.last_elapsed_days) ||
+    !isNonNegativeFinite(value.scheduled_days) ||
+    !isNonNegativeFinite(value.learning_steps) ||
+    !isIsoDate(value.review)
+  ) {
+    throw new Error("FSRS-6 复习日志包含无效字段");
+  }
+  return {
+    rating: value.rating,
+    state: value.state,
+    due: value.due,
+    stability: value.stability,
+    difficulty: value.difficulty,
+    elapsed_days: value.elapsed_days,
+    last_elapsed_days: value.last_elapsed_days,
+    scheduled_days: value.scheduled_days,
+    learning_steps: value.learning_steps,
+    review: value.review
+  };
 }
 
 function validateContext(value: unknown): VocabularyContext {
@@ -131,7 +266,7 @@ function validateReview(value: unknown): VocabularyReviewState {
   ) {
     throw new Error("生词复习状态包含无效字段");
   }
-  return {
+  const review: VocabularyReviewState = {
     phase: value.phase,
     introducedAt: value.introducedAt,
     dueAt: value.dueAt,
@@ -140,6 +275,16 @@ function validateReview(value: unknown): VocabularyReviewState {
     lapses: Number(value.lapses),
     lastReviewedAt: value.lastReviewedAt
   };
+  if (value.fsrsCard !== undefined) {
+    review.fsrsCard = validateFsrsCard(value.fsrsCard);
+  }
+  if (value.reviewLogs !== undefined) {
+    if (!Array.isArray(value.reviewLogs)) {
+      throw new Error("FSRS-6 复习日志格式不正确");
+    }
+    review.reviewLogs = value.reviewLogs.map(validateFsrsReviewLog);
+  }
+  return review;
 }
 
 function validateEntry(key: string, value: unknown): VocabularyEntry {
@@ -159,6 +304,7 @@ function validateEntry(key: string, value: unknown): VocabularyEntry {
     !Array.isArray(value.examTags) || !value.examTags.every(isStudyProfile) ||
     !Array.isArray(value.studyProfiles) || !value.studyProfiles.every(isStudyProfile) ||
     typeof value.personalNote !== "string" ||
+    (value.userEdited !== undefined && typeof value.userEdited !== "boolean") ||
     !Array.isArray(value.contexts) ||
     !isIsoDate(value.createdAt) || !isIsoDate(value.lastSeenAt)
   ) {
@@ -175,6 +321,7 @@ function validateEntry(key: string, value: unknown): VocabularyEntry {
     examTags: [...new Set(value.examTags)],
     studyProfiles: [...new Set(value.studyProfiles)],
     personalNote: value.personalNote,
+    userEdited: value.userEdited === true,
     contexts: value.contexts.map(validateContext),
     createdAt: value.createdAt,
     lastSeenAt: value.lastSeenAt,
@@ -212,6 +359,104 @@ function uniqueProfiles(values: readonly StudyProfile[]): StudyProfile[] {
   return [...new Set(values)];
 }
 
+interface FsrsCompatibilityFields {
+  elapsed_days: number;
+  last_elapsed_days?: number;
+}
+
+function serializeFsrsCard(card: Card): VocabularyFsrsCard {
+  const compatibility = card as unknown as FsrsCompatibilityFields;
+  return {
+    due: card.due.toISOString(),
+    stability: card.stability,
+    difficulty: card.difficulty,
+    // ts-fsrs 5.4.2 仍要求该字段，下次升级主版本时再随官方迁移。
+    elapsed_days: compatibility.elapsed_days,
+    scheduled_days: card.scheduled_days,
+    learning_steps: card.learning_steps,
+    reps: card.reps,
+    lapses: card.lapses,
+    state: card.state,
+    ...(card.last_review ? { last_review: card.last_review.toISOString() } : {})
+  };
+}
+
+function serializeFsrsReviewLog(log: ReviewLog): VocabularyFsrsReviewLog {
+  const compatibility = log as unknown as Required<FsrsCompatibilityFields>;
+  return {
+    rating: log.rating,
+    state: log.state,
+    due: log.due.toISOString(),
+    stability: log.stability,
+    difficulty: log.difficulty,
+    elapsed_days: compatibility.elapsed_days,
+    last_elapsed_days: compatibility.last_elapsed_days,
+    scheduled_days: log.scheduled_days,
+    learning_steps: log.learning_steps,
+    review: log.review.toISOString()
+  };
+}
+
+function fsrsCardInput(review: VocabularyReviewState): CardInput {
+  if (review.fsrsCard) {
+    return review.fsrsCard;
+  }
+  if (review.phase === "new" && review.reviewCount === 0) {
+    return createEmptyCard(new Date(review.dueAt));
+  }
+
+  // 旧版只保存间隔天数，无法还原出完整 FSRS 记忆状态。
+  // 以当前间隔作为保守的稳定性起点，并保留原到期日，不在升级时批量改期。
+  return {
+    due: review.dueAt,
+    stability: Math.max(S_MIN, review.intervalDays || 1),
+    difficulty: 5,
+    elapsed_days: 0,
+    scheduled_days: review.intervalDays,
+    learning_steps: 0,
+    reps: review.reviewCount,
+    lapses: review.lapses,
+    state: review.phase === "learning" ? State.Learning : State.Review,
+    ...(review.lastReviewedAt || review.introducedAt
+      ? { last_review: review.lastReviewedAt ?? review.introducedAt }
+      : {})
+  };
+}
+
+function schedulerFor(requestRetention: number) {
+  if (default_w.length !== 21) {
+    throw new Error("FSRS-6 默认参数未能正确加载");
+  }
+  return fsrs({
+    request_retention: sanitizeFsrsRequestRetention(requestRetention),
+    maximum_interval: MAX_REVIEW_INTERVAL_DAYS,
+    enable_fuzz: false
+  });
+}
+
+function gradeFor(rating: ReviewRating): Grade {
+  if (rating === "again") return Rating.Again;
+  if (rating === "hard") return Rating.Hard;
+  if (rating === "good") return Rating.Good;
+  return Rating.Easy;
+}
+
+function reviewPhaseFor(state: State): VocabularyReviewPhase {
+  if (state === State.New) return "new";
+  if (state === State.Review) return "review";
+  return "learning";
+}
+
+export function sanitizeFsrsRequestRetention(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_FSRS_REQUEST_RETENTION;
+  }
+  return Math.min(
+    MAX_FSRS_REQUEST_RETENTION,
+    Math.max(MIN_FSRS_REQUEST_RETENTION, Math.round(value * 100) / 100)
+  );
+}
+
 export function addVocabularyEntry(
   book: VocabularyBookFile,
   input: VocabularyAddInput
@@ -232,17 +477,29 @@ export function addVocabularyEntry(
       ? [...current.contexts, nextContext]
       : current.contexts;
     const dictionaryEntry = input.dictionaryEntry;
+    const preservePersonalVersion = current.userEdited;
     const entry: VocabularyEntry = {
       ...current,
-      word: dictionaryEntry?.word ?? current.word,
-      phonetic: dictionaryEntry?.phonetic ?? current.phonetic,
-      partOfSpeech: dictionaryEntry?.partOfSpeech ?? current.partOfSpeech,
-      chineseTranslation:
-        dictionaryEntry?.chineseTranslation || input.customMeaning.trim() || current.chineseTranslation,
-      englishDefinition: dictionaryEntry?.englishDefinition ?? current.englishDefinition,
-      examTags: dictionaryEntry ? uniqueProfiles(dictionaryEntry.examTags) : current.examTags,
+      word: preservePersonalVersion ? current.word : dictionaryEntry?.word ?? current.word,
+      phonetic: preservePersonalVersion
+        ? current.phonetic
+        : dictionaryEntry?.phonetic ?? current.phonetic,
+      partOfSpeech: preservePersonalVersion
+        ? current.partOfSpeech
+        : dictionaryEntry?.partOfSpeech ?? current.partOfSpeech,
+      chineseTranslation: preservePersonalVersion
+        ? current.chineseTranslation
+        : dictionaryEntry?.chineseTranslation || input.customMeaning.trim() || current.chineseTranslation,
+      englishDefinition: preservePersonalVersion
+        ? current.englishDefinition
+        : dictionaryEntry?.englishDefinition ?? current.englishDefinition,
+      examTags: preservePersonalVersion || !dictionaryEntry
+        ? current.examTags
+        : uniqueProfiles(dictionaryEntry.examTags),
       studyProfiles: uniqueProfiles([...current.studyProfiles, input.studyProfile]),
-      personalNote: input.personalNote?.trim() || current.personalNote,
+      personalNote: preservePersonalVersion
+        ? current.personalNote
+        : input.personalNote?.trim() || current.personalNote,
       contexts,
       lastSeenAt: now
     };
@@ -254,6 +511,7 @@ export function addVocabularyEntry(
   }
 
   const dictionaryEntry = input.dictionaryEntry;
+  const emptyFsrsCard = createEmptyCard(input.now);
   const entry: VocabularyEntry = {
     id: normalizedWord,
     word: dictionaryEntry?.word ?? input.rawWord.trim(),
@@ -265,6 +523,7 @@ export function addVocabularyEntry(
     examTags: uniqueProfiles(dictionaryEntry?.examTags ?? []),
     studyProfiles: [input.studyProfile],
     personalNote: input.personalNote?.trim() ?? "",
+    userEdited: false,
     contexts: nextContext ? [nextContext] : [],
     createdAt: now,
     lastSeenAt: now,
@@ -275,7 +534,9 @@ export function addVocabularyEntry(
       intervalDays: 0,
       reviewCount: 0,
       lapses: 0,
-      lastReviewedAt: null
+      lastReviewedAt: null,
+      fsrsCard: serializeFsrsCard(emptyFsrsCard),
+      reviewLogs: []
     }
   };
   return {
@@ -315,6 +576,78 @@ export function updateVocabularyNote(
   };
 }
 
+function boundedVocabularyField(value: string, label: string, maximum: number): string {
+  const cleaned = value.trim();
+  if (cleaned.length > maximum) {
+    throw new Error(`${label}不能超过 ${maximum.toLocaleString()} 个字符`);
+  }
+  return cleaned;
+}
+
+/**
+ * 编辑可见学习字段；语境、复习状态和创建时间保持不变。
+ * 单词变化时同步迁移 entries 的键和条目 id，避免出现键值不一致的数据文件。
+ */
+export function updateVocabularyEntry(
+  book: VocabularyBookFile,
+  id: string,
+  input: VocabularyEditInput
+): VocabularyBookFile {
+  const current = book.entries[id];
+  if (!current) {
+    throw new Error("要修改的生词已经不存在");
+  }
+  const word = input.word.normalize("NFKC").trim();
+  const normalizedWord = extractLookupWord(word);
+  if (!normalizedWord) {
+    throw new Error("单词只能包含英文字母，可使用撇号或连字符");
+  }
+  if (word.length > 120) {
+    throw new Error("单词不能超过 120 个字符");
+  }
+  if (normalizedWord !== id && book.entries[normalizedWord]) {
+    throw new Error(`生词本中已经存在“${book.entries[normalizedWord].word}”，请先处理重复条目`);
+  }
+  const phonetic = boundedVocabularyField(input.phonetic, "音标", 200);
+  const partOfSpeech = boundedVocabularyField(input.partOfSpeech, "词性", 200);
+  const chineseTranslation = boundedVocabularyField(
+    input.chineseTranslation,
+    "中文释义",
+    10_000
+  );
+  const englishDefinition = boundedVocabularyField(
+    input.englishDefinition,
+    "英文释义",
+    10_000
+  );
+  const personalNote = boundedVocabularyField(input.personalNote, "个人备注", 10_000);
+  if (chineseTranslation === "" && englishDefinition === "" && personalNote === "") {
+    throw new Error("中文释义、英文释义和个人备注至少填写一项");
+  }
+  if (!input.examTags.every(isStudyProfile)) {
+    throw new Error("考试标签包含不支持的选项");
+  }
+  const updated: VocabularyEntry = {
+    ...current,
+    id: normalizedWord,
+    word,
+    normalizedWord,
+    phonetic,
+    partOfSpeech,
+    chineseTranslation,
+    englishDefinition,
+    examTags: uniqueProfiles(input.examTags),
+    personalNote,
+    userEdited: true
+  };
+  const entries = { ...book.entries };
+  if (normalizedWord !== id) {
+    delete entries[id];
+  }
+  entries[normalizedWord] = updated;
+  return { ...book, entries };
+}
+
 export function introduceVocabularyEntry(
   book: VocabularyBookFile,
   id: string,
@@ -331,61 +664,78 @@ export function introduceVocabularyEntry(
       ...book.entries,
       [id]: {
         ...current,
-        review: { ...current.review, introducedAt: timestamp, dueAt: timestamp }
+        review: {
+          ...current.review,
+          introducedAt: timestamp,
+          dueAt: timestamp,
+          ...(current.review.fsrsCard
+            ? { fsrsCard: { ...current.review.fsrsCard, due: timestamp } }
+            : {})
+        }
       }
     }
   };
 }
 
-function addCalendarDays(now: Date, days: number): Date {
-  const due = new Date(now.getTime());
-  due.setDate(due.getDate() + days);
-  return due;
+function formatReviewInterval(now: Date, due: Date): string {
+  const milliseconds = Math.max(0, due.getTime() - now.getTime());
+  const minutes = Math.max(1, Math.round(milliseconds / (60 * 1_000)));
+  if (minutes < 60) {
+    return `${minutes} 分钟`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours} 小时`;
+  }
+  return `${Math.max(1, Math.round(hours / 24))} 天`;
 }
 
-function nextInterval(current: number, rating: Exclude<ReviewRating, "again">): number {
-  if (current <= 0) {
-    return rating === "hard" ? 1 : rating === "good" ? 3 : 7;
-  }
-  const multiplier = rating === "hard" ? 1.2 : rating === "good" ? 2.5 : 3.5;
-  return Math.min(MAX_REVIEW_INTERVAL_DAYS, Math.max(1, Math.ceil(current * multiplier)));
+export function previewVocabularyRating(
+  entry: VocabularyEntry,
+  rating: ReviewRating,
+  now: Date,
+  requestRetention = DEFAULT_FSRS_REQUEST_RETENTION
+): VocabularyRatingPreview {
+  const result = schedulerFor(requestRetention).next(fsrsCardInput(entry.review), now, gradeFor(rating));
+  return {
+    dueAt: result.card.due.toISOString(),
+    intervalLabel: formatReviewInterval(now, result.card.due)
+  };
 }
 
 export function rateVocabularyEntry(
   book: VocabularyBookFile,
   id: string,
   rating: ReviewRating,
-  now: Date
+  now: Date,
+  requestRetention = DEFAULT_FSRS_REQUEST_RETENTION
 ): VocabularyBookFile {
   const current = book.entries[id];
   if (!current) {
     throw new Error("要复习的生词已经不存在");
   }
   const reviewedAt = now.toISOString();
-  let review: VocabularyReviewState;
-  if (rating === "again") {
-    review = {
-      ...current.review,
-      phase: "learning",
-      introducedAt: current.review.introducedAt ?? reviewedAt,
-      dueAt: new Date(now.getTime() + 10 * 60 * 1_000).toISOString(),
-      intervalDays: 0,
-      reviewCount: current.review.reviewCount + 1,
-      lapses: current.review.lapses + 1,
-      lastReviewedAt: reviewedAt
-    };
-  } else {
-    const intervalDays = nextInterval(current.review.intervalDays, rating);
-    review = {
-      ...current.review,
-      phase: "review",
-      introducedAt: current.review.introducedAt ?? reviewedAt,
-      dueAt: addCalendarDays(now, intervalDays).toISOString(),
-      intervalDays,
-      reviewCount: current.review.reviewCount + 1,
-      lastReviewedAt: reviewedAt
-    };
-  }
+  const result = schedulerFor(requestRetention).next(
+    fsrsCardInput(current.review),
+    now,
+    gradeFor(rating)
+  );
+  const fsrsCard = serializeFsrsCard(result.card);
+  const review: VocabularyReviewState = {
+    ...current.review,
+    phase: reviewPhaseFor(result.card.state),
+    introducedAt: current.review.introducedAt ?? reviewedAt,
+    dueAt: fsrsCard.due,
+    intervalDays: result.card.scheduled_days,
+    reviewCount: result.card.reps,
+    lapses: result.card.lapses,
+    lastReviewedAt: result.card.last_review?.toISOString() ?? reviewedAt,
+    fsrsCard,
+    reviewLogs: [
+      ...(current.review.reviewLogs ?? []),
+      serializeFsrsReviewLog(result.log)
+    ]
+  };
   return {
     ...book,
     entries: { ...book.entries, [id]: { ...current, review } }

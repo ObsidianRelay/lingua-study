@@ -14,8 +14,8 @@ function response(content: string): unknown {
   return { choices: [{ message: { content } }] };
 }
 
-test("六个学习目标生成独立提示且 DeepSeek 与 Kimi 关闭思考模式", () => {
-  assert.deepEqual(STUDY_PROFILES, ["cet4", "cet6", "tem4", "tem8", "ielts", "toefl"]);
+test("八个学习目标生成独立提示且 DeepSeek 与 Kimi 关闭思考模式", () => {
+  assert.deepEqual(STUDY_PROFILES, ["zk", "gk", "cet4", "cet6", "tem4", "tem8", "ielts", "toefl"]);
   const cet4 = buildStudyAnalysisRequestBody("deepseek", "model", "I study English.", "cet4", [
     { word: "study", tags: ["cet4", "ielts"] }
   ]);
@@ -35,6 +35,8 @@ test("六个学习目标生成独立提示且 DeepSeek 与 Kimi 关闭思考模�
     return body.messages[1]?.content ?? "";
   });
   assert.equal(new Set(prompts).size, STUDY_PROFILES.length);
+  assert.match(prompts[0] ?? "", /初中七至九年级/u);
+  assert.match(prompts[1] ?? "", /普通高中/u);
   assert.equal(cet4.max_tokens, 1_600);
   assert.match(cet4.messages[0]?.content ?? "", /extensions/u);
 });
@@ -199,7 +201,7 @@ test("知识卡指纹会按学习目标隔离", async () => {
       createStudyFingerprint(1, 2, "Hello.", profile, cryptoProvider)
     )
   );
-  const cet4 = fingerprints[0] ?? "";
+  const cet4 = fingerprints[STUDY_PROFILES.indexOf("cet4")] ?? "";
   const same = await createStudyFingerprint(1, 2, "Hello.", "cet4", cryptoProvider);
   assert.match(cet4, /^[a-f0-9]{64}$/u);
   assert.equal(new Set(fingerprints).size, STUDY_PROFILES.length);

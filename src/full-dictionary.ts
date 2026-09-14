@@ -15,14 +15,16 @@ import JSZip from "jszip";
 import { STUDY_PROFILES, type StudyProfile } from "./study-core";
 
 const PACKAGE_VERSION = 1;
+const LEGACY_TAG_SCHEMA_VERSION = 1;
+export const CURRENT_DICTIONARY_TAG_SCHEMA_VERSION = 2;
 const SOURCE_REVISION = "bc015ed2e24a";
 const SOURCE_SHA256 = "1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf";
 const SOURCE_URL =
   `https://raw.githubusercontent.com/skywind3000/ECDICT/${SOURCE_REVISION}/ecdict.csv`;
-const RELEASE_ARCHIVE_NAME = `ecdict-${SOURCE_REVISION}.zip`;
+const RELEASE_ARCHIVE_NAME = `ecdict-${SOURCE_REVISION}-tags-v${CURRENT_DICTIONARY_TAG_SCHEMA_VERSION}.zip`;
 const RELEASE_ARCHIVE_URL =
   `https://github.com/ObsidianRelay/lingua-study/releases/download/dictionary-${SOURCE_REVISION}/${RELEASE_ARCHIVE_NAME}`;
-const RELEASE_ARCHIVE_SHA256 = "74e2993be40623059a10a8b605a452333d4a8d006b7d0e18186bf0ee3064d37f";
+const RELEASE_ARCHIVE_SHA256 = "2f475bee50434145fd021fb2e6104e27618ac8e5c6864a7ad326d1f3275f1f77";
 const MAX_SOURCE_BYTES = 90 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 40 * 1024 * 1024;
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
@@ -68,6 +70,8 @@ type PackedDictionaryEntry = [
 
 export interface FullDictionaryManifest {
   version: 1;
+  /** 旧词典没有此字段，按第 1 版标签处理。 */
+  tagSchemaVersion?: number;
   project: "skywind3000/ECDICT";
   revision: string;
   sourceSha256: string;
@@ -79,6 +83,7 @@ export interface FullDictionaryManifest {
 
 export interface FullDictionaryStatus {
   installed: boolean;
+  updateAvailable: boolean;
   manifest: FullDictionaryManifest | null;
   cacheFolder: string;
 }
@@ -114,6 +119,9 @@ export function validateFullDictionaryManifest(value: unknown): FullDictionaryMa
   }
   if (
     value.version !== PACKAGE_VERSION ||
+    (value.tagSchemaVersion !== undefined &&
+      value.tagSchemaVersion !== LEGACY_TAG_SCHEMA_VERSION &&
+      value.tagSchemaVersion !== CURRENT_DICTIONARY_TAG_SCHEMA_VERSION) ||
     value.project !== "skywind3000/ECDICT" ||
     value.revision !== SOURCE_REVISION ||
     value.sourceSha256 !== SOURCE_SHA256 ||
@@ -125,6 +133,18 @@ export function validateFullDictionaryManifest(value: unknown): FullDictionaryMa
     return null;
   }
   return value as unknown as FullDictionaryManifest;
+}
+
+export function getFullDictionaryTagSchemaVersion(
+  manifest: FullDictionaryManifest
+): number {
+  return manifest.tagSchemaVersion ?? LEGACY_TAG_SCHEMA_VERSION;
+}
+
+export function isFullDictionaryUpdateAvailable(
+  manifest: FullDictionaryManifest
+): boolean {
+  return getFullDictionaryTagSchemaVersion(manifest) < CURRENT_DICTIONARY_TAG_SCHEMA_VERSION;
 }
 
 class DownloadHttpError extends Error {
@@ -546,6 +566,7 @@ export async function buildFullDictionaryPackage(
 
   const manifest: FullDictionaryManifest = {
     version: PACKAGE_VERSION,
+    tagSchemaVersion: CURRENT_DICTIONARY_TAG_SCHEMA_VERSION,
     project: "skywind3000/ECDICT",
     revision: SOURCE_REVISION,
     sourceSha256: SOURCE_SHA256,
@@ -715,7 +736,12 @@ export class FullDictionaryService {
   }
 
   getStatus(): FullDictionaryStatus {
-    return { installed: this.manifest !== null, manifest: this.manifest, cacheFolder: this.cacheFolder };
+    return {
+      installed: this.manifest !== null,
+      updateAvailable: this.manifest ? isFullDictionaryUpdateAvailable(this.manifest) : false,
+      manifest: this.manifest,
+      cacheFolder: this.cacheFolder
+    };
   }
 
   getShardFolder(): string | null {

@@ -28,6 +28,12 @@ export interface BilibiliShortLink {
   originalUrl: string;
 }
 
+export interface LocalVideoStudyBlock {
+  localId: string;
+  videoPath: string;
+  transcriptPath: string;
+}
+
 export type BilibiliLink = BilibiliVideoLink | BilibiliShortLink;
 
 export type PastedVideoLink =
@@ -915,6 +921,62 @@ export function parseSubtitleFile(text: string): TranscriptSegment[] {
 
 export function buildStudyBlock(transcriptPath: string): string {
   return `\`\`\`lingua-study\ntranscript: ${transcriptPath}\n\`\`\``;
+}
+
+export function buildLocalVideoStudyBlock(config: LocalVideoStudyBlock): string {
+  return [
+    "```lingua-study",
+    "platform: local",
+    `id: ${config.localId}`,
+    `video: ${JSON.stringify(config.videoPath)}`,
+    `transcript: ${JSON.stringify(config.transcriptPath)}`,
+    "```"
+  ].join("\n");
+}
+
+export function extractLocalVideoIdsFromStudyBlocks(markdown: string): string[] {
+  const ids: string[] = [];
+  const blockPattern = /```(?:lingua-study|english-video-study)\s*\n([\s\S]*?)```/gu;
+  for (const block of markdown.matchAll(blockPattern)) {
+    const body = block[1] ?? "";
+    if (!/^\s*platform\s*:\s*local\s*$/imu.test(body)) {
+      continue;
+    }
+    const id = /^\s*id\s*:\s*([A-Za-z0-9_-]{11})\s*$/imu.exec(body)?.[1];
+    if (id) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+export function replaceLocalVideoPathInStudyBlock(
+  markdown: string,
+  localId: string,
+  nextVideoPath: string
+): string | null {
+  const blockPattern = /```(?:lingua-study|english-video-study)\s*\n([\s\S]*?)```/gu;
+  for (const block of markdown.matchAll(blockPattern)) {
+    const body = block[1] ?? "";
+    if (
+      !/^\s*platform\s*:\s*local\s*$/imu.test(body) ||
+      /^\s*id\s*:\s*([A-Za-z0-9_-]{11})\s*$/imu.exec(body)?.[1] !== localId ||
+      block.index === undefined
+    ) {
+      continue;
+    }
+    const updatedBody = body.replace(
+      /^(\s*video\s*:\s*).*$/imu,
+      (_line, prefix: string) => `${prefix}${JSON.stringify(nextVideoPath)}`
+    );
+    if (updatedBody === body) {
+      return null;
+    }
+    const fullBlock = block[0];
+    const updatedBlock = fullBlock.replace(body, updatedBody);
+    return `${markdown.slice(0, block.index)}${updatedBlock}${markdown.slice(block.index + fullBlock.length)}`;
+  }
+  return null;
 }
 
 export function buildBilibiliStudyBlock(

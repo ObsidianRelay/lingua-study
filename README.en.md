@@ -5,16 +5,23 @@
 Turn English YouTube and Bilibili videos into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 1.4.2 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.5.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
-## Recent updates (1.3.0–1.4.2)
+## Recent updates (1.3.0–1.5.0)
+
+- **Local-video study**: import local MP4 files from the existing Lingua Study entry and automatically match same-name SRT/VTT subtitles
+- **Selection translation**: use Baidu Translate, DeepSeek, Kimi, or an OpenAI-compatible service in a draggable floating card
+- **FSRS-6 scheduling**: plan reviews with the real FSRS-6 algorithm and a configurable target retention
+- **School study profiles**: add junior-high and senior-high English with matching dictionary exam tags
+- **Dictionary update prompt**: keep the old full dictionary usable and ask before downloading an updated package
+- **Vocabulary and inflection improvements**: fully edit persistent personal entries and support lemmatization, aliases, and fuzzy suggestions
 
 - **Optional appearances**: keep the classic appearance by default or switch to Lingua Paper in settings, with identical functionality in both
 - **Resizable player**: drag from any of the four player corners on desktop, with responsive controls and a saved width
 - **Update reminder**: check the latest official Release when settings opens and show the Obsidian Community plugin page entry only when an update exists
 - **Sentence dictation**: replay one segment, submit an answer, and review a word-level comparison and score
 - **Shadowing practice**: record along with the source audio, pause or resume, view a waveform, and play back the recording
-- **Vocabulary learning loop**: look up a word, save it with its video context, and schedule it for daily review
+- **Vocabulary learning loop**: look up a word, save and edit its learning fields, keep its video context, and schedule it for daily review
 - **Vocabulary export**: export the book to an Obsidian study note or paginated desktop PNG images
 - **Smooth transcript following**: keep the active segment visible during playback with less page jumping and repeated layout work
 - **Replaceable transcript imports**: keep the Bilibili subtitle button available after a transcript has been added so failed or incorrect imports can be replaced
@@ -32,6 +39,7 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - Independent keyless YouTube mobile-client fallback when the normal page route is blocked
 - Automatic local `yt-dlp` fallback on desktop when it is already installed
 - Local SRT/VTT import when public captions cannot be fetched
+- Desktop import for one local MP4 or a folder of MP4 files, with automatic same-name SRT/VTT matching
 - A follow-up **Add transcript** entry on player-only Bilibili blocks
 - Editable PDF, DOCX, TXT, Markdown, and pasted bilingual transcript import
 - Optional local Whisper Base English alignment that keeps media and transcripts on the device
@@ -40,7 +48,7 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - Clickable timestamps, automatic highlighting, and page-level transcript following without an internal scrolling window
 - Per-segment translation that runs only after the user clicks a translation button
 - Four-part study cards with translation, vocabulary and collocations, grammar patterns, and exam-focused tips
-- CET-4, CET-6, TEM-4, TEM-8, IELTS, and TOEFL study profiles with separate local caches
+- Junior-high and senior-high English, CET-4, CET-6, TEM-4, TEM-8, IELTS, and TOEFL study profiles with separate local caches
 - A bundled offline English-Chinese dictionary opened by double-clicking a transcript word
 - A dedicated right-sidebar dictionary view with phonetics, definitions, inflections, exam tags, context, and system pronunciation
 - A vocabulary book with personal notes, saved video contexts, filtering, and a daily review queue
@@ -48,7 +56,7 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - Inline single-sentence dictation with two-second replay controls and word-level comparison
 - Temporary single-sentence recording with synchronized shadowing, pause/resume, waveform, and playback comparison
 - One-click vocabulary-book export to an Obsidian note or paginated desktop PNG images
-- DeepSeek, Kimi, and HTTPS OpenAI Chat Completions-compatible providers
+- Baidu Translate, DeepSeek, Kimi, and HTTPS OpenAI Chat Completions-compatible providers
 - Translation cache stored beside the transcript file
 - API keys selected through Obsidian SecretStorage
 
@@ -118,6 +126,15 @@ After a player-only block is created, the original visible Bilibili link is remo
 
 The video cache directory can be opened from **Settings → Community plugins → Lingua Study → 哔哩哔哩视频与登录 → 打开缓存文件夹**. Cached video is outside the Obsidian vault and is not managed by Obsidian Sync. The generated transcript JSON remains in the configured transcript folder inside the vault. The Bilibili login cookie remains in Electron's isolated persistent session and is not written into notes, transcript files, plugin settings, or Obsidian Sync. It can be cleared from the same settings section.
 
+### Local video and subtitle import
+
+1. Open the Markdown note where the study blocks should be inserted.
+2. Click the existing **Lingua Study** ribbon icon. If the note contains a Bilibili or YouTube link, Lingua Study processes that link; otherwise it opens the local-video importer. You can also run **Create study content from local video and subtitles**.
+3. Choose one MP4 or a folder. For a folder, Lingua Study pairs each MP4 with a same-name SRT/VTT, preferring `.en`, `.eng`, or `.english` variants.
+4. Confirm the matches to generate the transcript JSON and local-player study blocks.
+
+The MP4 files remain in their original folder and are not copied into the vault. If a video is moved or deleted, use **Relink video** in the player. This first version is desktop-only and supports MP4 plus UTF-8 SRT/VTT. Actual playback also depends on the codecs supported by Obsidian/Electron.
+
 ### Manual transcript format
 
 Version 1 JSON files and notes created with Lingua Study 1.0.x remain supported. Advanced users can still create a transcript file manually:
@@ -152,6 +169,12 @@ Open Reading view to use the player and transcript. The legacy `english-video-st
 
 Open **Settings → Community plugins → Lingua Study** and choose one provider.
 
+### Baidu Translate
+
+- Enable the General Text Translation API on Baidu Translate Open Platform, enter the AppID, and select the secret through Obsidian SecretStorage.
+- Supports the current transcript segment, whole-transcript translation, multiword transcript selections, and selected Markdown text.
+- Baidu returns translation-only results. Study cards still require DeepSeek, Kimi, or an OpenAI-compatible provider.
+
 ### DeepSeek
 
 - Base URL: `https://api.deepseek.com`
@@ -172,11 +195,11 @@ Provide:
 - The exact model ID supported by the provider
 - A Bearer API key selected through Obsidian SecretStorage
 
-The current version does not support custom headers, Anthropic-compatible endpoints, Ollama, or additional target languages. Optional whole-transcript translation is available, runs sequentially, and skips segments that already have results.
+The current version does not support custom headers, Anthropic-compatible endpoints, Ollama, or additional target languages. Optional whole-transcript translation is available, runs sequentially, and skips segments that already have results. In Reading view, drag to select multiple transcript words; Lingua Study immediately calls the selected translation provider and displays the result in a draggable, non-modal floating card near the selection. Double-clicking a single word still performs an offline dictionary lookup. In the Markdown editor, select text and run **Lingua Study: Translate selected English text** from the command palette; the command can also be assigned a hotkey.
 
 ## Translation controls
 
-- **Translate** sends only that transcript segment, the selected study profile, and matching local exam tags to the selected provider. One request returns the translation and study points.
+- **Translate** sends only the current segment to Baidu for a plain translation. AI providers also receive the selected study profile and matching local exam tags and return both a translation and study points.
 - **Show translation** reads an existing local cache without making a network request.
 - **Hide translation** hides the result without deleting the cache.
 - **Retranslate** makes a new request and replaces the cached study card for the active study profile.
@@ -196,13 +219,15 @@ Dictation and shadowing currently require the desktop YouTube player or a locall
 ### Vocabulary book and daily review
 
 1. Double-click an English transcript word to see offline definitions, phonetics, inflections, and exam tags in the right sidebar.
-2. Select **Add to vocabulary book** to save the word together with the current video sentence and timestamp. You can also add a personal note.
+2. Select **Add to vocabulary book** to save the word together with the current video sentence and timestamp. In the vocabulary detail view, you can edit the word, phonetic spelling, part of speech, definitions, exam tags, and personal note without resetting its contexts or review progress. A fully edited entry becomes the user's personal version: adding the same word again only appends context and does not overwrite those fields with dictionary data.
 3. Use the **Vocabulary book** tab to search or filter saved words, and **Today's review** to complete the current review queue.
 4. Export the vocabulary book to an Obsidian note, or create paginated PNG images on desktop.
 
 Manual edits store the first version in an optional `originalText` field in the same version 1 transcript JSON. Existing files remain compatible.
 
-Double-clicking one English word performs a fully offline lookup. It does not call the configured AI provider. The compressed exam-and-frequency subset of ECDICT remains inside `main.js`. The optional full ECDICT installer under **Settings → Lingua Study → Learning and dictionary** prefers a prebuilt 24.4 MB ZIP and falls back to the official ECDICT CSV when needed. Downloads support resume and up to three attempts. The installed dictionary stays in the operating-system cache rather than the vault or Obsidian Sync. The pronunciation button uses an installed operating-system English voice.
+Double-clicking one English word performs a fully offline lookup. It does not call the configured AI provider. Explicit dictionary forms are preferred, followed by local lemma matching for unlisted regular forms and common irregular forms such as `studied → study` and `went → go`. Saving the result uses the lemma so contexts and review history stay on one vocabulary entry. The compressed exam-and-frequency subset of ECDICT remains inside `main.js`. The optional full ECDICT installer under **Settings → Lingua Study → Learning and dictionary** prefers a prebuilt 24.4 MB ZIP and falls back to the official ECDICT CSV when needed. Downloads support resume and up to three attempts. The installed dictionary stays in the operating-system cache rather than the vault or Obsidian Sync. The pronunciation button uses an installed operating-system English voice.
+
+Desktop users can also import custom CSV, TSV, or JSON dictionaries from the same settings page. The optional `forms` field also accepts `aliases`, `inflections`, and the corresponding Chinese headers. Multiple forms may be separated by spaces, commas, slashes, pipes, or semicolons. Looking up one of those forms returns the custom headword entry.
 
 When caching is enabled, Lingua Study creates a separate file beside the transcript:
 
@@ -226,8 +251,8 @@ example.zh-CN.study.json
 - Local SRT/VTT fallback files are read on the device and are not uploaded by Lingua Study.
 - PDF, DOCX, TXT, Markdown, and pasted creator transcripts are parsed locally. Image-only PDFs require OCR before import.
 - Local transcript alignment downloads a pinned Whisper Base English model and runtime only after confirmation; the video and transcript remain on the device.
-- Translation requests connect to DeepSeek or the OpenAI-compatible HTTPS endpoint configured by the user.
-- A study-card request sends only the segment explicitly selected by the user, the selected CET-4/CET-6/IELTS profile, and matching local dictionary tags.
+- Translation requests connect only to the configured Baidu Translate, DeepSeek, Kimi, or OpenAI-compatible HTTPS endpoint.
+- A study-card request sends only the segment explicitly selected by the user, the selected study profile, and matching local dictionary tags.
 - Offline dictionary lookups and system pronunciation do not make network requests.
 - The connection test sends the fixed sentence `Thank you for using Lingua Study.`.
 - The plugin does not collect telemetry, serve advertisements, create accounts, or operate a developer-controlled server.

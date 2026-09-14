@@ -5,7 +5,7 @@ import {
   type TranslationRequestBody
 } from "./translation-core";
 
-export const STUDY_PROFILES = ["cet4", "cet6", "tem4", "tem8", "ielts", "toefl"] as const;
+export const STUDY_PROFILES = ["zk", "gk", "cet4", "cet6", "tem4", "tem8", "ielts", "toefl"] as const;
 
 export type StudyProfile = typeof STUDY_PROFILES[number];
 
@@ -62,6 +62,8 @@ export interface StudyDictionaryHint {
 export const STUDY_ANALYSIS_VERSION = 1;
 
 export const STUDY_PROFILE_LABELS: Readonly<Record<StudyProfile, string>> = {
+  zk: "初中",
+  gk: "高中",
   cet4: "四级",
   cet6: "六级",
   tem4: "专四",
@@ -71,6 +73,8 @@ export const STUDY_PROFILE_LABELS: Readonly<Record<StudyProfile, string>> = {
 };
 
 export const STUDY_PROFILE_LONG_LABELS: Readonly<Record<StudyProfile, string>> = {
+  zk: "初中英语",
+  gk: "高中英语",
   cet4: "大学英语四级",
   cet6: "大学英语六级",
   tem4: "英语专业四级（TEM-4）",
@@ -80,6 +84,8 @@ export const STUDY_PROFILE_LONG_LABELS: Readonly<Record<StudyProfile, string>> =
 };
 
 const PROFILE_INSTRUCTIONS: Readonly<Record<StudyProfile, string>> = {
+  zk: "面向中国大陆初中七至九年级和中考英语学习者，优先解释基础高频词义、常用搭配、基本时态与语态、比较级和简单从句；表达应简洁，不扩展与当前句子无关的高中或大学内容，不得声称内容属于官方固定词表。",
+  gk: "面向中国大陆普通高中和高考英语学习者，优先解释高中阶段词汇、熟词生义、固定搭配、长难句结构，以及阅读和写作中的同义改写；不得声称内容属于官方固定词表。",
   cet4: "面向大学英语四级考生，优先解释四级核心词汇、常用搭配和基础可复用句型，不罗列过于简单的词。",
   cet6: "面向大学英语六级考生，优先解释中高级词汇、固定搭配和长难句结构；基础四级词仅在用法特殊时解释。",
   tem4: "面向英语专业四级（TEM-4）学习者，优先解释准确词义、词形变化、固定搭配、语法辨析和可复用句型，突出英语专业基础能力；不得声称内容属于官方固定词表。",

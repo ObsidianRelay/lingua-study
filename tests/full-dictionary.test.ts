@@ -11,7 +11,9 @@ import {
   createFullDictionaryArchive,
   downloadFileWithResume,
   extractFullDictionaryArchive,
+  getFullDictionaryTagSchemaVersion,
   getFullDictionaryCacheFolder,
+  isFullDictionaryUpdateAvailable,
   validateFullDictionaryManifest,
   verifyFullDictionaryPackage
 } from "../src/full-dictionary";
@@ -32,6 +34,28 @@ test("完整版词典清单拒绝损坏和不兼容数据", () => {
   assert.equal(validateFullDictionaryManifest({ version: 1, entryCount: -1 }), null);
 });
 
+test("旧词典可继续使用，并提示升级到新版标签", () => {
+  const legacyManifest = {
+    version: 1,
+    project: "skywind3000/ECDICT",
+    revision: "bc015ed2e24a",
+    sourceSha256: "1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf",
+    entryCount: 769_901,
+    aliasCount: 1_536,
+    compressedBytes: 25_584_672,
+    installedAt: "2026-08-28T00:00:00.000Z"
+  } as const;
+  const validated = validateFullDictionaryManifest(legacyManifest);
+  assert.ok(validated);
+  assert.equal(getFullDictionaryTagSchemaVersion(validated), 1);
+  assert.equal(isFullDictionaryUpdateAvailable(validated), true);
+
+  const current = validateFullDictionaryManifest({ ...legacyManifest, tagSchemaVersion: 2 });
+  assert.ok(current);
+  assert.equal(isFullDictionaryUpdateAvailable(current), false);
+  assert.equal(validateFullDictionaryManifest({ ...legacyManifest, tagSchemaVersion: 3 }), null);
+});
+
 test("官方 CSV 可以生成按首字母加载的压缩分片", async () => {
   const root = await mkdtemp(join(tmpdir(), "lingua-full-dictionary-"));
   const source = join(root, "ecdict.csv");
@@ -39,19 +63,21 @@ test("官方 CSV 可以生成按首字母加载的压缩分片", async () => {
   await mkdir(output);
   await writeFile(source, [
     "word,phonetic,definition,translation,pos,collins,oxford,tag,bnc,frq,exchange,detail,audio",
-    "rarewordx,rer,an uncommon test word,测试生僻词,n,0,0,toefl,0,0,s:rarewordxes,,",
+    "rarewordx,rer,an uncommon test word,测试生僻词,n,0,0,zk gk toefl,0,0,s:rarewordxes,,",
     "study,stadi,to learn,学习,v,0,0,cet4,100,90,s:studies/p:studied,,",
     "constructor,kanstraktar,a person who constructs,建造者,n,0,0,,24093,29875,s:constructors,,"
   ].join("\n"), "utf8");
 
   try {
     const manifest = await buildFullDictionaryPackage(source, output);
+    assert.equal(manifest.tagSchemaVersion, 2);
+    assert.equal(isFullDictionaryUpdateAvailable(manifest), false);
     assert.equal(manifest.entryCount, 3);
     assert.ok(manifest.aliasCount >= 3);
     const shard = JSON.parse(
       gunzipSync(await readFile(join(output, "r.json.gz"))).toString("utf8")
-    ) as { entries: Record<string, unknown>; aliases: Record<string, string> };
-    assert.ok(shard.entries.rarewordx);
+    ) as { entries: Record<string, unknown[]>; aliases: Record<string, string> };
+    assert.deepEqual(shard.entries.rarewordx?.[5], ["zk", "gk", "toefl"]);
     assert.equal(shard.aliases.rarewordxes, "rarewordx");
     const constructorShard = JSON.parse(
       gunzipSync(await readFile(join(output, "c.json.gz"))).toString("utf8")

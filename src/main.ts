@@ -55,6 +55,7 @@ import {
   DICTIONARY_SOURCE,
   OfflineDictionary,
   tokenizeDictionaryText,
+  type ExternalDictionarySourceConfig,
   type DictionaryLookupResult
 } from "./dictionary-core";
 import type {
@@ -96,7 +97,11 @@ import {
 } from "./player-control-core";
 import { YouTubeImportController } from "./youtube-import";
 import { BilibiliImportController } from "./bilibili-import";
-import type { BilibiliCacheService, CachedBilibiliVideo } from "./bilibili-cache";
+import type {
+  BilibiliCacheService,
+  CachedBilibiliVideo,
+  LocalVideoPlaybackAsset
+} from "./bilibili-cache";
 import { BilibiliSessionService, type BilibiliSessionStatus } from "./bilibili-session";
 import {
   findSupportedVideoLinksByPriority,
@@ -104,12 +109,14 @@ import {
   type PastedVideoLink
 } from "./import-core";
 import type { LocalWhisperService } from "./local-whisper";
+import type { LocalVideoImportController } from "./local-video-import";
 import { disposeDocumentParserRuntime } from "./document-parser";
 import { VocabularyStore, type VocabularyBookLoadResult } from "./vocabulary-store";
 import {
   type ReviewRating,
   type VocabularyBookFile,
-  type VocabularyContext
+  type VocabularyContext,
+  type VocabularyEditInput
 } from "./vocabulary-core";
 import {
   writeVocabularyExport,
@@ -173,7 +180,14 @@ interface BilibiliCodeBlockConfig {
   transcript: string | null;
 }
 
-type CodeBlockConfig = TranscriptCodeBlockConfig | BilibiliCodeBlockConfig;
+interface LocalVideoCodeBlockConfig {
+  kind: "local";
+  localId: string;
+  videoPath: string;
+  transcript: string;
+}
+
+type CodeBlockConfig = TranscriptCodeBlockConfig | BilibiliCodeBlockConfig | LocalVideoCodeBlockConfig;
 
 interface YouTubeMessagePayload {
   id?: string | number;
@@ -371,6 +385,23 @@ function parseCodeBlock(source: string): CodeBlockConfig {
   }
 
   const config = value as Record<string, unknown>;
+  if (typeof config.platform === "string" && config.platform.trim().toLowerCase() === "local") {
+    const localId = typeof config.id === "string" ? config.id.trim() : "";
+    const videoPath = typeof config.video === "string" ? config.video.trim() : "";
+    const transcript = typeof config.transcript === "string"
+      ? normalizePath(config.transcript.trim())
+      : "";
+    if (!/^[A-Za-z0-9_-]{11}$/u.test(localId)) {
+      throw new Error("本地视频代码块缺少有效的 11 位 id。");
+    }
+    if (videoPath === "") {
+      throw new Error("本地视频代码块缺少 video 路径。");
+    }
+    if (transcript === "") {
+      throw new Error("本地视频代码块缺少 transcript 路径。");
+    }
+    return { kind: "local", localId, videoPath, transcript };
+  }
   if (typeof config.platform === "string" && config.platform.trim().toLowerCase() === "bilibili") {
     const bvid = typeof config.bvid === "string" ? config.bvid.trim() : "";
     const aidValue = config.aid;
@@ -505,6 +536,70 @@ class EditTranscriptSegmentModal extends Modal {
   }
 }
 
+class SelectionTranslationModal extends Modal {
+  private closed = false;
+
+  constructor(
+    app: LinguaStudyPlugin["app"],
+    private readonly sourceText: string,
+    private readonly translate: () => Promise<TranslationResult>
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText("翻译选中文本");
+    const sourceSection = this.contentEl.createDiv({ cls: "lingua-study-selection-translation" });
+    sourceSection.createDiv({ cls: "lingua-study-selection-translation-label", text: "英文原文" });
+    sourceSection.createDiv({
+      cls: "lingua-study-selection-translation-text",
+      text: this.sourceText,
+      attr: { lang: "en" }
+    });
+    const resultLabel = sourceSection.createDiv({
+      cls: "lingua-study-selection-translation-label",
+      text: "中文译文"
+    });
+    const resultEl = sourceSection.createDiv({
+      cls: "lingua-study-selection-translation-text is-result",
+      text: "正在翻译……",
+      attr: { lang: "zh-CN", "aria-live": "polite" }
+    });
+    const errorEl = sourceSection.createDiv({ cls: "lingua-study-import-error" });
+    const actions = this.contentEl.createDiv({ cls: "lingua-study-import-actions" });
+    const copyButton = actions.createEl("button", { cls: "mod-cta", text: "复制译文" });
+    copyButton.disabled = true;
+    actions.createEl("button", { text: "关闭" }).addEventListener("click", () => this.close());
+
+    void this.translate().then((result) => {
+      if (this.closed) {
+        return;
+      }
+      resultEl.setText(result.text);
+      copyButton.disabled = false;
+      copyButton.addEventListener("click", () => {
+        void navigator.clipboard.writeText(result.text).then(() => {
+          new Notice("译文已复制。", 3_000);
+        }).catch(() => {
+          new Notice("复制失败，请手动选择译文复制。", 5_000);
+        });
+      });
+    }).catch((error: unknown) => {
+      if (this.closed) {
+        return;
+      }
+      resultLabel.setText("翻译失败");
+      resultEl.hide();
+      errorEl.setText(error instanceof Error ? error.message : "选中文本翻译失败，请稍后重试。");
+    });
+  }
+
+  onClose(): void {
+    this.closed = true;
+    this.contentEl.empty();
+  }
+}
+
 class LinguaStudyRenderChild extends MarkdownRenderChild {
   private readonly plugin: LinguaStudyPlugin;
   private readonly source: string;
@@ -600,6 +695,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private localStatusHideTimer: number | null = null;
   private localSeekGeneration = 0;
   private lookupHighlightEl: HTMLElement | null = null;
+  private selectionTranslationPopoverEl: HTMLElement | null = null;
+  private selectionTranslationPopoverCleanup: (() => void) | null = null;
+  private selectionTranslationRequestGeneration = 0;
   private vocabularyTargetRowEl: HTMLElement | null = null;
   private vocabularyNavigationIndex: number | null = null;
 
@@ -623,6 +721,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   onunload(): void {
     this.destroyed = true;
+    this.hideSelectionTranslationPopover();
     this.closeDictation(false);
     this.closeShadowing(false);
     this.plugin.unregisterStudyRenderer(this);
@@ -721,6 +820,29 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private async initialize(): Promise<void> {
     try {
       const config = parseCodeBlock(this.source);
+      if (config.kind === "local") {
+        const transcriptData = await this.loadTranscriptRenderData(config.transcript);
+        let video: LocalVideoPlaybackAsset;
+        try {
+          video = await this.plugin.getLocalVideoPlaybackAsset(config);
+        } catch (error) {
+          if (!this.destroyed) {
+            this.renderLocalVideoUnavailable(
+              config,
+              error instanceof Error ? error.message : "无法读取本地视频。"
+            );
+          }
+          return;
+        }
+        if (this.destroyed) {
+          return;
+        }
+        if (transcriptData.transcript.videoId !== config.localId) {
+          throw new Error("本地视频与字幕文件不匹配。");
+        }
+        this.renderLocalVideoPlayer(config, video, transcriptData);
+        return;
+      }
       if (config.kind === "bilibili") {
         const [cached, transcriptData] = await Promise.all([
           this.plugin.getCachedBilibiliVideo(config),
@@ -1238,6 +1360,128 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
   }
 
+  private renderLocalVideoPlayer(
+    config: LocalVideoCodeBlockConfig,
+    asset: LocalVideoPlaybackAsset,
+    transcriptData: TranscriptRenderData
+  ): void {
+    this.cachedVideoUrls = [asset.fileUrl];
+    this.cachedVideoOffsets = [0];
+    this.cachedVideoDurations = [0];
+    this.cachedVideoIndex = 0;
+    const root = this.createRoot("evs-local-file-root");
+    const playerDock = this.createPlayerDock(root);
+    const playerFrame = this.createPlayerStage(playerDock);
+    const video = playerFrame.createEl("video", {
+      cls: "evs-player-host evs-local-video",
+      attr: {
+        controls: "",
+        playsinline: "",
+        preload: "metadata",
+        title: "本地视频播放器"
+      }
+    });
+    this.localVideoEl = video;
+
+    const toolbar = playerDock.createDiv({ cls: "evs-toolbar" });
+    toolbar.setAttribute("aria-label", "本地视频播放控制");
+    const primaryControls = toolbar.createDiv({ cls: "evs-primary-controls" });
+    this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
+    this.playPauseButton = this.createControlButton(
+      primaryControls,
+      "播放",
+      "play",
+      () => this.togglePlayback(),
+      "evs-play-button"
+    );
+    this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
+    this.createSpeedControls(toolbar);
+    const relink = toolbar.createEl("button", {
+      cls: "evs-button evs-icon-button"
+    });
+    relink.type = "button";
+    this.setControlIcon(relink, "folder-open", "重新选择本地视频");
+    relink.addEventListener("click", () => {
+      relink.disabled = true;
+      void this.plugin.relinkLocalVideo(this.sourcePath, config.localId).catch((error: unknown) => {
+        relink.disabled = false;
+        new Notice(error instanceof Error ? error.message : "无法更新本地视频路径。", 7_000);
+      });
+    });
+
+    this.statusEl = root.createDiv({ cls: "evs-status evs-local-status" });
+    this.statusEl.setAttribute("role", "status");
+    this.statusEl.setAttribute("aria-live", "polite");
+    this.runtimeErrorEl = root.createDiv({ cls: "evs-runtime-error" });
+    this.runtimeErrorEl.setAttribute("role", "alert");
+    this.runtimeErrorEl.hide();
+    this.renderTranscriptList(root, transcriptData);
+
+    video.addEventListener("loadedmetadata", () => {
+      if (this.destroyed) {
+        return;
+      }
+      this.duration = Number.isFinite(video.duration) ? video.duration : 0;
+      this.currentTime = video.currentTime;
+      this.activateControls(`本地视频已就绪 · ${asset.title}`, true);
+    });
+    video.addEventListener("play", () => {
+      if (!this.destroyed) {
+        this.onPlayerStateChange(PLAYER_STATE_PLAYING);
+      }
+    });
+    video.addEventListener("pause", () => {
+      if (!this.destroyed) {
+        this.onPlayerStateChange(PLAYER_STATE_PAUSED);
+      }
+    });
+    video.addEventListener("timeupdate", () => {
+      if (this.destroyed) {
+        return;
+      }
+      this.currentTime = video.currentTime;
+      this.lastTimeUpdateAt = Date.now();
+    });
+    video.addEventListener("ratechange", () => {
+      if (this.destroyed) {
+        return;
+      }
+      this.playbackRate = video.playbackRate;
+      this.updateSpeedControl(video.playbackRate);
+    });
+    video.addEventListener("error", () => {
+      if (this.destroyed) {
+        return;
+      }
+      this.playerState = PLAYER_STATE_PAUSED;
+      this.setPlayPauseVisual("play");
+      this.setStatusText("本地 MP4 无法播放，请检查视频编码或重新选择文件。", false);
+    });
+
+    this.setStatusText(`正在读取本地视频 · ${asset.title}`, false);
+    video.src = asset.fileUrl;
+    video.load();
+  }
+
+  private renderLocalVideoUnavailable(
+    config: LocalVideoCodeBlockConfig,
+    message: string
+  ): void {
+    const root = this.createRoot("evs-local-file-root");
+    const error = root.createDiv({ cls: "evs-fatal-error" });
+    error.setAttribute("role", "alert");
+    error.createEl("strong", { text: "找不到本地视频" });
+    error.createDiv({ text: message });
+    const button = error.createEl("button", { cls: "mod-cta", text: "重新选择视频" });
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      void this.plugin.relinkLocalVideo(this.sourcePath, config.localId).catch((error: unknown) => {
+        button.disabled = false;
+        new Notice(error instanceof Error ? error.message : "无法更新本地视频路径。", 7_000);
+      });
+    });
+  }
+
   private renderCachedBilibiliPlayer(
     config: BilibiliCodeBlockConfig,
     cached: CachedBilibiliVideo,
@@ -1747,6 +1991,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   }
 
   private renderDictionaryText(textEl: HTMLElement, text: string, segmentIndex: number): void {
+    this.hideSelectionTranslationPopover();
     if (this.lookupHighlightEl && textEl.contains(this.lookupHighlightEl)) {
       this.plugin.clearDictionaryHighlight();
     }
@@ -1754,6 +1999,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (!this.plugin.settings.enableDoubleClickLookup) {
       textEl.removeAttribute("title");
       textEl.appendText(text);
+      this.registerSelectionTranslation(textEl);
       return;
     }
     textEl.setAttribute("title", "双击单词在右侧词典中查询");
@@ -1763,7 +2009,13 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         continue;
       }
       const wordEl = textEl.createSpan({ cls: "evs-dictionary-word", text: token.text });
-      wordEl.addEventListener("dblclick", () => {
+      wordEl.addEventListener("dblclick", (event) => {
+        const selectedText = wordEl.ownerDocument.getSelection()?.toString().trim() ?? "";
+        if (/\s/u.test(selectedText)) {
+          event.preventDefault();
+          this.showSelectionTranslationPopover(textEl);
+          return;
+        }
         const segment = this.transcript?.segments[segmentIndex];
         if (!segment) {
           return;
@@ -1784,6 +2036,224 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         });
       });
     }
+    this.registerSelectionTranslation(textEl);
+  }
+
+  private registerSelectionTranslation(textEl: HTMLElement): void {
+    textEl.onpointerup = (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+      window.setTimeout(() => this.showSelectionTranslationPopover(textEl), 0);
+    };
+  }
+
+  /** 参考 Vocabulary SRS：多词选区完成后直接弹出悬浮窗并自动翻译。 */
+  private showSelectionTranslationPopover(textEl: HTMLElement): void {
+    const selection = textEl.ownerDocument.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    if (!textEl.contains(range.startContainer) || !textEl.contains(range.endContainer)) {
+      return;
+    }
+    const sourceText = selection.toString().replace(/\s+/gu, " ").trim();
+    if (!/\s/u.test(sourceText)) {
+      return;
+    }
+    const rangeRect = range.getBoundingClientRect();
+    if (rangeRect.width <= 0 || rangeRect.height <= 0) {
+      return;
+    }
+
+    const viewDocument = textEl.ownerDocument;
+    const viewWindow = viewDocument.defaultView ?? window;
+    this.openSelectionTranslationPopover(sourceText, rangeRect, viewDocument, viewWindow);
+  }
+
+  /** 在字幕选区附近显示非模态译文卡片，不遮挡播放器和字幕。 */
+  private openSelectionTranslationPopover(
+    sourceText: string,
+    anchorRect: Pick<DOMRect, "left" | "top" | "bottom" | "width">,
+    viewDocument: Document,
+    viewWindow: Window
+  ): void {
+    this.hideSelectionTranslationPopover();
+    const requestGeneration = this.selectionTranslationRequestGeneration + 1;
+    this.selectionTranslationRequestGeneration = requestGeneration;
+
+    const popover = viewDocument.body.createDiv({
+      cls: "lingua-study-selection-translation-popover",
+      attr: {
+        role: "dialog",
+        "aria-label": "选中文本翻译",
+        "aria-modal": "false"
+      }
+    });
+    const header = popover.createDiv({ cls: "lingua-study-selection-translation-popover-header" });
+    header.createDiv({ cls: "lingua-study-selection-translation-popover-title", text: "翻译选中文本" });
+    const closeButton = header.createEl("button", {
+      cls: "clickable-icon lingua-study-selection-translation-popover-close",
+      attr: { type: "button", "aria-label": "关闭翻译悬浮窗" }
+    });
+    setIcon(closeButton, "x");
+
+    const content = popover.createDiv({ cls: "lingua-study-selection-translation-popover-content" });
+    content.createDiv({ cls: "lingua-study-selection-translation-label", text: "英文原文" });
+    content.createDiv({
+      cls: "lingua-study-selection-translation-text",
+      text: sourceText,
+      attr: { lang: "en" }
+    });
+    const resultLabel = content.createDiv({
+      cls: "lingua-study-selection-translation-label",
+      text: "中文译文"
+    });
+    const resultEl = content.createDiv({
+      cls: "lingua-study-selection-translation-text is-result",
+      text: "正在翻译……",
+      attr: { lang: "zh-CN", "aria-live": "polite" }
+    });
+    const errorEl = content.createDiv({ cls: "lingua-study-import-error" });
+    const actions = content.createDiv({ cls: "lingua-study-selection-translation-popover-actions" });
+    const copyButton = actions.createEl("button", { cls: "mod-cta", text: "复制译文" });
+    copyButton.disabled = true;
+
+    const positionPopover = (): void => {
+      const margin = 8;
+      const gap = 8;
+      const panelWidth = Math.max(200, Math.min(380, viewWindow.innerWidth - margin * 2));
+      popover.style.width = `${panelWidth}px`;
+      const panelHeight = popover.getBoundingClientRect().height;
+      const left = Math.min(
+        Math.max(margin, anchorRect.left + anchorRect.width / 2 - panelWidth / 2),
+        Math.max(margin, viewWindow.innerWidth - panelWidth - margin)
+      );
+      const roomBelow = viewWindow.innerHeight - anchorRect.bottom - gap - margin;
+      const roomAbove = anchorRect.top - gap - margin;
+      const preferredTop = roomBelow >= Math.min(panelHeight, 280) || roomBelow >= roomAbove
+        ? anchorRect.bottom + gap
+        : anchorRect.top - panelHeight - gap;
+      const top = Math.min(
+        Math.max(margin, preferredTop),
+        Math.max(margin, viewWindow.innerHeight - panelHeight - margin)
+      );
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    };
+    positionPopover();
+
+    const dismissOnPointerDown = (event: PointerEvent): void => {
+      if (!popover.contains(event.target as Node)) {
+        this.hideSelectionTranslationPopover();
+      }
+    };
+    const dismissOnKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        this.hideSelectionTranslationPopover();
+      }
+    };
+    const dismissOnScroll = (event: Event): void => {
+      if (event.target instanceof Node && popover.contains(event.target)) {
+        return;
+      }
+      this.hideSelectionTranslationPopover();
+    };
+    const repositionOnResize = (): void => positionPopover();
+    let dragging = false;
+    let dragPointerId: number | null = null;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragStartLeft = 0;
+    let dragStartTop = 0;
+    const movePopover = (event: PointerEvent): void => {
+      if (!dragging || event.pointerId !== dragPointerId) {
+        return;
+      }
+      const panelRect = popover.getBoundingClientRect();
+      const margin = 8;
+      const left = Math.min(
+        Math.max(margin, dragStartLeft + event.clientX - dragStartX),
+        Math.max(margin, viewWindow.innerWidth - panelRect.width - margin)
+      );
+      const top = Math.min(
+        Math.max(margin, dragStartTop + event.clientY - dragStartY),
+        Math.max(margin, viewWindow.innerHeight - panelRect.height - margin)
+      );
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    };
+    const stopDragging = (event: PointerEvent): void => {
+      if (event.pointerId !== dragPointerId) {
+        return;
+      }
+      dragging = false;
+      dragPointerId = null;
+    };
+    header.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || (event.target instanceof Element && event.target.closest("button"))) {
+        return;
+      }
+      dragging = true;
+      dragPointerId = event.pointerId;
+      dragStartX = event.clientX;
+      dragStartY = event.clientY;
+      const panelRect = popover.getBoundingClientRect();
+      dragStartLeft = panelRect.left;
+      dragStartTop = panelRect.top;
+      event.preventDefault();
+    });
+    closeButton.addEventListener("click", () => this.hideSelectionTranslationPopover());
+    viewDocument.addEventListener("pointerdown", dismissOnPointerDown, true);
+    viewDocument.addEventListener("keydown", dismissOnKeyDown, true);
+    viewDocument.addEventListener("pointermove", movePopover);
+    viewDocument.addEventListener("pointerup", stopDragging);
+    viewDocument.addEventListener("pointercancel", stopDragging);
+    viewWindow.addEventListener("scroll", dismissOnScroll, true);
+    viewWindow.addEventListener("resize", repositionOnResize);
+    this.selectionTranslationPopoverEl = popover;
+    this.selectionTranslationPopoverCleanup = () => {
+      viewDocument.removeEventListener("pointerdown", dismissOnPointerDown, true);
+      viewDocument.removeEventListener("keydown", dismissOnKeyDown, true);
+      viewDocument.removeEventListener("pointermove", movePopover);
+      viewDocument.removeEventListener("pointerup", stopDragging);
+      viewDocument.removeEventListener("pointercancel", stopDragging);
+      viewWindow.removeEventListener("scroll", dismissOnScroll, true);
+      viewWindow.removeEventListener("resize", repositionOnResize);
+    };
+
+    void this.plugin.translateSentence(sourceText).then((result) => {
+      if (this.destroyed || requestGeneration !== this.selectionTranslationRequestGeneration) {
+        return;
+      }
+      resultEl.setText(result.text);
+      copyButton.disabled = false;
+      copyButton.addEventListener("click", () => {
+        void navigator.clipboard.writeText(result.text).then(() => {
+          new Notice("译文已复制。", 3_000);
+        }).catch(() => {
+          new Notice("复制失败，请手动选择译文复制。", 5_000);
+        });
+      });
+      positionPopover();
+    }).catch((error: unknown) => {
+      if (this.destroyed || requestGeneration !== this.selectionTranslationRequestGeneration) {
+        return;
+      }
+      resultLabel.setText("翻译失败");
+      resultEl.hide();
+      errorEl.setText(error instanceof Error ? error.message : "选中文本翻译失败，请稍后重试。");
+      positionPopover();
+    });
+  }
+
+  private hideSelectionTranslationPopover(): void {
+    this.selectionTranslationRequestGeneration += 1;
+    this.selectionTranslationPopoverCleanup?.();
+    this.selectionTranslationPopoverCleanup = null;
+    this.selectionTranslationPopoverEl?.remove();
+    this.selectionTranslationPopoverEl = null;
   }
 
   /** 设置切换后立即刷新现有字幕，不要求用户重新打开笔记。 */
@@ -3589,7 +4059,11 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (this.translationBatchRunning) {
       primaryLabel = "正在翻译整篇文稿";
     } else if (view.loading) {
-      primaryLabel = view.loadingAction === "supplement" ? "正在补充知识点" : "正在生成翻译";
+      primaryLabel = view.loadingAction === "supplement"
+        ? "正在补充知识点"
+        : this.plugin.settings.translationProvider === "baidu"
+          ? "正在调用百度翻译"
+          : "正在生成翻译";
     } else if (wholeTranscriptPending) {
       primaryLabel = "翻译整篇文稿";
     } else if (hasOutput) {
@@ -3629,8 +4103,12 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         view.loadingAction === "supplement"
           ? "正在补充知识点……"
           : view.loadingAction === "retranslate"
-            ? "正在重新生成译文与知识点……"
-            : "正在生成译文与知识点……"
+            ? this.plugin.settings.translationProvider === "baidu"
+              ? "正在重新调用百度翻译……"
+              : "正在重新生成译文与知识点……"
+            : this.plugin.settings.translationProvider === "baidu"
+              ? "正在调用百度翻译……"
+              : "正在生成译文与知识点……"
       );
       view.statusEl.classList.remove("is-error");
       view.statusEl.classList.remove("is-warning");
@@ -3766,11 +4244,19 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       const legacyRow = view.outputEl.createDiv({ cls: "evs-study-legacy-row" });
       legacyRow.createDiv({
         cls: "evs-study-legacy-note",
-        text: `这是已有纯译文，尚未按当前${this.plugin.getStudyProfileLabel()}目标生成知识点。`
+        text: this.plugin.settings.translationProvider === "baidu"
+          ? "百度翻译只生成中文译文；如需学习知识卡，请切换到 AI 翻译服务。"
+          : `这是已有纯译文，尚未按当前${this.plugin.getStudyProfileLabel()}目标生成知识点。`
       });
-      if (view.entry) {
+      if (
+        view.entry &&
+        this.plugin.settings.translationProvider !== "baidu" &&
+        this.plugin.settings.translationProvider !== "disabled"
+      ) {
         legacyRow.appendChild(view.supplementButton);
         view.supplementButton.show();
+      } else {
+        view.supplementButton.hide();
       }
       return;
     }
@@ -3834,6 +4320,12 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (!segment || !view || view.loading || this.destroyed) {
       return;
     }
+    if (action === "supplement" && this.plugin.settings.translationProvider === "baidu") {
+      view.errorMessage = "百度翻译不能生成知识卡，请先在插件设置中切换到 AI 翻译服务。";
+      view.statusTone = "error";
+      this.updateTranslationView(view);
+      return;
+    }
 
     const generation = view.requestGeneration + 1;
     const profile = this.plugin.settings.studyProfile;
@@ -3846,7 +4338,18 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
     let result: StudyAnalysisResult;
     try {
-      result = await this.plugin.analyzeSentence(segment.text, profile);
+      if (this.plugin.settings.translationProvider === "baidu") {
+        const translated = await this.plugin.translateSentence(segment.text);
+        result = {
+          translation: translated.text,
+          analysis: null,
+          warning: null,
+          provider: translated.provider,
+          model: translated.model
+        };
+      } else {
+        result = await this.plugin.analyzeSentence(segment.text, profile);
+      }
     } catch (error) {
       if (this.destroyed || view.requestGeneration !== generation) {
         return;
@@ -5084,6 +5587,7 @@ export default class LinguaStudyPlugin extends Plugin {
   private dictionaryTabPlacementPrepared = false;
   private youtubeImporter: YouTubeImportController | null = null;
   private bilibiliImporter: BilibiliImportController | null = null;
+  private localVideoImporter: LocalVideoImportController | null = null;
   private bilibiliCacheService: BilibiliCacheService | null = null;
   private bilibiliSessionService: BilibiliSessionService | null = null;
   private localWhisperService: LocalWhisperService | null = null;
@@ -5130,6 +5634,12 @@ export default class LinguaStudyPlugin extends Plugin {
       ]);
       this.syncDictionaryShardLoaders();
       this.bilibiliCacheService = new BilibiliCacheService();
+      const { LocalVideoImportController } = await import("./local-video-import");
+      this.localVideoImporter = new LocalVideoImportController(
+        this.app,
+        this.bilibiliCacheService,
+        () => this.settings
+      );
       this.localWhisperService = new LocalWhisperService(this.bilibiliCacheService);
       ytDlpFetcher = fetchTranscriptWithYtDlp;
       try {
@@ -5205,6 +5715,37 @@ export default class LinguaStudyPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "translate-selected-text",
+      name: "翻译选中的英文文本",
+      editorCheckCallback: (checking, editor, context) => {
+        if (!(context instanceof MarkdownView)) {
+          return false;
+        }
+        const sourceText = editor.getSelection().trim();
+        if (sourceText === "") {
+          return false;
+        }
+        if (!checking) {
+          this.openSelectionTranslation(sourceText);
+        }
+        return true;
+      }
+    });
+
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor) => {
+      const sourceText = editor.getSelection().trim();
+      if (sourceText === "") {
+        return;
+      }
+      menu.addItem((item) => {
+        item
+          .setTitle("使用 Lingua Study 翻译选中文本")
+          .setIcon("languages")
+          .onClick(() => this.openSelectionTranslation(sourceText));
+      });
+    }));
+
+    this.addCommand({
       id: "start-vocabulary-review",
       name: "开始今日生词复习",
       callback: () => {
@@ -5216,9 +5757,22 @@ export default class LinguaStudyPlugin extends Plugin {
       id: "import-video-from-current-note",
       name: "处理当前笔记中的视频链接",
       checkCallback: (checking) => {
-        const available = this.app.workspace.getActiveViewOfType(MarkdownView) !== null;
+        const available = this.getManualImportView() !== null;
         if (!checking && available) {
           void this.importVideoFromActiveNote();
+        }
+        return available;
+      }
+    });
+
+    this.addCommand({
+      id: "import-local-video",
+      name: "从本地视频和字幕创建学习内容",
+      checkCallback: (checking) => {
+        const available = this.capabilities.desktop &&
+          this.getManualImportView() !== null;
+        if (!checking && available) {
+          void this.importLocalVideoFromActiveNote();
         }
         return available;
       }
@@ -5306,6 +5860,7 @@ export default class LinguaStudyPlugin extends Plugin {
     this.localWhisperService?.close();
     disposeDocumentParserRuntime();
     this.localWhisperService = null;
+    this.localVideoImporter = null;
     this.fullDictionaryService = null;
     this.customDictionaryService = null;
     this.bilibiliSessionService = null;
@@ -5512,6 +6067,7 @@ export default class LinguaStudyPlugin extends Plugin {
   async updateSettings(changes: Partial<LinguaStudySettings>): Promise<void> {
     const previousProfile = this.settings.studyProfile;
     const previousDailyNewWordLimit = this.settings.dailyNewWordLimit;
+    const previousFsrsRequestRetention = this.settings.fsrsRequestRetention;
     const previousDesktopPlayerWidth = this.settings.desktopPlayerWidth;
     const previousInterfaceTheme = this.settings.interfaceTheme;
     const previousDoubleClickLookup = this.settings.enableDoubleClickLookup;
@@ -5533,7 +6089,10 @@ export default class LinguaStudyPlugin extends Plugin {
         }
       }
     }
-    if (this.settings.dailyNewWordLimit !== previousDailyNewWordLimit) {
+    if (
+      this.settings.dailyNewWordLimit !== previousDailyNewWordLimit ||
+      this.settings.fsrsRequestRetention !== previousFsrsRequestRetention
+    ) {
       this.notifyVocabularyChanged();
     }
     if (this.settings.desktopPlayerWidth !== previousDesktopPlayerWidth) {
@@ -5556,7 +6115,7 @@ export default class LinguaStudyPlugin extends Plugin {
       new Notice("当前视频正在创建学习内容，请稍候。", 4_000);
       return;
     }
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const view = this.getManualImportView();
     if (!view?.file || !view.editor) {
       new Notice("请先打开一篇 Markdown 笔记，再粘贴 B站或 YouTube 视频链接。", 6_000);
       return;
@@ -5569,7 +6128,11 @@ export default class LinguaStudyPlugin extends Plugin {
       editor.getValue()
     );
     if (links.length === 0) {
-      new Notice("当前笔记没有找到可处理的 B站或 YouTube 视频链接。请先粘贴链接，再点击左侧 Logo。", 7_000);
+      if (this.capabilities.desktop) {
+        await this.openLocalVideoImport(view);
+      } else {
+        new Notice("当前笔记没有找到可处理的 B站或 YouTube 视频链接。", 7_000);
+      }
       return;
     }
 
@@ -5590,6 +6153,39 @@ export default class LinguaStudyPlugin extends Plugin {
     } finally {
       this.setManualImportBusy(false);
     }
+  }
+
+  private async importLocalVideoFromActiveNote(): Promise<void> {
+    if (this.manualImportInProgress) {
+      new Notice("当前视频正在创建学习内容，请稍候。", 4_000);
+      return;
+    }
+    const view = this.getManualImportView();
+    if (!view?.file || !view.editor) {
+      new Notice("请先打开一篇 Markdown 笔记，再导入本地视频。", 6_000);
+      return;
+    }
+    await this.openLocalVideoImport(view);
+  }
+
+  private async openLocalVideoImport(view: MarkdownView): Promise<void> {
+    this.setManualImportBusy(true);
+    try {
+      await this.getLocalVideoImporter().importFromEditor(view.editor, view);
+    } finally {
+      this.setManualImportBusy(false);
+    }
+  }
+
+  private getManualImportView(): MarkdownView | null {
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (activeView?.file) {
+      return activeView;
+    }
+    const mainAreaLeaf = this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit);
+    return mainAreaLeaf?.view instanceof MarkdownView && mainAreaLeaf.view.file
+      ? mainAreaLeaf.view
+      : null;
   }
 
   private chooseManualVideoLink(links: PastedVideoLink[]): Promise<PastedVideoLink | null> {
@@ -5615,6 +6211,14 @@ export default class LinguaStudyPlugin extends Plugin {
     return result.text;
   }
 
+  openSelectionTranslation(sourceText: string): void {
+    new SelectionTranslationModal(
+      this.app,
+      sourceText,
+      () => this.translateSentence(sourceText)
+    ).open();
+  }
+
   async translateSentence(sourceText: string): Promise<TranslationResult> {
     return this.getTranslationService().translate(sourceText);
   }
@@ -5637,6 +6241,7 @@ export default class LinguaStudyPlugin extends Plugin {
   getFullDictionaryStatus(): FullDictionaryStatus {
     return this.fullDictionaryService?.getStatus() ?? {
       installed: false,
+      updateAvailable: false,
       manifest: null,
       cacheFolder: ""
     };
@@ -5703,16 +6308,18 @@ export default class LinguaStudyPlugin extends Plugin {
   }
 
   private syncDictionaryShardLoaders(): void {
-    const loaders = [];
+    const loaders: ExternalDictionarySourceConfig[] = [];
     if (this.customDictionaryService?.getStatus().installed) {
-      loaders.push((key: string) =>
-        this.customDictionaryService?.readCompressedShard(key) ?? null
-      );
+      loaders.push({
+        loader: (key: string) => this.customDictionaryService?.readCompressedShard(key) ?? null,
+        resolveDirectInflections: false
+      });
     }
     if (this.fullDictionaryService?.getStatus().installed) {
-      loaders.push((key: string) =>
-        this.fullDictionaryService?.readCompressedShard(key) ?? null
-      );
+      loaders.push({
+        loader: (key: string) => this.fullDictionaryService?.readCompressedShard(key) ?? null,
+        resolveDirectInflections: true
+      });
     }
     this.offlineDictionary.setExternalShardLoaders(loaders);
   }
@@ -5998,6 +6605,15 @@ export default class LinguaStudyPlugin extends Plugin {
     return book;
   }
 
+  async updateVocabularyEntry(
+    id: string,
+    input: VocabularyEditInput
+  ): Promise<VocabularyBookFile> {
+    const book = await this.getVocabularyStore().update(id, input);
+    this.notifyVocabularyChanged();
+    return book;
+  }
+
   async introduceVocabularyEntry(id: string, now: Date): Promise<VocabularyBookFile> {
     const book = await this.getVocabularyStore().introduce(id, now);
     this.notifyVocabularyChanged();
@@ -6009,7 +6625,12 @@ export default class LinguaStudyPlugin extends Plugin {
     rating: ReviewRating,
     now: Date
   ): Promise<VocabularyBookFile> {
-    const book = await this.getVocabularyStore().rate(id, rating, now);
+    const book = await this.getVocabularyStore().rate(
+      id,
+      rating,
+      now,
+      this.settings.fsrsRequestRetention
+    );
     this.notifyVocabularyChanged();
     return book;
   }
@@ -6223,6 +6844,16 @@ export default class LinguaStudyPlugin extends Plugin {
     );
   }
 
+  getLocalVideoPlaybackAsset(
+    config: LocalVideoCodeBlockConfig
+  ): Promise<LocalVideoPlaybackAsset> {
+    return this.getLocalVideoImporter().exposeVideo(config.videoPath, config.localId);
+  }
+
+  relinkLocalVideo(sourcePath: string, localId: string): Promise<void> {
+    return this.getLocalVideoImporter().relinkVideo(sourcePath, localId);
+  }
+
   async openBilibiliCacheFolder(): Promise<void> {
     this.requireCapability(this.capabilities.bilibiliVideoCache, "B站视频缓存");
     await this.getBilibiliCacheService().openCacheFolder();
@@ -6410,6 +7041,13 @@ export default class LinguaStudyPlugin extends Plugin {
       throw new Error("B站播放器导入功能尚未初始化，请重新加载插件。");
     }
     return this.bilibiliImporter;
+  }
+
+  private getLocalVideoImporter(): LocalVideoImportController {
+    if (!this.localVideoImporter) {
+      throw new Error("本地视频导入功能仅支持 Obsidian 电脑端。");
+    }
+    return this.localVideoImporter;
   }
 
   private getBilibiliCacheService(): BilibiliCacheService {
