@@ -2,6 +2,22 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 1.5.2 - 2026-09-18
+
+### Added
+
+- Added a machine-local Bilibili video cache-folder selector for macOS and Windows
+- Added settings actions to open the active cache folder or restore the system default path
+
+### Changed
+
+- New Bilibili video downloads are written only to the selected custom folder, while existing cache files in the legacy default folder remain available as a read-only fallback
+- Cache-folder changes take effect after reloading Obsidian and never move or delete existing video files automatically
+
+### Fixed
+
+- Prevented custom Bilibili cache folders inside the Obsidian vault and stopped unavailable custom folders from silently writing new videos back to the default location
+
 ## 1.4.2 - 2026-09-11
 
 ### Fixed
