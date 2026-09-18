@@ -437,21 +437,89 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "缓存位置",
-              desc: `缓存位于系统目录，不参与 Obsidian 同步：${this.plugin.getBilibiliCacheFolder()}`
+              render: (setting) => {
+                const renderStatus = (): void => {
+                  const status = this.plugin.getBilibiliCachePathStatus();
+                  setting.descEl.empty();
+                  setting.descEl.createDiv({
+                    text: `当前生效：${status.activeFolder}`
+                  });
+                  if (status.pendingFolder) {
+                    setting.descEl.createDiv({
+                      cls: "lingua-study-settings-status is-warning",
+                      text: `重载后生效：${status.pendingFolder}`
+                    });
+                  }
+                  setting.descEl.createDiv({
+                    text: status.legacyFallbackEnabled
+                      ? `旧默认缓存仍可只读兼容：${status.defaultFolder}`
+                      : "使用系统默认目录；视频缓存不参与 Obsidian 同步。"
+                  });
+                };
+                renderStatus();
+              }
             },
             {
-              name: "管理缓存视频",
-              desc: "打开缓存文件夹；删除文件后改用在线播放。",
+              name: "管理缓存路径",
+              desc: "可选择仓库外的本地或移动磁盘目录；修改后需重载 Obsidian。",
               render: (setting) => {
+                const buttons: HTMLButtonElement[] = [];
+                const setBusy = (busy: boolean): void => {
+                  for (const button of buttons) {
+                    button.disabled = busy;
+                  }
+                };
                 setting.addButton((button) => {
+                  buttons.push(button.buttonEl);
+                  button.setButtonText("选择缓存目录").onClick(async () => {
+                    setBusy(true);
+                    try {
+                      const selected = await this.plugin.chooseBilibiliCacheFolder();
+                      if (selected) {
+                        new Notice("已保存自定义缓存目录，重新加载 Obsidian 后生效。", 7_000);
+                      }
+                    } catch (error) {
+                      new Notice(
+                        error instanceof Error ? error.message : "缓存目录保存失败。",
+                        8_000
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  });
+                });
+                setting.addButton((button) => {
+                  buttons.push(button.buttonEl);
                   button.setButtonText("打开缓存文件夹").onClick(async () => {
-                    button.setDisabled(true);
+                    setBusy(true);
                     try {
                       await this.plugin.openBilibiliCacheFolder();
-                    } catch {
-                      new Notice("无法打开缓存文件夹，请检查系统文件管理器权限。", 6_000);
+                    } catch (error) {
+                      new Notice(
+                        error instanceof Error
+                          ? error.message
+                          : "无法打开缓存文件夹，请检查系统文件管理器权限。",
+                        7_000
+                      );
                     } finally {
-                      button.setDisabled(false);
+                      setBusy(false);
+                    }
+                  });
+                });
+                setting.addButton((button) => {
+                  buttons.push(button.buttonEl);
+                  button.setButtonText("恢复默认路径").onClick(async () => {
+                    setBusy(true);
+                    try {
+                      await this.plugin.restoreDefaultBilibiliCacheFolder();
+                      new Notice("已恢复默认路径，重新加载 Obsidian 后生效；原缓存文件不会删除。", 8_000);
+                    } catch (error) {
+                      new Notice(
+                        error instanceof Error ? error.message : "恢复默认路径失败。",
+                        7_000
+                      );
+                    } finally {
+                      setBusy(false);
                     }
                   });
                 });

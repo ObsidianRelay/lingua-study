@@ -102,6 +102,7 @@ import type {
   CachedBilibiliVideo,
   LocalVideoPlaybackAsset
 } from "./bilibili-cache";
+import type { BilibiliCacheDeviceSettingsService } from "./bilibili-cache-settings";
 import { BilibiliSessionService, type BilibiliSessionStatus } from "./bilibili-session";
 import {
   findSupportedVideoLinksByPriority,
@@ -5597,6 +5598,8 @@ export default class LinguaStudyPlugin extends Plugin {
   private bilibiliImporter: BilibiliImportController | null = null;
   private localVideoImporter: LocalVideoImportController | null = null;
   private bilibiliCacheService: BilibiliCacheService | null = null;
+  private bilibiliCacheDeviceSettingsService: BilibiliCacheDeviceSettingsService | null = null;
+  private configuredBilibiliCacheFolder: string | null = null;
   private bilibiliSessionService: BilibiliSessionService | null = null;
   private localWhisperService: LocalWhisperService | null = null;
   private readonly transcriptWriteQueue = new AsyncKeyedQueue();
@@ -5623,6 +5626,7 @@ export default class LinguaStudyPlugin extends Plugin {
         { FullDictionaryService },
         { CustomDictionaryService },
         { BilibiliCacheService },
+        { BilibiliCacheDeviceSettingsService },
         { LocalWhisperService },
         { removeLegacyWhisperCachesOnce },
         { fetchTranscriptWithYtDlp }
@@ -5630,6 +5634,7 @@ export default class LinguaStudyPlugin extends Plugin {
         import("./full-dictionary"),
         import("./custom-dictionary"),
         import("./bilibili-cache"),
+        import("./bilibili-cache-settings"),
         import("./local-whisper"),
         import("./legacy-whisper-cleanup"),
         import("./yt-dlp")
@@ -5641,7 +5646,18 @@ export default class LinguaStudyPlugin extends Plugin {
         this.customDictionaryService.initialize()
       ]);
       this.syncDictionaryShardLoaders();
-      this.bilibiliCacheService = new BilibiliCacheService();
+      this.bilibiliCacheDeviceSettingsService = new BilibiliCacheDeviceSettingsService({
+        vaultRoot: this.getDesktopVaultRoot()
+      });
+      const cacheDeviceSettings = await this.bilibiliCacheDeviceSettingsService.load();
+      this.configuredBilibiliCacheFolder = cacheDeviceSettings.bilibiliCacheFolder;
+      const defaultCacheFolder = this.bilibiliCacheDeviceSettingsService.defaultCacheFolder;
+      const primaryCacheFolder = this.configuredBilibiliCacheFolder ?? defaultCacheFolder;
+      this.bilibiliCacheService = new BilibiliCacheService({
+        primaryFolder: primaryCacheFolder,
+        fallbackFolders: this.configuredBilibiliCacheFolder ? [defaultCacheFolder] : [],
+        primaryFolderIsCustom: this.configuredBilibiliCacheFolder !== null
+      });
       const { LocalVideoImportController } = await import("./local-video-import");
       this.localVideoImporter = new LocalVideoImportController(
         this.app,
@@ -5871,6 +5887,8 @@ export default class LinguaStudyPlugin extends Plugin {
     this.localVideoImporter = null;
     this.fullDictionaryService = null;
     this.customDictionaryService = null;
+    this.bilibiliCacheDeviceSettingsService = null;
+    this.configuredBilibiliCacheFolder = null;
     this.bilibiliSessionService = null;
     this.bilibiliCacheService = null;
     this.bilibiliImporter = null;
@@ -6875,6 +6893,46 @@ export default class LinguaStudyPlugin extends Plugin {
     return this.bilibiliCacheService?.cacheFolder ?? "移动端不使用本地视频缓存";
   }
 
+  getBilibiliCachePathStatus(): {
+    activeFolder: string;
+    defaultFolder: string;
+    configuredFolder: string | null;
+    pendingFolder: string | null;
+    legacyFallbackEnabled: boolean;
+  } {
+    const service = this.bilibiliCacheDeviceSettingsService;
+    const activeFolder = this.getBilibiliCacheFolder();
+    const defaultFolder = service?.defaultCacheFolder ?? activeFolder;
+    const nextFolder = this.configuredBilibiliCacheFolder ?? defaultFolder;
+    return {
+      activeFolder,
+      defaultFolder,
+      configuredFolder: this.configuredBilibiliCacheFolder,
+      pendingFolder: nextFolder === activeFolder ? null : nextFolder,
+      legacyFallbackEnabled: activeFolder !== defaultFolder
+    };
+  }
+
+  async chooseBilibiliCacheFolder(): Promise<string | null> {
+    this.requireCapability(this.capabilities.bilibiliVideoCache, "B站视频缓存");
+    const service = this.getBilibiliCacheDeviceSettingsService();
+    const selected = await service.chooseFolder(
+      this.configuredBilibiliCacheFolder ?? service.defaultCacheFolder
+    );
+    if (!selected) {
+      return null;
+    }
+    const saved = await service.saveCustomFolder(selected);
+    this.configuredBilibiliCacheFolder = saved;
+    return saved;
+  }
+
+  async restoreDefaultBilibiliCacheFolder(): Promise<void> {
+    this.requireCapability(this.capabilities.bilibiliVideoCache, "B站视频缓存");
+    await this.getBilibiliCacheDeviceSettingsService().restoreDefault();
+    this.configuredBilibiliCacheFolder = null;
+  }
+
   getWhisperAlignmentCacheFolder(): string {
     return this.localWhisperService?.cacheFolder ?? "移动端不使用本地 Whisper 缓存";
   }
@@ -7067,6 +7125,24 @@ export default class LinguaStudyPlugin extends Plugin {
       throw new Error("B站视频缓存功能尚未初始化，请重新加载插件。");
     }
     return this.bilibiliCacheService;
+  }
+
+  private getBilibiliCacheDeviceSettingsService(): BilibiliCacheDeviceSettingsService {
+    if (!this.bilibiliCacheDeviceSettingsService) {
+      throw new Error("B站缓存路径设置尚未初始化，请重新加载插件。");
+    }
+    return this.bilibiliCacheDeviceSettingsService;
+  }
+
+  private getDesktopVaultRoot(): string {
+    const adapter = this.app.vault.adapter as typeof this.app.vault.adapter & {
+      getBasePath?: () => string;
+    };
+    const basePath = adapter.getBasePath?.();
+    if (!basePath) {
+      throw new Error("无法读取当前 Obsidian 仓库路径。");
+    }
+    return basePath;
   }
 
   private getLocalWhisperService(): LocalWhisperService {

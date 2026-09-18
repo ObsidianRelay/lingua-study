@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { constants, createReadStream, createWriteStream } from "node:fs";
+import { mkdir, open, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { get as httpsGet } from "node:https";
 import { homedir } from "node:os";
@@ -15,6 +15,11 @@ import {
   MAX_BILIBILI_CACHE_VIDEO_BYTES,
   parseBilibiliMediaByteRange
 } from "./bilibili-cache-core";
+import {
+  readCachedBilibiliFiles,
+  readCachedBilibiliFilesFromFolder,
+  type BilibiliCacheManifest
+} from "./bilibili-cache-storage";
 
 const BILIBILI_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
@@ -37,23 +42,6 @@ interface BilibiliDownloadSource {
   backupUrls: string[];
   size: number;
   duration: number;
-}
-
-interface BilibiliCacheManifest {
-  version: 1;
-  platform: "bilibili";
-  bvid: string;
-  aid: number;
-  cid: number;
-  page: number;
-  title: string;
-  sourceUrl: string;
-  createdAt: string;
-  segments: Array<{
-    file: string;
-    size: number;
-    duration: number;
-  }>;
 }
 
 export interface CachedBilibiliVideo {
@@ -80,6 +68,12 @@ export interface LocalVideoPlaybackAsset {
   title: string;
 }
 
+export interface BilibiliCacheServiceOptions {
+  primaryFolder?: string;
+  fallbackFolders?: readonly string[];
+  primaryFolderIsCustom?: boolean;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -89,7 +83,9 @@ function readPositiveInteger(value: unknown): number | null {
 }
 
 export class BilibiliCacheService {
-  readonly cacheFolder = getDefaultBilibiliCacheFolder(process.platform, homedir(), process.env);
+  readonly cacheFolder: string;
+  readonly fallbackFolders: readonly string[];
+  private readonly primaryFolderIsCustom: boolean;
   private readonly mediaToken = randomBytes(24).toString("hex");
   private readonly allowedLocalAssets = new Map<
     string,
@@ -99,12 +95,22 @@ export class BilibiliCacheService {
   private mediaServerPort: number | null = null;
   private mediaServerStart: Promise<number> | null = null;
 
+  constructor(options: BilibiliCacheServiceOptions = {}) {
+    this.cacheFolder = options.primaryFolder ?? getDefaultBilibiliCacheFolder(
+      process.platform,
+      homedir(),
+      process.env
+    );
+    this.fallbackFolders = [...new Set(
+      (options.fallbackFolders ?? []).filter((folder) => folder !== this.cacheFolder)
+    )];
+    this.primaryFolderIsCustom = options.primaryFolderIsCustom ?? false;
+  }
+
   async cacheVideo(
     link: BilibiliVideoLink,
     onProgress: (message: string) => void
   ): Promise<BilibiliCacheResult> {
-    await mkdir(this.cacheFolder, { recursive: true });
-
     if (link.idType === "bvid") {
       const existing = await this.readCachedVideo(link.videoId, link.page);
       if (existing) {
@@ -127,6 +133,7 @@ export class BilibiliCacheService {
       return { link: canonicalLink, cached: existing, reused: true };
     }
 
+    await this.ensurePrimaryFolderWritable();
     onProgress("正在获取 B站公开缓存地址…");
     const sources = await this.fetchDownloadSources(metadata);
     const totalSize = sources.reduce((sum, source) => sum + source.size, 0);
@@ -168,7 +175,7 @@ export class BilibiliCacheService {
     await writeFile(temporaryManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     await rm(manifestPath, { force: true });
     await rename(temporaryManifestPath, manifestPath);
-    const cached = await this.readCachedVideo(metadata.bvid, metadata.page);
+    const cached = await this.readCachedVideoFromPrimary(metadata.bvid, metadata.page);
     if (!cached) {
       throw new Error("视频已经下载，但缓存清单校验失败，请打开缓存文件夹检查磁盘权限。");
     }
@@ -220,7 +227,14 @@ export class BilibiliCacheService {
   }
 
   async openCacheFolder(): Promise<void> {
-    await mkdir(this.cacheFolder, { recursive: true });
+    if (this.primaryFolderIsCustom) {
+      const info = await stat(this.cacheFolder).catch(() => null);
+      if (!info?.isDirectory()) {
+        throw new Error(this.customFolderUnavailableMessage());
+      }
+    } else {
+      await mkdir(this.cacheFolder, { recursive: true });
+    }
     const command = process.platform === "darwin"
       ? "/usr/bin/open"
       : process.platform === "win32"
@@ -485,77 +499,71 @@ export class BilibiliCacheService {
   }
 
   private async readCachedVideo(bvid: string, page: number): Promise<CachedBilibiliVideo | null> {
-    let baseName: string;
-    try {
-      baseName = buildBilibiliCacheBaseName(bvid, page);
-    } catch {
-      return null;
-    }
-    const manifestPath = join(this.cacheFolder, `${baseName}.json`);
-    let value: unknown;
-    try {
-      value = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
-    } catch {
-      return null;
-    }
-    if (!isRecord(value) || value.version !== 1 || value.platform !== "bilibili") {
-      return null;
-    }
-    if (value.bvid !== bvid || value.page !== page || !Array.isArray(value.segments)) {
-      return null;
-    }
-    const aid = readPositiveInteger(value.aid);
-    const cid = readPositiveInteger(value.cid);
-    if (aid === null || cid === null || value.segments.length === 0) {
-      return null;
-    }
-
-    const segments: BilibiliCacheManifest["segments"] = [];
-    const filePaths: string[] = [];
-    for (const entry of value.segments) {
-      if (!isRecord(entry) || typeof entry.file !== "string" || basename(entry.file) !== entry.file) {
-        return null;
-      }
-      const expectedSize = readPositiveInteger(entry.size);
-      if (expectedSize === null) {
-        return null;
-      }
-      const filePath = join(this.cacheFolder, entry.file);
-      try {
-        const fileStat = await stat(filePath);
-        if (!fileStat.isFile() || fileStat.size !== expectedSize) {
-          return null;
-        }
-      } catch {
-        return null;
-      }
-      segments.push({
-        file: entry.file,
-        size: expectedSize,
-        duration: typeof entry.duration === "number" && Number.isFinite(entry.duration)
-          ? Math.max(0, entry.duration)
-          : 0
-      });
-      filePaths.push(filePath);
-    }
-
-    const manifest: BilibiliCacheManifest = {
-      version: 1,
-      platform: "bilibili",
+    const cached = await readCachedBilibiliFiles(
+      this.cacheFolder,
+      this.fallbackFolders,
       bvid,
-      aid,
-      cid,
-      page,
-      title: typeof value.title === "string" ? value.title : bvid,
-      sourceUrl: typeof value.sourceUrl === "string" ? value.sourceUrl : `https://www.bilibili.com/video/${bvid}`,
-      createdAt: typeof value.createdAt === "string" ? value.createdAt : "",
-      segments
-    };
+      page
+    );
+    return cached ? this.exposeCachedFiles(cached.manifest, cached.filePaths) : null;
+  }
+
+  private async readCachedVideoFromPrimary(
+    bvid: string,
+    page: number
+  ): Promise<CachedBilibiliVideo | null> {
+    const cached = await readCachedBilibiliFilesFromFolder(this.cacheFolder, bvid, page);
+    return cached ? this.exposeCachedFiles(cached.manifest, cached.filePaths) : null;
+  }
+
+  private async exposeCachedFiles(
+    manifest: BilibiliCacheManifest,
+    filePaths: string[]
+  ): Promise<CachedBilibiliVideo> {
     return {
       manifest,
       filePaths,
       fileUrls: await this.createMediaUrls(filePaths)
     };
+  }
+
+  private async ensurePrimaryFolderWritable(): Promise<void> {
+    let probePath: string | null = null;
+    try {
+      if (this.primaryFolderIsCustom) {
+        const info = await stat(this.cacheFolder);
+        if (!info.isDirectory()) {
+          throw new Error("路径不是文件夹");
+        }
+      } else {
+        await mkdir(this.cacheFolder, { recursive: true });
+      }
+      probePath = join(
+        this.cacheFolder,
+        `.lingua-study-write-${randomBytes(8).toString("hex")}.tmp`
+      );
+      const handle = await open(
+        probePath,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+        0o600
+      );
+      await handle.close();
+      await rm(probePath, { force: true });
+    } catch (error) {
+      if (probePath) {
+        await rm(probePath, { force: true }).catch(() => undefined);
+      }
+      if (this.primaryFolderIsCustom) {
+        throw new Error(this.customFolderUnavailableMessage(), { cause: error });
+      }
+      throw new Error("无法写入 B站视频缓存目录，请检查磁盘空间和系统权限。", {
+        cause: error
+      });
+    }
+  }
+
+  private customFolderUnavailableMessage(): string {
+    return "B站自定义缓存目录当前不可用。请重新连接磁盘、重新选择目录或恢复默认路径。";
   }
 
   private async createMediaUrls(filePaths: string[]): Promise<string[]> {

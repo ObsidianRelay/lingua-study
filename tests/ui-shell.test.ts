@@ -26,6 +26,7 @@ test("正式版保持桌面限定且移动端测试框架只按需加载电脑�
   for (const moduleName of [
     "full-dictionary",
     "bilibili-cache",
+    "bilibili-cache-settings",
     "local-whisper",
     "legacy-whisper-cleanup",
     "yt-dlp"
@@ -255,6 +256,27 @@ test("电脑端可选择本地 MP4 与同名字幕并在路径失效后重新关
   assert.match(importer, /text: "生成学习资料"/u);
   assert.match(importer, /replaceLocalVideoPathInStudyBlock/u);
   assert.match(cache, /exposeExternalMp4/u);
+});
+
+test("B站视频缓存支持本机自定义路径与旧目录回退", async () => {
+  const [main, settings, cache, deviceSettings, deviceSettingsCore] = await Promise.all([
+    readFile("src/main.ts", "utf8"),
+    readFile("src/settings.ts", "utf8"),
+    readFile("src/bilibili-cache.ts", "utf8"),
+    readFile("src/bilibili-cache-settings.ts", "utf8"),
+    readFile("src/bilibili-cache-settings-core.ts", "utf8")
+  ]);
+  assert.match(main, /fallbackFolders: this\.configuredBilibiliCacheFolder \? \[defaultCacheFolder\] : \[\]/u);
+  assert.match(main, /chooseBilibiliCacheFolder/u);
+  assert.match(main, /restoreDefaultBilibiliCacheFolder/u);
+  assert.match(settings, /setButtonText\("选择缓存目录"\)/u);
+  assert.match(settings, /setButtonText\("恢复默认路径"\)/u);
+  assert.match(settings, /重新加载 Obsidian 后生效/u);
+  assert.match(cache, /readCachedBilibiliFiles\(/u);
+  assert.match(cache, /readCachedBilibiliFilesFromFolder\(this\.cacheFolder/u);
+  assert.match(cache, /B站自定义缓存目录当前不可用/u);
+  assert.match(deviceSettingsCore, /device-settings\.json/u);
+  assert.doesNotMatch(deviceSettings, /saveData|loadData/u);
 });
 
 test("设置页样式统一导航卡片、状态和窄窗口布局", async () => {

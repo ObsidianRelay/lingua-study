@@ -12,6 +12,9 @@ await esbuild.build({
   entryPoints: [
     "tests/bilibili-api-core.test.ts",
     "tests/bilibili-cache-core.test.ts",
+    "tests/bilibili-cache-settings-core.test.ts",
+    "tests/bilibili-cache-settings.test.ts",
+    "tests/bilibili-cache-storage.test.ts",
     "tests/bilibili-session-core.test.ts",
     "tests/async-keyed-queue.test.ts",
     "tests/document-transcript-core.test.ts",
