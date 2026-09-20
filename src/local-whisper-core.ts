@@ -110,13 +110,27 @@ export function whisperChunksToTokens(
 export function whisperTokensToTranscriptSegments(
   tokens: readonly TimedRecognitionToken[]
 ): TranscriptSegment[] {
-  const wordSegments = tokens.flatMap((token): TranscriptSegment[] => {
+  const rawWordSegments = tokens.flatMap((token): TranscriptSegment[] => {
     const text = (token.spokenText ?? token.text).trim();
     return Number.isFinite(token.start) && Number.isFinite(token.end) &&
       token.start >= 0 && token.end > token.start && text !== ""
       ? [{ start: token.start, end: token.end, text }]
       : [];
-  });
+  }).sort((left, right) => left.start - right.start || left.end - right.end);
+  const wordSegments: TranscriptSegment[] = [];
+  for (const segment of rawWordSegments) {
+    const previous = wordSegments.at(-1);
+    if (!previous || segment.start >= previous.end) {
+      wordSegments.push(segment);
+      continue;
+    }
+    // Whisper 的滑动窗口偶尔会在接缝处返回重复或交叉的词级时间。
+    // 无法为完全重叠的词伪造可靠时间，直接忽略；部分重叠则裁剪到上一词末尾。
+    if (segment.end <= previous.end) {
+      continue;
+    }
+    wordSegments.push({ ...segment, start: previous.end });
+  }
   if (wordSegments.length === 0) {
     throw new Error("本地语音识别没有生成可保存的英文字幕。");
   }
