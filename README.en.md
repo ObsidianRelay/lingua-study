@@ -2,7 +2,7 @@
 
 [简体中文](./README.md) | [English](./README.en.md)
 
-Turn English YouTube and Bilibili videos into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
+Turn English YouTube and Bilibili videos, plus public Podcast RSS episodes, into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
 > Lingua Study 1.5.2 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
@@ -43,6 +43,7 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 - Local SRT/VTT import when public captions cannot be fetched
 - Desktop import for one local MP4 or a folder of MP4 files, with automatic same-name SRT/VTT matching
 - A follow-up **Add transcript** entry on player-only Bilibili blocks
+- Public Podcast RSS and Atom import, preferring publisher-provided English VTT/SRT transcripts and otherwise using desktop-local Whisper Base English
 - Editable PDF, DOCX, TXT, Markdown, and pasted bilingual transcript import
 - Optional local Whisper Base English alignment that keeps media and transcripts on the device
 - Play, pause, seek backward or forward by five seconds
@@ -127,6 +128,14 @@ Transcript creation follows this order:
 After a player-only block is created, the original visible Bilibili link is removed while surrounding note text is retained. A compact caption icon remains next to the source-video button so that SRT/VTT or a creator-provided PDF, DOCX, TXT, Markdown, or pasted transcript can be added later. Imported Chinese is stored as the corresponding local translation without calling the translation API.
 
 The video cache directory can be opened from **Settings → Community plugins → Lingua Study → 哔哩哔哩视频与登录 → 打开缓存文件夹**. Cached video is outside the Obsidian vault and is not managed by Obsidian Sync. The generated transcript JSON remains in the configured transcript folder inside the vault. The Bilibili login cookie remains in Electron's isolated persistent session and is not written into notes, transcript files, plugin settings, or Obsidian Sync. It can be cleared from the same settings section.
+
+### Import a Podcast RSS feed
+
+1. Open the Markdown note where the study block should be inserted.
+2. Run **从 podcast RSS 创建学习内容** from the command palette.
+3. Paste a public RSS or Atom feed URL and choose an episode.
+
+Episode audio is cached outside the vault (`~/Library/Caches/Lingua Study/Podcasts` on macOS), so Obsidian Sync never uploads it. Podcasting 2.0 English `.vtt` / `.srt` transcripts are used first. Otherwise, the first import asks before downloading Whisper Base English and generates the English timeline locally. Episodes larger than 512 MB are rejected, and the same episode is not inserted twice in the current note.
 
 ### Local video and subtitle import
 
