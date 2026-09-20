@@ -47,3 +47,12 @@ test("字幕校验接受插件生成的本地视频来源但拒绝任意协议",
     /HTTPS\/本地视频来源/u
   );
 });
+
+test("字幕校验接受公开 HTTPS Podcast 节目 ID", () => {
+  const podcast = validateTranscript({
+    ...transcript,
+    videoId: "podcast-drmw5siPhseMEpsfLMNrDo",
+    sourceUrl: "https://dcs-cached.megaphone.fm/episode.mp3"
+  });
+  assert.equal(podcast.videoId, "podcast-drmw5siPhseMEpsfLMNrDo");
+});

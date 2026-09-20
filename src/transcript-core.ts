@@ -29,9 +29,9 @@ export function validateTranscript(value: unknown): TranscriptFile {
   }
   if (
     typeof data.videoId !== "string" ||
-    !/^(?:[A-Za-z0-9_-]{11}|BV[0-9A-Za-z]{10})$/u.test(data.videoId)
+    !/^(?:[A-Za-z0-9_-]{11}|BV[0-9A-Za-z]{10}|podcast-[A-Za-z0-9_-]{22})$/u.test(data.videoId)
   ) {
-    throw new Error("videoId 格式不正确，应为 11 位 YouTube ID 或有效的 B站 BV 号。");
+    throw new Error("videoId 格式不正确，应为 11 位 YouTube ID、有效的 B站 BV 号或 Podcast 节目 ID。");
   }
   const sourceUrl = typeof data.sourceUrl === "string" ? data.sourceUrl : "";
   const validSourceUrl = sourceUrl.startsWith("https://") ||
