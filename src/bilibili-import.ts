@@ -359,6 +359,73 @@ export class BilibiliImportController {
     }
   }
 
+  /**
+   * 从已经创建的播放器重新触发本地英文识别。
+   * 初次导入会先写入播放器代码块；因此识别中断后必须提供一个不依赖原始编辑器内容的重试入口。
+   */
+  async retryLocalWhisper(
+    sourcePath: string,
+    identity: Pick<BilibiliVideoLink, "idType" | "videoId" | "page">
+  ): Promise<void> {
+    if (!this.cacheService || !this.localWhisper) {
+      throw new Error("本地 Whisper 英语识别仅支持可缓存视频的电脑端。");
+    }
+    if (!await this.localWhisper.hasCachedModel() &&
+      !await confirmLocalWhisperDownload(this.app)) {
+      return;
+    }
+
+    const requestKey = `${identity.idType}:${identity.videoId}:p${identity.page}`;
+    if (this.activeVideos.has(requestKey)) {
+      new Notice("这个哔哩哔哩视频正在本地识别，请等待完成后再试。", 5_000);
+      return;
+    }
+    const link: BilibiliVideoLink = {
+      kind: "video",
+      ...identity,
+      canonicalUrl: identity.idType === "bvid"
+        ? `https://www.bilibili.com/video/${identity.videoId}${identity.page > 1 ? `?p=${identity.page}` : ""}`
+        : `https://www.bilibili.com/video/av${identity.videoId.slice(2)}${identity.page > 1 ? `?p=${identity.page}` : ""}`,
+      originalUrl: identity.idType === "bvid"
+        ? `https://www.bilibili.com/video/${identity.videoId}`
+        : `https://www.bilibili.com/video/av${identity.videoId.slice(2)}`
+    };
+    const progress = new Notice("正在准备本地缓存视频…", 0);
+    this.activeVideos.add(requestKey);
+    try {
+      const cached = await this.cacheService.cacheVideo(
+        link,
+        (message) => progress.setMessage(message)
+      );
+      const tokens = await this.localWhisper.transcribe(
+        cached.cached,
+        (message) => progress.setMessage(message)
+      );
+      const segments = whisperTokensToTranscriptSegments(tokens);
+      if (segments.length === 0) {
+        throw new Error("本地识别没有得到可用的英文时间轴，请改为导入字幕或博主文稿。");
+      }
+      progress.setMessage("正在保存本地识别的英文字幕…");
+      await this.applyImportedTranscript(
+        sourcePath,
+        cached.link,
+        segments,
+        [],
+        "本地 Whisper Base English 识别"
+      );
+      progress.hide();
+      new Notice(`已通过本地 Whisper 生成 ${segments.length} 条英文字幕。`, 9_000);
+    } catch (error) {
+      progress.hide();
+      new Notice(
+        `本地英语识别未完成；可重新尝试或导入字幕/博主文稿。${errorMessage(error)}`,
+        9_000
+      );
+    } finally {
+      this.activeVideos.delete(requestKey);
+    }
+  }
+
   async cleanupLegacyVisibleLink(
     sourcePath: string,
     identity: Pick<BilibiliVideoLink, "idType" | "videoId" | "page">
