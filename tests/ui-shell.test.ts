@@ -61,6 +61,7 @@ test("Podcast RSS 命令创建桌面本地播放器与字幕学习块", async ()
   ]);
   assert.match(main, /id: "import-podcast-rss"/u);
   assert.match(main, /name: "从 podcast RSS 创建学习内容"/u);
+  assert.match(main, /id: "import-podcast-rss"[\s\S]*?checkCallback:/u);
   assert.match(main, /if \(config\.kind === "podcast"\)/u);
   assert.match(main, /this\.renderPodcastPlayer\(cached, transcriptData\)/u);
   assert.match(importer, /selectEnglishPodcastTranscript/u);

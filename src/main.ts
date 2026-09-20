@@ -5924,9 +5924,16 @@ export default class LinguaStudyPlugin extends Plugin {
     this.addCommand({
       id: "import-podcast-rss",
       name: "从 podcast RSS 创建学习内容",
-      editorCheckCallback: (checking, editor, context) => {
-        if (!this.capabilities.desktop || !(context instanceof MarkdownView)) return false;
-        if (!checking) void this.getPodcastImporter().importFromEditor(editor, context);
+      checkCallback: (checking) => {
+        if (!this.capabilities.desktop) return false;
+        if (!checking) {
+          const view = this.getManualImportView();
+          if (!view?.editor) {
+            new Notice("请先打开一篇 Markdown 笔记，再从 podcast RSS 创建学习内容。", 6_000);
+            return true;
+          }
+          void this.getPodcastImporter().importFromEditor(view.editor, view);
+        }
         return true;
       }
     });
