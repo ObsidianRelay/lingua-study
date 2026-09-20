@@ -54,6 +54,20 @@ test("YouTube 独立移动端回退不打包固定 InnerTube key", async () => {
   assert.doesNotMatch(source, /YTRANSCRIPT_INNERTUBE_API_KEY/u);
 });
 
+test("Podcast RSS 命令创建桌面本地播放器与字幕学习块", async () => {
+  const [main, importer] = await Promise.all([
+    readFile("src/main.ts", "utf8"),
+    readFile("src/podcast-import.ts", "utf8")
+  ]);
+  assert.match(main, /id: "import-podcast-rss"/u);
+  assert.match(main, /name: "从 podcast RSS 创建学习内容"/u);
+  assert.match(main, /if \(config\.kind === "podcast"\)/u);
+  assert.match(main, /this\.renderPodcastPlayer\(cached, transcriptData\)/u);
+  assert.match(importer, /selectEnglishPodcastTranscript/u);
+  assert.match(importer, /this\.localWhisper\.transcribe/u);
+  assert.match(importer, /extractPodcastSourceIdsFromStudyBlocks/u);
+});
+
 test("文稿行操作重绘后保留列表与弹窗滚动位置", async () => {
   const source = await readFile("src/document-transcript-import.ts", "utf8");
   assert.match(source, /const listScrollTop = previousList\?\.scrollTop \?\? this\.previewListScrollTop/u);
