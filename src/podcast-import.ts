@@ -7,6 +7,7 @@ import type { LocalWhisperService } from "./local-whisper";
 import { PodcastCacheService, type CachedPodcastEpisode } from "./podcast-cache";
 import { PodcastImportLog } from "./podcast-import-log";
 import { parsePodcastFeed, selectEnglishPodcastTranscript, type PodcastEpisode, type PodcastFeed } from "./podcast-rss-core";
+import { buildApplePodcastLookupUrl, parseApplePodcastFeedUrl, parsePodcastSourceInput } from "./podcast-source-core";
 import type { LinguaStudySettings } from "./settings";
 import { validateTranscript, type TranscriptSegment } from "./transcript-core";
 
@@ -20,8 +21,8 @@ class PodcastUrlModal extends Modal {
 
   onOpen(): void {
     this.titleEl.setText("导入 podcast RSS");
-    this.contentEl.createEl("p", { text: "粘贴公开播客 RSS 或 atom feed 地址。" });
-    const input = this.contentEl.createEl("input", { type: "url", placeholder: "https://example.com/podcast.xml" });
+    this.contentEl.createEl("p", { text: "粘贴 apple podcasts 节目链接，或公开播客 RSS / atom 地址。" });
+    const input = this.contentEl.createEl("input", { type: "url", placeholder: "https://podcasts.apple.com/… 或 https://example.com/podcast.xml" });
     input.focus();
     const actions = this.contentEl.createDiv({ cls: "lingua-study-import-actions" });
     actions.createEl("button", { text: "取消" }).addEventListener("click", () => this.finish(null));
@@ -70,11 +71,15 @@ export class PodcastImportController {
     const log = new PodcastImportLog();
     let progress = new Notice("正在读取播客 RSS…", 0);
     try {
-      await log.write("start", `读取 RSS：${new URL(url).origin}`);
-      const feedResponse = await requestUrl({ url, method: "GET", throw: false });
+      const source = parsePodcastSourceInput(url);
+      const feedUrl = source.kind === "apple"
+        ? await this.resolveApplePodcastFeedUrl(source.collectionId, log, progress)
+        : source.feedUrl;
+      await log.write("start", `读取 RSS：${new URL(feedUrl).origin}`);
+      const feedResponse = await requestUrl({ url: feedUrl, method: "GET", throw: false });
       if (feedResponse.status < 200 || feedResponse.status >= 300) throw new Error(`播客 RSS 请求失败（HTTP ${feedResponse.status}）。`);
       if (feedResponse.arrayBuffer.byteLength > MAX_FEED_BYTES) throw new Error("播客 RSS 超过 10 MB，已停止读取。");
-      const feed = parsePodcastFeed(feedResponse.text, url);
+      const feed = parsePodcastFeed(feedResponse.text, feedUrl);
       await log.write("feed", `解析成功，节目数 ${feed.episodes.length}`);
       progress.hide();
       const episode = await new Promise<PodcastEpisode | null>((resolve) => new PodcastEpisodeModal(this.app, feed, resolve).open());
@@ -104,6 +109,26 @@ export class PodcastImportController {
       await log.write("error", error instanceof Error && error.stack ? `${message}\n${error.stack}` : message);
       new Notice(message, 9_000);
     }
+  }
+
+  private async resolveApplePodcastFeedUrl(
+    collectionId: string,
+    log: PodcastImportLog,
+    progress: Notice
+  ): Promise<string> {
+    progress.setMessage("正在从 Apple Podcasts 查找节目 RSS…");
+    await log.write("apple", `解析 Apple Podcasts 节目 ${collectionId}`);
+    const response = await requestUrl({
+      url: buildApplePodcastLookupUrl(collectionId),
+      method: "GET",
+      throw: false
+    });
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Apple Podcasts 查询失败（HTTP ${response.status}）。请改为粘贴 RSS 地址。`);
+    }
+    const feedUrl = parseApplePodcastFeedUrl(response.text);
+    await log.write("apple", `已找到 RSS：${new URL(feedUrl).origin}`);
+    return feedUrl;
   }
 
   private async resolveTranscript(episode: PodcastEpisode, cached: CachedPodcastEpisode, onProgress: (message: string) => void, log: PodcastImportLog): Promise<TranscriptSegment[]> {

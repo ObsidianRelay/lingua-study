@@ -30,6 +30,7 @@ await esbuild.build({
     "tests/podcast-cache.test.ts",
     "tests/podcast-import-log.test.ts",
     "tests/podcast-rss-core.test.ts",
+    "tests/podcast-source-core.test.ts",
     "tests/live-preview-core.test.ts",
     "tests/player-control-core.test.ts",
     "tests/platform-core.test.ts",
