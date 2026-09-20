@@ -8,7 +8,8 @@ import {
   WHISPER_MODEL_ID,
   WHISPER_MODEL_REVISION,
   WHISPER_RUNTIME_ASSETS,
-  whisperChunksToTokens
+  whisperChunksToTokens,
+  whisperTokensToTranscriptSegments
 } from "../src/local-whisper-core";
 
 test("本地 Whisper 缓存位置不会写入 Obsidian 笔记库", () => {
@@ -57,7 +58,19 @@ test("Whisper 单词块转换为有序时间戳", () => {
     { text: " Hello", timestamp: [0.2, 0.5] },
     { text: " world", timestamp: [0.5, 0.9] }
   ], 10), [
-    { text: "hello", start: 10.2, end: 10.5 },
-    { text: "world", start: 10.5, end: 10.9 }
+    { text: "hello", spokenText: "Hello", start: 10.2, end: 10.5 },
+    { text: "world", spokenText: "world", start: 10.5, end: 10.9 }
+  ]);
+});
+
+test("Whisper 单词时间轴会生成可读的完整英文字幕", () => {
+  assert.deepEqual(whisperTokensToTranscriptSegments([
+    { text: "hello", spokenText: "Hello", start: 0, end: 0.3 },
+    { text: "everyone.", spokenText: "everyone.", start: 0.3, end: 0.8 },
+    { text: "welcome", spokenText: "Welcome", start: 1, end: 1.4 },
+    { text: "back!", spokenText: "back!", start: 1.4, end: 1.8 }
+  ]), [
+    { text: "Hello everyone.", start: 0, end: 0.8 },
+    { text: "Welcome back!", start: 1, end: 1.8 }
   ]);
 });
