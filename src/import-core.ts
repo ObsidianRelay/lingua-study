@@ -1097,6 +1097,22 @@ export function extractBilibiliVideosFromStudyBlocks(
   return videos;
 }
 
+export function extractPodcastSourceIdsFromStudyBlocks(markdown: string): string[] {
+  const sourceIds: string[] = [];
+  const blockPattern = /```(?:lingua-study|english-video-study)\s*\n([\s\S]*?)```/gu;
+  for (const block of markdown.matchAll(blockPattern)) {
+    const body = block[1] ?? "";
+    if (!/^\s*platform\s*:\s*podcast\s*$/imu.test(body)) {
+      continue;
+    }
+    const sourceId = /^\s*id\s*:\s*(podcast-[A-Za-z0-9_-]{22})\s*$/imu.exec(body)?.[1];
+    if (sourceId) {
+      sourceIds.push(sourceId);
+    }
+  }
+  return sourceIds;
+}
+
 export function chooseAvailableTranscriptPath(
   folder: string,
   videoId: string,

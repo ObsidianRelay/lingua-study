@@ -1,6 +1,6 @@
 import { App, Editor, MarkdownView, Modal, Notice, normalizePath, requestUrl, TFile, TFolder } from "obsidian";
 import { addStudyBlockExitLine } from "./live-preview-core";
-import { chooseAvailableTranscriptPath, groupTranscriptSegmentsIntoSentences, parseSubtitleFile, sanitizeTranscriptFolder, buildPodcastStudyBlock } from "./import-core";
+import { buildPodcastStudyBlock, chooseAvailableTranscriptPath, extractPodcastSourceIdsFromStudyBlocks, groupTranscriptSegmentsIntoSentences, parseSubtitleFile, sanitizeTranscriptFolder } from "./import-core";
 import { confirmLocalWhisperDownload } from "./document-transcript-import";
 import { whisperTokensToTranscriptSegments } from "./local-whisper-core";
 import type { LocalWhisperService } from "./local-whisper";
@@ -75,6 +75,9 @@ export class PodcastImportController {
       progress.hide();
       const episode = await new Promise<PodcastEpisode | null>((resolve) => new PodcastEpisodeModal(this.app, feed, resolve).open());
       if (!episode) return;
+      if (extractPodcastSourceIdsFromStudyBlocks(editor.getValue()).includes(episode.sourceId)) {
+        throw new Error("当前笔记已经有这个播客节目，未重复创建学习内容。");
+      }
       progress = new Notice("正在准备播客节目…", 0);
       const cached = await this.cache.cacheEpisode(episode, (message) => progress.setMessage(message));
       const segments = await this.resolveTranscript(episode, cached.cached, (message) => progress.setMessage(message));
