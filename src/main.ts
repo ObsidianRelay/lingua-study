@@ -97,8 +97,8 @@ import {
 } from "./player-control-core";
 import { YouTubeImportController } from "./youtube-import";
 import { BilibiliImportController } from "./bilibili-import";
-import { PodcastImportController } from "./podcast-import";
-import { PodcastCacheService, type CachedPodcastEpisode } from "./podcast-cache";
+import type { PodcastImportController } from "./podcast-import";
+import type { PodcastCacheService, CachedPodcastEpisode } from "./podcast-cache";
 import type {
   BilibiliCacheService,
   CachedBilibiliVideo,
@@ -5708,6 +5708,8 @@ export default class LinguaStudyPlugin extends Plugin {
         { BilibiliCacheService },
         { BilibiliCacheDeviceSettingsService },
         { LocalWhisperService },
+        { PodcastCacheService },
+        { PodcastImportController },
         { removeLegacyWhisperCachesOnce },
         { fetchTranscriptWithYtDlp }
       ] = await Promise.all([
@@ -5716,6 +5718,8 @@ export default class LinguaStudyPlugin extends Plugin {
         import("./bilibili-cache"),
         import("./bilibili-cache-settings"),
         import("./local-whisper"),
+        import("./podcast-cache"),
+        import("./podcast-import"),
         import("./legacy-whisper-cleanup"),
         import("./yt-dlp")
       ]);
@@ -5746,6 +5750,12 @@ export default class LinguaStudyPlugin extends Plugin {
       );
       this.localWhisperService = new LocalWhisperService(this.bilibiliCacheService);
       this.podcastCacheService = new PodcastCacheService(this.bilibiliCacheService);
+      this.podcastImporter = new PodcastImportController(
+        this.app,
+        this.podcastCacheService,
+        this.localWhisperService,
+        () => this.settings
+      );
       ytDlpFetcher = fetchTranscriptWithYtDlp;
       try {
         await removeLegacyWhisperCachesOnce();
@@ -5779,14 +5789,6 @@ export default class LinguaStudyPlugin extends Plugin {
           sourceLabel
         )
     );
-    if (this.podcastCacheService && this.localWhisperService) {
-      this.podcastImporter = new PodcastImportController(
-        this.app,
-        this.podcastCacheService,
-        this.localWhisperService,
-        () => this.settings
-      );
-    }
     addIcon(LINGUA_STUDY_RIBBON_ICON_ID, LINGUA_STUDY_RIBBON_ICON_SVG);
     this.manualImportRibbonEl = this.addRibbonIcon(
       LINGUA_STUDY_RIBBON_ICON_ID,
