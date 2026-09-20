@@ -74,9 +74,14 @@ function safeManifest(value: unknown): PodcastCacheManifest | null {
 }
 
 export class PodcastCacheService {
-  readonly cacheFolder = getPodcastCacheFolder(process.platform, homedir());
+  readonly cacheFolder: string;
 
-  constructor(private readonly localAssetServer: BilibiliCacheService) {}
+  constructor(
+    private readonly localAssetServer: BilibiliCacheService,
+    options: { cacheFolder?: string } = {}
+  ) {
+    this.cacheFolder = options.cacheFolder ?? getPodcastCacheFolder(process.platform, homedir());
+  }
 
   async cacheEpisode(
     episode: PodcastEpisode,

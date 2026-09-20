@@ -27,6 +27,8 @@ await esbuild.build({
     "tests/update-check-core.test.ts",
     "tests/legacy-whisper-cleanup.test.ts",
     "tests/local-whisper-core.test.ts",
+    "tests/podcast-cache.test.ts",
+    "tests/podcast-rss-core.test.ts",
     "tests/live-preview-core.test.ts",
     "tests/player-control-core.test.ts",
     "tests/platform-core.test.ts",

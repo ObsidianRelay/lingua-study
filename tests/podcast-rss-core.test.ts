@@ -12,7 +12,7 @@ test("RSS 2.0 enclosure 和 Podcasting transcript 会解析为稳定节目", () 
   const feed = parsePodcastFeed(xml, "https://example.test/feed.xml");
   assert.equal(feed.title, "English Avenue");
   assert.deepEqual(feed.episodes[0], {
-    sourceId: "podcast-BJwphKXEFqTgXgR6I5ET4I",
+    sourceId: "podcast-Hy7Evp-O9-Pe2QMclLiLfI",
     guid: "episode-42",
     title: "How to explain & speak",
     publishedAt: "Fri, 20 Sep 2026 00:00:00 GMT",
