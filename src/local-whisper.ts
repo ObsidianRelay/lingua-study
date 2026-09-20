@@ -5,7 +5,8 @@ import { get as httpsGet } from "node:https";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import type { BilibiliCacheService, CachedBilibiliVideo } from "./bilibili-cache";
+import type { BilibiliCacheService } from "./bilibili-cache";
+import type { CachedAudioMedia } from "./cached-audio";
 import type { TimedRecognitionToken } from "./document-transcript-core";
 import { decodeCachedAudio } from "./speech-audio";
 import {
@@ -39,7 +40,7 @@ export class LocalWhisperService {
   constructor(private readonly localAssetServer: BilibiliCacheService) {}
 
   async transcribe(
-    cached: CachedBilibiliVideo,
+    cached: CachedAudioMedia,
     onProgress: (message: string) => void
   ): Promise<TimedRecognitionToken[]> {
     if (this.active) {
