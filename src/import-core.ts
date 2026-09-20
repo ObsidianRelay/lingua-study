@@ -34,6 +34,11 @@ export interface LocalVideoStudyBlock {
   transcriptPath: string;
 }
 
+export interface PodcastStudyBlock {
+  sourceId: string;
+  transcriptPath: string;
+}
+
 export type BilibiliLink = BilibiliVideoLink | BilibiliShortLink;
 
 export type PastedVideoLink =
@@ -187,6 +192,16 @@ export function planStudyBlockAppend(markdown: string, block: string): StudyBloc
         ? "\n"
         : "\n\n";
   return { offset: markdown.length, text: `${separator}${block}` };
+}
+
+export function buildPodcastStudyBlock(config: PodcastStudyBlock): string {
+  return [
+    "```lingua-study",
+    "platform: podcast",
+    `id: ${config.sourceId}`,
+    `transcript: ${config.transcriptPath}`,
+    "```"
+  ].join("\n");
 }
 
 function parsePositivePage(value: string | null): number {

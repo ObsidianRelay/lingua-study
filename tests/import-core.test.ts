@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   buildBilibiliStudyBlock,
+  buildPodcastStudyBlock,
   addTranscriptToBilibiliStudyBlock,
   buildLocalVideoStudyBlock,
   buildStudyBlock,
@@ -335,6 +336,16 @@ test("本地视频代码块安全保存带空格路径并支持重新关联", ()
     )
   );
   assert.equal(replaceLocalVideoPathInStudyBlock(block, "missing-id1", "/tmp/a.mp4"), null);
+});
+
+test("播客学习代码块保存稳定节目 ID 和字幕路径", () => {
+  assert.equal(
+    buildPodcastStudyBlock({
+      sourceId: "podcast-BJwphKXEFqTgXgR6I5ET4I",
+      transcriptPath: "Lingua Study/Transcripts/podcast-BJwphKXEFqTgXgR6I5ET4I.json"
+    }),
+    "```lingua-study\nplatform: podcast\nid: podcast-BJwphKXEFqTgXgR6I5ET4I\ntranscript: Lingua Study/Transcripts/podcast-BJwphKXEFqTgXgR6I5ET4I.json\n```"
+  );
 });
 
 test("优先选择人工英文字幕，其次英文自动字幕", () => {

@@ -341,7 +341,7 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
     source,
     /this\.transcriptProgrammaticScrollUntil = Date\.now\(\) \+ TRANSCRIPT_SMOOTH_SCROLL_GUARD_MS/u
   );
-  assert.equal(source.match(/createRoot\(/gu)?.length, 7);
+  assert.equal(source.match(/createRoot\(/gu)?.length, 9);
   assert.ok((source.match(/fullWidthObserver\?\.disconnect\(\)/gu)?.length ?? 0) >= 3);
   assert.match(
     source,
@@ -356,8 +356,8 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.match(fullWidthMethod, /if \(this\.plugin\.capabilities\.mobile\)/u);
   assert.match(source, /restoreContainerLayout\(\)/u);
   assert.match(source, /list\.scrollHeight <= list\.clientHeight \+ 1/u);
-  assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 4);
-  assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 4);
+  assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 5);
+  assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 5);
   assert.equal(source.match(/this\.createFloatingToggle\(/gu)?.length, 2);
   assert.equal(source.match(/this\.createMobileFloatingToggle\(/gu)?.length, 3);
   const createPlayerDockMethod = source.slice(
