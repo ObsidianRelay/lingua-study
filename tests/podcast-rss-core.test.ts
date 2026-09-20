@@ -12,7 +12,7 @@ test("RSS 2.0 enclosure 和 Podcasting transcript 会解析为稳定节目", () 
   const feed = parsePodcastFeed(xml, "https://example.test/feed.xml");
   assert.equal(feed.title, "English Avenue");
   assert.deepEqual(feed.episodes[0], {
-    sourceId: "podcast-Hy7Evp-O9-Pe2QMclLiLfI",
+    sourceId: "podcast-ySvAALMqRgrEmgUX4ZgYed",
     guid: "episode-42",
     title: "How to explain & speak",
     publishedAt: "Fri, 20 Sep 2026 00:00:00 GMT",
@@ -27,6 +27,10 @@ test("RSS 2.0 enclosure 和 Podcasting transcript 会解析为稳定节目", () 
   });
   assert.equal(selectEnglishPodcastTranscript(feed.episodes[0]?.transcripts ?? [])?.url,
     "https://example.test/transcripts/42.vtt");
+  assert.equal(
+    parsePodcastFeed(xml, "https://mirror.example.test/feed.xml").episodes[0]?.sourceId,
+    feed.episodes[0]?.sourceId
+  );
 });
 
 test("Atom enclosure、相对链接和重复 guid 能被一致处理", () => {

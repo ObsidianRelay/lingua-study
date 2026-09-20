@@ -82,9 +82,9 @@ function positiveInteger(value: string | undefined): number | null {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function stableSourceId(feedUrl: string, guid: string | null, enclosureUrl: string): string {
+function stableSourceId(guid: string | null, enclosureUrl: string): string {
   const identity = guid?.trim() || enclosureUrl;
-  return `podcast-${createHash("sha256").update(`${feedUrl}\n${identity}`).digest("base64url").slice(0, 22)}`;
+  return `podcast-${createHash("sha256").update(identity).digest("base64url").slice(0, 22)}`;
 }
 
 function findEpisodes(xml: string): Array<{ body: string; atom: boolean }> {
@@ -156,7 +156,7 @@ export function parsePodcastFeed(xml: string, sourceUrl: string): PodcastFeed {
     if (!parsed) {
       continue;
     }
-    const sourceId = stableSourceId(canonicalSourceUrl, parsed.guid, parsed.enclosureUrl);
+    const sourceId = stableSourceId(parsed.guid, parsed.enclosureUrl);
     if (seen.has(sourceId)) {
       continue;
     }
