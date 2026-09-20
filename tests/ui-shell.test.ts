@@ -28,6 +28,8 @@ test("正式版保持桌面限定且移动端测试框架只按需加载电脑�
     "bilibili-cache",
     "bilibili-cache-settings",
     "local-whisper",
+    "podcast-cache",
+    "podcast-import",
     "legacy-whisper-cleanup",
     "yt-dlp"
   ]) {
