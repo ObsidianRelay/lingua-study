@@ -9,6 +9,8 @@ export interface TimedRecognitionToken {
   text: string;
   start: number;
   end: number;
+  /** 识别引擎的原始展示文本；text 仍保持规范化，供对齐算法稳定比较。 */
+  spokenText?: string;
 }
 
 export interface TranscriptAlignmentRow extends ImportedTranscriptRow {
