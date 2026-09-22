@@ -2,6 +2,19 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 1.5.3 - 2026-09-22
+
+### Added
+
+- Added an optional desktop-local Whisper Base English fallback for Bilibili videos without usable English subtitles; media stays on the device
+- Added a retry action on Bilibili player-only blocks when local transcription needs to be attempted again
+
+### Fixed
+
+- Normalized overlapping or out-of-order Whisper word timings before saving generated subtitles
+
+Thanks to @wyman1634 for contributing PR #4. Podcast work remains in draft PR #5 and is not included in this release.
+
 ## 1.5.2 - 2026-09-18
 
 ### Added
