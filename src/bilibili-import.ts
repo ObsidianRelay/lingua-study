@@ -40,12 +40,16 @@ import {
   type TranscriptSegment
 } from "./transcript-core";
 import { AsyncKeyedQueue } from "./async-keyed-queue";
-import { DocumentTranscriptImportModal } from "./document-transcript-import";
+import {
+  confirmLocalWhisperDownload,
+  DocumentTranscriptImportModal
+} from "./document-transcript-import";
 import {
   createDocumentImportDraftKey,
   DocumentImportDraftStore
 } from "./document-import-draft";
 import type { LocalWhisperService } from "./local-whisper";
+import { whisperTokensToTranscriptSegments } from "./local-whisper-core";
 import { getTranslationCachePath } from "./translation-core";
 import { addStudyBlockExitLine } from "./live-preview-core";
 
@@ -59,11 +63,13 @@ type BilibiliFallbackChoice =
   | { kind: "login" }
   | { kind: "file"; name: string; text: string }
   | { kind: "document" }
+  | { kind: "whisper" }
   | { kind: "player-only" };
 
 interface BilibiliFallbackOptions {
   allowRetry: boolean;
   allowLogin: boolean;
+  allowWhisper: boolean;
 }
 
 function errorMessage(error: unknown): string {
@@ -177,6 +183,11 @@ class BilibiliSubtitleFallbackModal extends Modal {
     this.contentEl.createEl("p", {
       text: "也可以选择本机 .srt 或 .vtt 文件（最大 10 MB），或只创建播放器。"
     });
+    if (this.options.allowWhisper) {
+      this.contentEl.createEl("p", {
+        text: "若视频实际为英语语音，可用本地 Whisper 生成英文字幕；不会把中文或其他语言翻译成英语。"
+      });
+    }
     const errorEl = this.contentEl.createDiv({ cls: "lingua-study-import-error" });
     const fileInput = this.contentEl.createEl("input", { type: "file" });
     fileInput.accept = ".srt,.vtt,text/vtt,application/x-subrip";
@@ -199,6 +210,10 @@ class BilibiliSubtitleFallbackModal extends Modal {
     }).addEventListener("click", () => fileInput.click());
     actions.createEl("button", { text: "导入博主文稿" })
       .addEventListener("click", () => this.finish({ kind: "document" }));
+    if (this.options.allowWhisper) {
+      actions.createEl("button", { text: "本地 Whisper 识别英文音轨" })
+        .addEventListener("click", () => this.finish({ kind: "whisper" }));
+    }
     actions.createEl("button", { text: "仅创建播放器" })
       .addEventListener("click", () => this.finish({ kind: "player-only" }));
     actions.createEl("button", { text: "取消" }).addEventListener("click", () => this.finish(null));
@@ -344,6 +359,73 @@ export class BilibiliImportController {
     }
   }
 
+  /**
+   * 从已经创建的播放器重新触发本地英文识别。
+   * 初次导入会先写入播放器代码块；因此识别中断后必须提供一个不依赖原始编辑器内容的重试入口。
+   */
+  async retryLocalWhisper(
+    sourcePath: string,
+    identity: Pick<BilibiliVideoLink, "idType" | "videoId" | "page">
+  ): Promise<void> {
+    if (!this.cacheService || !this.localWhisper) {
+      throw new Error("本地 Whisper 英语识别仅支持可缓存视频的电脑端。");
+    }
+    if (!await this.localWhisper.hasCachedModel() &&
+      !await confirmLocalWhisperDownload(this.app)) {
+      return;
+    }
+
+    const requestKey = `${identity.idType}:${identity.videoId}:p${identity.page}`;
+    if (this.activeVideos.has(requestKey)) {
+      new Notice("这个哔哩哔哩视频正在本地识别，请等待完成后再试。", 5_000);
+      return;
+    }
+    const link: BilibiliVideoLink = {
+      kind: "video",
+      ...identity,
+      canonicalUrl: identity.idType === "bvid"
+        ? `https://www.bilibili.com/video/${identity.videoId}${identity.page > 1 ? `?p=${identity.page}` : ""}`
+        : `https://www.bilibili.com/video/av${identity.videoId.slice(2)}${identity.page > 1 ? `?p=${identity.page}` : ""}`,
+      originalUrl: identity.idType === "bvid"
+        ? `https://www.bilibili.com/video/${identity.videoId}`
+        : `https://www.bilibili.com/video/av${identity.videoId.slice(2)}`
+    };
+    const progress = new Notice("正在准备本地缓存视频…", 0);
+    this.activeVideos.add(requestKey);
+    try {
+      const cached = await this.cacheService.cacheVideo(
+        link,
+        (message) => progress.setMessage(message)
+      );
+      const tokens = await this.localWhisper.transcribe(
+        cached.cached,
+        (message) => progress.setMessage(message)
+      );
+      const segments = whisperTokensToTranscriptSegments(tokens);
+      if (segments.length === 0) {
+        throw new Error("本地识别没有得到可用的英文时间轴，请改为导入字幕或博主文稿。");
+      }
+      progress.setMessage("正在保存本地识别的英文字幕…");
+      await this.applyImportedTranscript(
+        sourcePath,
+        cached.link,
+        segments,
+        [],
+        "本地 Whisper Base English 识别"
+      );
+      progress.hide();
+      new Notice(`已通过本地 Whisper 生成 ${segments.length} 条英文字幕。`, 9_000);
+    } catch (error) {
+      progress.hide();
+      new Notice(
+        `本地英语识别未完成；可重新尝试或导入字幕/博主文稿。${errorMessage(error)}`,
+        9_000
+      );
+    } finally {
+      this.activeVideos.delete(requestKey);
+    }
+  }
+
   async cleanupLegacyVisibleLink(
     sourcePath: string,
     identity: Pick<BilibiliVideoLink, "idType" | "videoId" | "page">
@@ -443,7 +525,8 @@ export class BilibiliImportController {
         progress.hide();
         const fallback = await this.chooseSubtitleFallback(subtitleResult.error.message, {
           allowRetry: this.isRetryableSubtitleError(subtitleResult),
-          allowLogin: this.supportsBilibiliLogin && subtitleResult.error.kind === "login-required"
+          allowLogin: this.supportsBilibiliLogin && subtitleResult.error.kind === "login-required",
+          allowWhisper: this.cacheService !== null && this.localWhisper !== null
         });
         if (!fallback) {
           return;
@@ -504,6 +587,54 @@ export class BilibiliImportController {
           await this.completeEditorImport(editor, view, link, null);
           progress.hide();
           await this.openTranscriptImport(view.file?.path ?? "", link);
+          return;
+        }
+        if (fallback.kind === "whisper") {
+          if (!this.cacheService || !this.localWhisper) {
+            throw new Error("本地 Whisper 英语识别仅支持可缓存视频的电脑端。");
+          }
+          if (!await this.localWhisper.hasCachedModel() &&
+            !await confirmLocalWhisperDownload(this.app)) {
+            return;
+          }
+          const sourcePath = view.file?.path;
+          if (!sourcePath) {
+            throw new Error("找不到当前笔记，请重新打开笔记后再试。");
+          }
+          progress = new Notice("正在创建 B站播放器并准备本地缓存…", 0);
+          await this.completeEditorImport(editor, view, link, null);
+          try {
+            const cacheResult = await this.cacheService.cacheVideo(
+              link,
+              (message) => progress.setMessage(message)
+            );
+            link = cacheResult.link;
+            const tokens = await this.localWhisper.transcribe(
+              cacheResult.cached,
+              (message) => progress.setMessage(message)
+            );
+            const whisperSegments = whisperTokensToTranscriptSegments(tokens);
+            progress.setMessage("正在保存本地识别的英文字幕…");
+            await this.applyImportedTranscript(
+              sourcePath,
+              link,
+              whisperSegments,
+              [],
+              "本地 Whisper Base English 识别"
+            );
+            await this.switchToReadingView(view);
+            progress.hide();
+            new Notice(
+              `已通过本地 Whisper 生成 ${whisperSegments.length} 条英文字幕；请在播放器中复核识别结果。`,
+              9_000
+            );
+          } catch (error) {
+            progress.hide();
+            new Notice(
+              `已创建 B站播放器，但本地英语识别未完成；可再导入字幕或博主文稿。${errorMessage(error)}`,
+              9_000
+            );
+          }
           return;
         }
         if (fallback.kind === "file") {
