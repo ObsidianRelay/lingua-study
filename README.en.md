@@ -5,10 +5,11 @@
 Turn English YouTube and Bilibili videos into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 1.5.2 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.5.3 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
-## Recent updates (1.3.0–1.5.2)
+## Recent updates (1.3.0–1.5.3)
 
+- **Local Bilibili transcription**: on desktop, generate English subtitles with Whisper Base English for a cacheable English-language video without usable English captions after confirming the model download; retry from the existing player if transcription is interrupted
 - **Bilibili cache folder**: choose a video-cache directory outside the Obsidian vault on macOS or Windows; legacy default caches remain available as a read-only fallback and are never moved or deleted automatically
 - **Selection-translation toggle**: disable the automatic transcript-selection popover without affecting double-click lookup or the manual translation command
 - **Local-video study**: import local MP4 files from the existing Lingua Study entry and automatically match same-name SRT/VTT subtitles
