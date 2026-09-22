@@ -97,6 +97,15 @@ function confirmAction(
   });
 }
 
+export function confirmLocalWhisperDownload(app: App): Promise<boolean> {
+  return confirmAction(
+    app,
+    "首次使用本地英语识别",
+    "插件将下载固定版本的 Whisper Base English 模型和 WASM 运行文件到系统缓存。处理时会占用较多内存和时间，但音视频不会上传；它仅适用于实际为英语语音的视频。",
+    "下载并开始"
+  );
+}
+
 export class DocumentTranscriptImportModal extends Modal {
   private rows: ImportedTranscriptRow[] = [];
   private result: TranscriptAlignmentResult | null = null;
@@ -472,12 +481,7 @@ export class DocumentTranscriptImportModal extends Modal {
       return;
     }
     if (!await this.options.localModelCached()) {
-      const confirmed = await confirmAction(
-        this.app,
-        "首次使用本地自动对齐",
-        "插件将下载固定版本的 Whisper Base English 模型和 WASM 运行文件到系统缓存。处理时会占用较多内存和时间，但音视频不会上传。",
-        "下载并开始"
-      );
+      const confirmed = await confirmLocalWhisperDownload(this.app);
       if (!confirmed) {
         return;
       }

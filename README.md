@@ -2,7 +2,7 @@
 
 [简体中文](./README.md) | [English](./README.en.md)
 
-在 Obsidian 中把 YouTube 和哔哩哔哩英文视频变成可跟读、可听写、可查词、可复习的学习材料。支持带时间戳字幕、本地缓存播放、逐句翻译、离线词典和生词本。
+在 Obsidian 中把 YouTube、哔哩哔哩英文视频和公开 Podcast 节目变成可跟读、可听写、可查词、可复习的学习材料。支持带时间戳字幕、本地缓存播放、逐句翻译、离线词典和生词本。
 
 > [!IMPORTANT]
 > Lingua Study 1.5.2 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
@@ -43,6 +43,7 @@
 - 在线字幕获取失败时，可导入本地 SRT/VTT 字幕
 - 电脑端可直接导入本地 MP4，并自动匹配同目录下的同名 SRT/VTT 字幕
 - 只有播放器的哔哩哔哩学习块可通过“添加字幕”入口后续补充文字稿
+- 粘贴 Apple Podcasts 节目分享链接即可选择节目；也兼容公开 Podcast RSS / Atom feed，优先读取发布者标注的英文 VTT/SRT，缺失时在本机用 Whisper Base English 生成字幕
 - 可导入并编辑 PDF、DOCX、TXT、Markdown 或直接粘贴的双语文稿
 - 可选使用本地 Whisper Base English，在设备上完成文稿与视频时间轴对齐
 - 支持播放、暂停、前进或后退 5 秒
@@ -159,6 +160,14 @@ Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的�
 **设置 → 第三方插件 → Lingua Study → 哔哩哔哩视频与登录 → 打开缓存文件夹**
 
 缓存视频位于 Obsidian 仓库之外，不受 Obsidian Sync 管理。生成的字幕 JSON 仍保存在仓库内配置的字幕目录中。哔哩哔哩登录 Cookie 只保存在 Electron 的隔离持久会话中，不会写入笔记、字幕、插件设置或 Obsidian Sync；可以在同一设置区域中清除。
+
+### 导入 Podcast
+
+1. 打开要插入学习内容的 Markdown 笔记。
+2. 从命令面板运行 **从 podcast RSS 创建学习内容**。
+3. 粘贴 Apple Podcasts 的节目分享链接，选择一集节目。
+
+插件会自动从 Apple Podcasts 目录取得该节目的 RSS；不使用 Apple Podcasts 时，也可以直接粘贴公开 RSS 或 Atom feed 地址。节目音频缓存到操作系统目录（macOS 为 `~/Library/Caches/Lingua Study/Podcasts`），不会写入 Obsidian 仓库或同步。若节目提供 Podcasting 2.0 标记的英文 `.vtt` / `.srt` 文稿，会直接使用；否则首次使用会确认下载本地 Whisper Base English 模型，再在设备上生成英文时间轴。单集音频上限为 512 MB；同一节目在当前笔记中不会重复插入。
 
 ### 导入本地视频与字幕
 

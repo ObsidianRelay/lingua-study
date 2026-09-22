@@ -97,6 +97,8 @@ import {
 } from "./player-control-core";
 import { YouTubeImportController } from "./youtube-import";
 import { BilibiliImportController } from "./bilibili-import";
+import type { PodcastImportController } from "./podcast-import";
+import type { PodcastCacheService, CachedPodcastEpisode } from "./podcast-cache";
 import type {
   BilibiliCacheService,
   CachedBilibiliVideo,
@@ -188,7 +190,13 @@ interface LocalVideoCodeBlockConfig {
   transcript: string;
 }
 
-type CodeBlockConfig = TranscriptCodeBlockConfig | BilibiliCodeBlockConfig | LocalVideoCodeBlockConfig;
+interface PodcastCodeBlockConfig {
+  kind: "podcast";
+  sourceId: string;
+  transcript: string;
+}
+
+type CodeBlockConfig = TranscriptCodeBlockConfig | BilibiliCodeBlockConfig | LocalVideoCodeBlockConfig | PodcastCodeBlockConfig;
 
 interface YouTubeMessagePayload {
   id?: string | number;
@@ -442,6 +450,18 @@ function parseCodeBlock(source: string): CodeBlockConfig {
     };
   }
 
+  if (typeof config.platform === "string" && config.platform.trim().toLowerCase() === "podcast") {
+    const sourceId = typeof config.id === "string" ? config.id.trim() : "";
+    const transcript = typeof config.transcript === "string" ? normalizePath(config.transcript.trim()) : "";
+    if (!/^podcast-[A-Za-z0-9_-]{22}$/u.test(sourceId)) {
+      throw new Error("Podcast 学习块缺少有效的节目 ID。");
+    }
+    if (transcript === "") {
+      throw new Error("Podcast 学习块缺少 transcript 路径。");
+    }
+    return { kind: "podcast", sourceId, transcript };
+  }
+
   const transcript = config.transcript;
   if (typeof transcript !== "string" || transcript.trim() === "") {
     throw new Error("没有找到 transcript 路径。请填写本地字幕 JSON 文件路径。");
@@ -607,7 +627,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private readonly sourcePath: string;
   private iframeEl: HTMLIFrameElement | null = null;
   private playerMessageTargetOrigin: string | null = null;
-  private localVideoEl: HTMLVideoElement | null = null;
+  private localVideoEl: HTMLMediaElement | null = null;
   private cachedVideoUrls: string[] = [];
   private cachedVideoOffsets: number[] = [];
   private cachedVideoDurations: number[] = [];
@@ -863,6 +883,22 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         void this.plugin.cleanupLegacyBilibiliSourceLink(this.sourcePath, config).catch(() => {
           new Notice("播放器已加载，但旧的可见 B站链接暂时无法清理。", 5_000);
         });
+        return;
+      }
+      if (config.kind === "podcast") {
+        const [cached, transcriptData] = await Promise.all([
+          this.plugin.getCachedPodcastEpisode(config.sourceId),
+          this.loadTranscriptRenderData(config.transcript)
+        ]);
+        if (this.destroyed) return;
+        if (transcriptData.transcript.videoId !== config.sourceId) {
+          throw new Error("播客音频与字幕文件不匹配。");
+        }
+        if (!cached) {
+          this.renderPodcastUnavailable();
+          return;
+        }
+        this.renderPodcastPlayer(cached, transcriptData);
         return;
       }
       const transcriptData = await this.loadTranscriptRenderData(config.transcript);
@@ -1481,6 +1517,48 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         new Notice(error instanceof Error ? error.message : "无法更新本地视频路径。", 7_000);
       });
     });
+  }
+
+  private renderPodcastUnavailable(): void {
+    const root = this.createRoot("evs-local-file-root");
+    const error = root.createDiv({ cls: "evs-fatal-error" });
+    error.setAttribute("role", "alert");
+    error.createEl("strong", { text: "找不到已缓存的播客音频" });
+    error.createDiv({ text: "请再次通过“从 Podcast RSS 创建学习内容”导入该节目。" });
+  }
+
+  private renderPodcastPlayer(asset: CachedPodcastEpisode, transcriptData: TranscriptRenderData): void {
+    this.cachedVideoUrls = asset.fileUrls.slice();
+    this.cachedVideoOffsets = [0];
+    this.cachedVideoDurations = [0];
+    this.cachedVideoIndex = 0;
+    const root = this.createRoot("evs-local-file-root");
+    const playerDock = this.createPlayerDock(root);
+    const playerFrame = this.createPlayerStage(playerDock);
+    const audio = playerFrame.createEl("audio", {
+      cls: "evs-player-host evs-local-video",
+      attr: { controls: "", preload: "metadata", title: "播客播放器" }
+    });
+    this.localVideoEl = audio;
+    this.statusEl = root.createDiv({ cls: "evs-status evs-local-status" });
+    this.statusEl.setAttribute("role", "status");
+    this.runtimeErrorEl = root.createDiv({ cls: "evs-runtime-error" });
+    this.runtimeErrorEl.hide();
+    this.renderTranscriptList(root, transcriptData);
+    audio.addEventListener("loadedmetadata", () => {
+      if (this.destroyed) return;
+      this.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      this.currentTime = audio.currentTime;
+      this.activateControls(`播客音频已就绪 · ${asset.title}`, true);
+    });
+    audio.addEventListener("play", () => { if (!this.destroyed) this.onPlayerStateChange(PLAYER_STATE_PLAYING); });
+    audio.addEventListener("pause", () => { if (!this.destroyed) this.onPlayerStateChange(PLAYER_STATE_PAUSED); });
+    audio.addEventListener("timeupdate", () => { this.currentTime = audio.currentTime; this.lastTimeUpdateAt = Date.now(); });
+    audio.addEventListener("ratechange", () => { this.playbackRate = audio.playbackRate; this.updateSpeedControl(audio.playbackRate); });
+    audio.addEventListener("error", () => this.setStatusText("本地播客音频无法播放，请重新导入节目。", false));
+    this.setStatusText(`正在读取播客音频 · ${asset.title}`, false);
+    audio.src = asset.fileUrls[0];
+    audio.load();
   }
 
   private renderCachedBilibiliPlayer(
@@ -5596,12 +5674,14 @@ export default class LinguaStudyPlugin extends Plugin {
   private dictionaryTabPlacementPrepared = false;
   private youtubeImporter: YouTubeImportController | null = null;
   private bilibiliImporter: BilibiliImportController | null = null;
+  private podcastImporter: PodcastImportController | null = null;
   private localVideoImporter: LocalVideoImportController | null = null;
   private bilibiliCacheService: BilibiliCacheService | null = null;
   private bilibiliCacheDeviceSettingsService: BilibiliCacheDeviceSettingsService | null = null;
   private configuredBilibiliCacheFolder: string | null = null;
   private bilibiliSessionService: BilibiliSessionService | null = null;
   private localWhisperService: LocalWhisperService | null = null;
+  private podcastCacheService: PodcastCacheService | null = null;
   private readonly transcriptWriteQueue = new AsyncKeyedQueue();
   private manualImportInProgress = false;
   private manualImportRibbonEl: HTMLElement | null = null;
@@ -5628,6 +5708,8 @@ export default class LinguaStudyPlugin extends Plugin {
         { BilibiliCacheService },
         { BilibiliCacheDeviceSettingsService },
         { LocalWhisperService },
+        { PodcastCacheService },
+        { PodcastImportController },
         { removeLegacyWhisperCachesOnce },
         { fetchTranscriptWithYtDlp }
       ] = await Promise.all([
@@ -5636,6 +5718,8 @@ export default class LinguaStudyPlugin extends Plugin {
         import("./bilibili-cache"),
         import("./bilibili-cache-settings"),
         import("./local-whisper"),
+        import("./podcast-cache"),
+        import("./podcast-import"),
         import("./legacy-whisper-cleanup"),
         import("./yt-dlp")
       ]);
@@ -5665,6 +5749,13 @@ export default class LinguaStudyPlugin extends Plugin {
         () => this.settings
       );
       this.localWhisperService = new LocalWhisperService(this.bilibiliCacheService);
+      this.podcastCacheService = new PodcastCacheService(this.bilibiliCacheService);
+      this.podcastImporter = new PodcastImportController(
+        this.app,
+        this.podcastCacheService,
+        this.localWhisperService,
+        () => this.settings
+      );
       ytDlpFetcher = fetchTranscriptWithYtDlp;
       try {
         await removeLegacyWhisperCachesOnce();
@@ -5830,6 +5921,23 @@ export default class LinguaStudyPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: "import-podcast-rss",
+      name: "从 podcast RSS 创建学习内容",
+      checkCallback: (checking) => {
+        if (!this.capabilities.desktop) return false;
+        if (!checking) {
+          const view = this.getManualImportView();
+          if (!view?.editor) {
+            new Notice("请先打开一篇 Markdown 笔记，再从 podcast RSS 创建学习内容。", 6_000);
+            return true;
+          }
+          void this.getPodcastImporter().importFromEditor(view.editor, view);
+        }
+        return true;
+      }
+    });
+
     this.registerEvent(this.app.workspace.on("editor-paste", (event, editor, info) => {
       if (
         event.defaultPrevented ||
@@ -5892,6 +6000,8 @@ export default class LinguaStudyPlugin extends Plugin {
     this.bilibiliSessionService = null;
     this.bilibiliCacheService = null;
     this.bilibiliImporter = null;
+    this.podcastCacheService = null;
+    this.podcastImporter = null;
     this.manualImportRibbonEl = null;
     this.manualImportInProgress = false;
     this.cancelStudyBlockReveal();
@@ -6874,6 +6984,10 @@ export default class LinguaStudyPlugin extends Plugin {
     );
   }
 
+  getCachedPodcastEpisode(sourceId: string): Promise<CachedPodcastEpisode | null> {
+    return this.podcastCacheService?.getCachedEpisode(sourceId) ?? Promise.resolve(null);
+  }
+
   getLocalVideoPlaybackAsset(
     config: LocalVideoCodeBlockConfig
   ): Promise<LocalVideoPlaybackAsset> {
@@ -7111,6 +7225,13 @@ export default class LinguaStudyPlugin extends Plugin {
       throw new Error("B站播放器导入功能尚未初始化，请重新加载插件。");
     }
     return this.bilibiliImporter;
+  }
+
+  private getPodcastImporter(): PodcastImportController {
+    if (!this.podcastImporter) {
+      throw new Error("Podcast RSS 导入功能仅支持 Obsidian 电脑端。");
+    }
+    return this.podcastImporter;
   }
 
   private getLocalVideoImporter(): LocalVideoImportController {

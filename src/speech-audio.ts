@@ -1,4 +1,4 @@
-import type { CachedBilibiliVideo } from "./bilibili-cache";
+import type { CachedAudioMedia } from "./cached-audio";
 
 export interface DecodedAudioChunk {
   samples: Float32Array;
@@ -39,7 +39,7 @@ async function decodeLocalAsset(fileUrl: string): Promise<Float32Array> {
 }
 
 export async function decodeCachedAudio(
-  cached: CachedBilibiliVideo,
+  cached: CachedAudioMedia,
   onProgress: (message: string) => void
 ): Promise<DecodedAudioChunk[]> {
   const chunks: DecodedAudioChunk[] = [];
@@ -48,7 +48,7 @@ export async function decodeCachedAudio(
     onProgress(`正在读取视频音轨 ${index + 1}/${cached.fileUrls.length}…`);
     const samples = await decodeLocalAsset(fileUrl);
     chunks.push({ samples, offsetSeconds: manifestOffset });
-    manifestOffset += cached.manifest.segments[index]?.duration ?? samples.length / SAMPLE_RATE;
+    manifestOffset += cached.segments[index]?.duration ?? samples.length / SAMPLE_RATE;
   }
   if (chunks.length === 0) {
     throw new Error("缓存视频中没有可用音轨。");

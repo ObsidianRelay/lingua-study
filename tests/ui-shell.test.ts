@@ -28,6 +28,8 @@ test("正式版保持桌面限定且移动端测试框架只按需加载电脑�
     "bilibili-cache",
     "bilibili-cache-settings",
     "local-whisper",
+    "podcast-cache",
+    "podcast-import",
     "legacy-whisper-cleanup",
     "yt-dlp"
   ]) {
@@ -50,6 +52,21 @@ test("YouTube 独立移动端回退不打包固定 InnerTube key", async () => {
   assert.match(source, /youtubei\/v1\/player\?prettyPrint=false/u);
   assert.doesNotMatch(source, /AIza[0-9A-Za-z_-]{20,}/u);
   assert.doesNotMatch(source, /YTRANSCRIPT_INNERTUBE_API_KEY/u);
+});
+
+test("Podcast RSS 命令创建桌面本地播放器与字幕学习块", async () => {
+  const [main, importer] = await Promise.all([
+    readFile("src/main.ts", "utf8"),
+    readFile("src/podcast-import.ts", "utf8")
+  ]);
+  assert.match(main, /id: "import-podcast-rss"/u);
+  assert.match(main, /name: "从 podcast RSS 创建学习内容"/u);
+  assert.match(main, /id: "import-podcast-rss"[\s\S]*?checkCallback:/u);
+  assert.match(main, /if \(config\.kind === "podcast"\)/u);
+  assert.match(main, /this\.renderPodcastPlayer\(cached, transcriptData\)/u);
+  assert.match(importer, /selectEnglishPodcastTranscript/u);
+  assert.match(importer, /this\.localWhisper\.transcribe/u);
+  assert.match(importer, /extractPodcastSourceIdsFromStudyBlocks/u);
 });
 
 test("文稿行操作重绘后保留列表与弹窗滚动位置", async () => {
@@ -341,7 +358,7 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
     source,
     /this\.transcriptProgrammaticScrollUntil = Date\.now\(\) \+ TRANSCRIPT_SMOOTH_SCROLL_GUARD_MS/u
   );
-  assert.equal(source.match(/createRoot\(/gu)?.length, 7);
+  assert.equal(source.match(/createRoot\(/gu)?.length, 9);
   assert.ok((source.match(/fullWidthObserver\?\.disconnect\(\)/gu)?.length ?? 0) >= 3);
   assert.match(
     source,
@@ -356,8 +373,8 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.match(fullWidthMethod, /if \(this\.plugin\.capabilities\.mobile\)/u);
   assert.match(source, /restoreContainerLayout\(\)/u);
   assert.match(source, /list\.scrollHeight <= list\.clientHeight \+ 1/u);
-  assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 4);
-  assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 4);
+  assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 5);
+  assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 5);
   assert.equal(source.match(/this\.createFloatingToggle\(/gu)?.length, 2);
   assert.equal(source.match(/this\.createMobileFloatingToggle\(/gu)?.length, 3);
   const createPlayerDockMethod = source.slice(
