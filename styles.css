@@ -5010,3 +5010,100 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-controls .lingua
   justify-content: flex-start;
   padding-top: 4px;
 }
+
+.lingua-rss-view {
+  padding: 18px;
+  color: var(--text-normal);
+}
+
+.lingua-rss-view h2 {
+  margin: 0 0 8px;
+}
+
+.lingua-rss-intro,
+.lingua-rss-empty,
+.lingua-rss-item-date {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.lingua-rss-add-form {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 22px;
+}
+
+.lingua-rss-add-form input {
+  min-width: 0;
+  flex: 1;
+}
+
+.lingua-rss-section-heading,
+.lingua-rss-source-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lingua-rss-section-heading h3 {
+  min-width: 0;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+
+.lingua-rss-source-actions button {
+  flex: 0 0 auto;
+}
+
+.lingua-rss-feed-list,
+.lingua-rss-item-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.lingua-rss-feed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.lingua-rss-feed.is-selected {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+.lingua-rss-feed-kind {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.lingua-rss-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}
+
+.lingua-rss-item-title {
+  font-weight: var(--font-semibold);
+  overflow-wrap: anywhere;
+}
+
+.lingua-rss-item-status {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
+.lingua-rss-item button {
+  justify-self: start;
+}

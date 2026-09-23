@@ -4,6 +4,7 @@ import {
   MarkdownView,
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
+  Menu,
   Modal,
   normalizePath,
   Notice,
@@ -99,6 +100,7 @@ import { YouTubeImportController } from "./youtube-import";
 import { BilibiliImportController } from "./bilibili-import";
 import type { PodcastImportController } from "./podcast-import";
 import type { PodcastCacheService, CachedPodcastEpisode } from "./podcast-cache";
+import type { RssSubscriptionController } from "./rss-subscription-controller";
 import type {
   BilibiliCacheService,
   CachedBilibiliVideo,
@@ -5682,6 +5684,8 @@ export default class LinguaStudyPlugin extends Plugin {
   private bilibiliSessionService: BilibiliSessionService | null = null;
   private localWhisperService: LocalWhisperService | null = null;
   private podcastCacheService: PodcastCacheService | null = null;
+  private rssSubscriptionController: RssSubscriptionController | null = null;
+  private rssSubscriptionViewType: string | null = null;
   private readonly transcriptWriteQueue = new AsyncKeyedQueue();
   private manualImportInProgress = false;
   private manualImportRibbonEl: HTMLElement | null = null;
@@ -5772,6 +5776,29 @@ export default class LinguaStudyPlugin extends Plugin {
       () => this.settings,
       ytDlpFetcher
     );
+    if (this.capabilities.desktop && this.podcastImporter && this.podcastCacheService) {
+      const [
+        { RssSubscriptionController },
+        { RSS_SUBSCRIPTION_VIEW_TYPE, RssSubscriptionView }
+      ] = await Promise.all([
+        import("./rss-subscription-controller"),
+        import("./rss-subscription-view")
+      ]);
+      this.rssSubscriptionController = new RssSubscriptionController(
+        this.app,
+        this.podcastImporter,
+        this.podcastCacheService,
+        this.youtubeImporter
+      );
+      this.rssSubscriptionViewType = RSS_SUBSCRIPTION_VIEW_TYPE;
+      const controller = this.rssSubscriptionController;
+      this.registerView(RSS_SUBSCRIPTION_VIEW_TYPE, (leaf) => new RssSubscriptionView(leaf, controller));
+      this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+        void controller.store.noteRenamed(oldPath, file.path).catch((error) => {
+          console.warn("Lingua Study: 订阅笔记路径更新失败", error);
+        });
+      }));
+    }
     this.bilibiliSessionService = new BilibiliSessionService();
     this.bilibiliImporter = new BilibiliImportController(
       this.app,
@@ -5793,8 +5820,19 @@ export default class LinguaStudyPlugin extends Plugin {
     this.manualImportRibbonEl = this.addRibbonIcon(
       LINGUA_STUDY_RIBBON_ICON_ID,
       "Lingua Study",
-      () => {
-        void this.importVideoFromActiveNote();
+      (event) => {
+        if (!this.capabilities.desktop) {
+          void this.importVideoFromActiveNote();
+          return;
+        }
+        const menu = new Menu();
+        menu.addItem((item) => item.setTitle("处理当前笔记中的视频链接")
+          .setIcon("video")
+          .onClick(() => { void this.importVideoFromActiveNote(); }));
+        menu.addItem((item) => item.setTitle("打开 podcast / YouTube 订阅")
+          .setIcon("rss")
+          .onClick(() => { void this.openRssSubscriptions(); }));
+        menu.showAtMouseEvent(event);
       }
     );
     this.manualImportRibbonEl.addClass("lingua-study-ribbon-action");
@@ -5803,6 +5841,14 @@ export default class LinguaStudyPlugin extends Plugin {
     });
     this.manualImportRibbonEl.setAttribute("aria-label", "Lingua Study");
     this.addSettingTab(new LinguaStudySettingTab(this.app, this));
+
+    if (this.capabilities.desktop) {
+      this.addCommand({
+        id: "open-rss-subscriptions",
+        name: "打开 podcast / YouTube 订阅",
+        callback: () => { void this.openRssSubscriptions(); }
+      });
+    }
 
     this.addCommand({
       id: "open-offline-dictionary",
@@ -6002,6 +6048,8 @@ export default class LinguaStudyPlugin extends Plugin {
     this.bilibiliImporter = null;
     this.podcastCacheService = null;
     this.podcastImporter = null;
+    this.rssSubscriptionController = null;
+    this.rssSubscriptionViewType = null;
     this.manualImportRibbonEl = null;
     this.manualImportInProgress = false;
     this.cancelStudyBlockReveal();
@@ -6485,6 +6533,24 @@ export default class LinguaStudyPlugin extends Plugin {
       view.openVocabularyBook();
     } else {
       view.openReview();
+    }
+  }
+
+  private async openRssSubscriptions(): Promise<void> {
+    const type = this.rssSubscriptionViewType;
+    if (!type) {
+      new Notice("订阅面板仅支持 Obsidian 电脑端。", 5_000);
+      return;
+    }
+    try {
+      const leaf = await this.app.workspace.ensureSideLeaf(
+        type,
+        "right",
+        { active: true, split: false, reveal: true }
+      );
+      await this.app.workspace.revealLeaf(leaf);
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : "订阅面板打开失败。", 7_000);
     }
   }
 
