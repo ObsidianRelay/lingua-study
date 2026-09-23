@@ -33,7 +33,7 @@
 
 - 使用隐私增强域名 `youtube-nocookie.com` 嵌入 YouTube 播放器
 - 本地缓存并播放哔哩哔哩视频；桌面端可选择仓库外的缓存目录，缓存不可用时回退到哔哩哔哩官方外部播放器
-- 在 Obsidian 左侧功能区提供 Lingua Study 专属图标，用于手动导入当前笔记中的 YouTube 或哔哩哔哩链接
+- 在 Obsidian 左侧功能区提供 Lingua Study 专属图标，可选择处理当前笔记的视频链接或打开右侧 RSS 订阅面板
 - 可选“粘贴单个独立视频链接后自动导入”，默认关闭
 - 打开 Lingua Study 设置页时检查 GitHub 最新正式 Release，只在有新版时提供 Obsidian 应用内插件页面入口
 - 直接导入哔哩哔哩英文字幕；仅在平台要求时使用与浏览器隔离的 Obsidian 内登录窗口
@@ -104,7 +104,7 @@ Lingua Study 的项目页面可能会先出现在 Obsidian 社区网站，而插
 ### 导入 YouTube 视频
 
 1. 在 Markdown 笔记中粘贴一个 YouTube 视频链接。
-2. 点击 Obsidian 左侧功能区的 Lingua Study 图标。
+2. 点击 Obsidian 左侧功能区的 Lingua Study 图标（电脑端再选择“处理当前笔记中的视频链接”）。
 3. 等待字幕保存完成，插件会将笔记切换到阅读视图。
 
 导入成功后，Lingua Study 会：
@@ -138,7 +138,7 @@ YouTube 字幕会按照以下顺序自动尝试：
 ### 导入哔哩哔哩视频
 
 1. 在 Markdown 笔记中粘贴一个公开哔哩哔哩视频链接。
-2. 点击 Obsidian 左侧功能区的 Lingua Study 图标。
+2. 点击 Obsidian 左侧功能区的 Lingua Study 图标（电脑端再选择“处理当前笔记中的视频链接”）。
 3. 等待字幕保存完成，插件会将笔记切换到阅读视图。
 
 Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的合并版 MP4 下载到操作系统缓存目录。如果平台提示字幕需要登录，用户可以在 Obsidian 内的隔离窗口中登录，插件随后自动重试。该登录会话与 Chrome 分开。
@@ -161,6 +161,14 @@ Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的�
 
 缓存视频位于 Obsidian 仓库之外，不受 Obsidian Sync 管理。生成的字幕 JSON 仍保存在仓库内配置的字幕目录中。哔哩哔哩登录 Cookie 只保存在 Electron 的隔离持久会话中，不会写入笔记、字幕、插件设置或 Obsidian Sync；可以在同一设置区域中清除。
 
+### 在右侧栏订阅播客和 YouTube 频道
+
+1. 点击左侧 Lingua Study 图标，选择“打开 podcast / YouTube 订阅”；也可以从命令面板运行同名命令。右侧会出现与词典并列的“订阅”标签。
+2. 粘贴公开 Podcast RSS/Atom 地址，或 YouTube 官方频道 RSS 地址（`https://www.youtube.com/feeds/videos.xml?channel_id=频道ID`）。选择订阅源后可浏览最近条目，点击“刷新”时才读取最新 RSS。
+3. 点击“开始学习”，插件会为该集或视频创建独立笔记并沿用现有导入流程；以后点击“打开学习笔记”会复用原笔记。导入中途失败或取消时，保留笔记草稿以便重试。
+
+订阅与条目清单保存在库内的 `Lingua Study/Subscriptions/subscriptions.json`，学习笔记保存在 `Lingua Study/Subscriptions/Notes`；取消订阅不会删除已创建的学习笔记、字幕或音频缓存。首版仅在电脑端提供此面板，只接受 YouTube 频道 RSS 地址，不支持频道主页、频道搜索、自动后台刷新或在侧栏内播放。
+
 ### 导入 Podcast
 
 1. 打开要插入学习内容的 Markdown 笔记。
@@ -172,7 +180,7 @@ Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的�
 ### 导入本地视频与字幕
 
 1. 打开要放置学习内容的 Markdown 笔记。
-2. 点击左侧原有的 **Lingua Study** 图标。当前笔记有 B站或 YouTube 链接时会继续处理该链接；没有可用链接时会自动打开本地视频导入页面。也可运行命令“从本地视频和字幕创建学习内容”。
+2. 点击左侧原有的 **Lingua Study** 图标并选择“处理当前笔记中的视频链接”。当前笔记有 B站或 YouTube 链接时会继续处理该链接；没有可用链接时会自动打开本地视频导入页面。也可运行命令“从本地视频和字幕创建学习内容”。
 3. 选择一个 MP4 或整个文件夹。插件会优先匹配同目录下名称相同或带 `.en`、`.eng`、`.english` 标记的 SRT/VTT；单个视频模式也可以手动选择其他字幕。
 4. 确认后，插件会把字幕转换为学习用 JSON，并在当前笔记中插入本地播放器。
 

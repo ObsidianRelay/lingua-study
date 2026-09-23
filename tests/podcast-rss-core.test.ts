@@ -33,6 +33,14 @@ test("RSS 2.0 enclosure 和 Podcasting transcript 会解析为稳定节目", () 
   );
 });
 
+test("英文字幕优先选择可导入的 VTT/SRT，而非先出现的 JSON", () => {
+  const selected = selectEnglishPodcastTranscript([
+    { url: "https://example.test/one.json", language: "en", type: "application/json" },
+    { url: "https://example.test/two.vtt", language: "en-US", type: "text/vtt" }
+  ]);
+  assert.equal(selected?.url, "https://example.test/two.vtt");
+});
+
 test("Atom enclosure、相对链接和重复 guid 能被一致处理", () => {
   const xml = `<feed><title>Example</title><entry><id>urn:one</id><title>One</title>
     <link rel="enclosure" href="audio/one.m4a" type="audio/mp4" length="99" />
