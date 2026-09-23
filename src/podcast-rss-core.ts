@@ -25,7 +25,7 @@ export interface PodcastFeed {
 
 const MAX_EPISODES = 500;
 
-function decodeXmlText(value: string): string {
+export function decodeXmlText(value: string): string {
   return value
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gu, "$1")
     .replace(/<[^>]+>/gu, "")
@@ -182,6 +182,7 @@ export function selectEnglishPodcastTranscript(
   references: readonly PodcastTranscriptReference[]
 ): PodcastTranscriptReference | null {
   return references.find((reference) =>
-    reference.language === "en" || reference.language?.startsWith("en-") === true
+    (reference.language === "en" || reference.language?.startsWith("en-") === true) &&
+    /(?:vtt|srt)/iu.test(reference.type ?? reference.url)
   ) ?? null;
 }

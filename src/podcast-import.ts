@@ -69,7 +69,7 @@ export class PodcastImportController {
     const url = await new Promise<string | null>((resolve) => new PodcastUrlModal(this.app, resolve).open());
     if (!url) return;
     const log = new PodcastImportLog();
-    let progress = new Notice("正在读取播客 RSS…", 0);
+    const progress = new Notice("正在读取播客 RSS…", 0);
     try {
       const source = parsePodcastSourceInput(url);
       const feedUrl = source.kind === "apple"
@@ -84,11 +84,30 @@ export class PodcastImportController {
       progress.hide();
       const episode = await new Promise<PodcastEpisode | null>((resolve) => new PodcastEpisodeModal(this.app, feed, resolve).open());
       if (!episode) return;
+      await this.importEpisode(editor, view, episode);
+    } catch (error) {
+      progress.hide();
+      const message = error instanceof Error ? error.message : "Podcast RSS 导入失败。";
+      await log.write("error", error instanceof Error && error.stack ? `${message}\n${error.stack}` : message);
+      new Notice(message, 9_000);
+    }
+  }
+
+  async importEpisode(editor: Editor, view: MarkdownView, episode: PodcastEpisode): Promise<boolean> {
+    const log = new PodcastImportLog();
+    const progress = new Notice("正在准备播客节目…", 0);
+    try {
       await log.write("episode", `已选择 ${episode.sourceId}：${episode.title}`);
       if (extractPodcastSourceIdsFromStudyBlocks(editor.getValue()).includes(episode.sourceId)) {
-        throw new Error("当前笔记已经有这个播客节目，未重复创建学习内容。");
+        if (!await this.cache.getCachedEpisode(episode.sourceId)) {
+          await this.cache.cacheEpisode(episode, (message) => progress.setMessage(message));
+          new Notice("播客音频缓存已恢复，原学习笔记保持不变。", 6_000);
+        } else {
+          new Notice("当前笔记已经有这个播客节目，未重复创建学习内容。", 5_000);
+        }
+        await this.switchToReadingView(view);
+        return true;
       }
-      progress = new Notice("正在准备播客节目…", 0);
       const cached = await this.cache.cacheEpisode(episode, (message) => progress.setMessage(message));
       await log.write("cache", cached.reused ? "复用已有音频缓存" : "音频缓存完成");
       const segments = await this.resolveTranscript(episode, cached.cached, (message) => progress.setMessage(message), log);
@@ -103,11 +122,15 @@ export class PodcastImportController {
       progress.hide();
       await log.write("complete", "已创建学习块");
       new Notice(`已创建播客学习内容：${episode.title}。`, 7_000);
+      return true;
     } catch (error) {
       progress.hide();
       const message = error instanceof Error ? error.message : "Podcast RSS 导入失败。";
       await log.write("error", error instanceof Error && error.stack ? `${message}\n${error.stack}` : message);
       new Notice(message, 9_000);
+      return false;
+    } finally {
+      progress.hide();
     }
   }
 
