@@ -1,5 +1,10 @@
 import { env, pipeline } from "@huggingface/transformers";
-import { WHISPER_MODEL_ID, WHISPER_MODEL_REVISION } from "./whisper-model";
+import {
+  DEFAULT_WHISPER_MODEL_HOST,
+  sanitizeWhisperModelSource,
+  WHISPER_MODEL_ID,
+  WHISPER_MODEL_REVISION
+} from "./whisper-model";
 import type {
   WhisperWorkerResponse,
   WhisperWorkerTranscribeRequest
@@ -33,20 +38,30 @@ interface WorkerScope {
 
 const workerScope = self as unknown as WorkerScope;
 let transcriberPromise: Promise<WhisperTranscriber> | null = null;
+let transcriberHost: string | null = null;
 
 function post(message: WhisperWorkerResponse): void {
   workerScope.postMessage(message);
 }
 
-async function getTranscriber(id: number, wasmBaseUrl: string): Promise<WhisperTranscriber> {
+async function getTranscriber(
+  id: number,
+  wasmBaseUrl: string,
+  modelHost: string
+): Promise<WhisperTranscriber> {
   if (!/^http:\/\/127\.0\.0\.1:[0-9]+\/[a-f0-9]{48}\/$/u.test(wasmBaseUrl)) {
     throw new Error("本地 Whisper 运行地址无效。");
   }
-  if (transcriberPromise) {
+  if (modelHost !== DEFAULT_WHISPER_MODEL_HOST &&
+    sanitizeWhisperModelSource(modelHost) !== modelHost) {
+    throw new Error("Whisper 模型下载地址无效。");
+  }
+  if (transcriberPromise && transcriberHost === modelHost) {
     return transcriberPromise;
   }
   env.allowLocalModels = false;
   env.allowRemoteModels = true;
+  env.remoteHost = modelHost;
   env.useBrowserCache = true;
   env.useFS = false;
   env.useFSCache = false;
@@ -57,6 +72,7 @@ async function getTranscriber(id: number, wasmBaseUrl: string): Promise<WhisperT
   wasm.wasmPaths = wasmBaseUrl;
   wasm.numThreads = 1;
   wasm.proxy = false;
+  transcriberHost = modelHost;
   transcriberPromise = pipeline("automatic-speech-recognition", WHISPER_MODEL_ID, {
     revision: WHISPER_MODEL_REVISION,
     dtype: "q8",
@@ -71,6 +87,7 @@ async function getTranscriber(id: number, wasmBaseUrl: string): Promise<WhisperT
     }
   }).then((value) => value as unknown as WhisperTranscriber).catch((error: unknown) => {
     transcriberPromise = null;
+    transcriberHost = null;
     throw error;
   });
   return transcriberPromise;
@@ -85,8 +102,10 @@ workerScope.addEventListener("message", (event) => {
     return;
   }
   void (async (): Promise<void> => {
+    let stage = "准备 Whisper 模型或运行环境";
     try {
-      const transcriber = await getTranscriber(request.id, request.wasmBaseUrl);
+      const transcriber = await getTranscriber(request.id, request.wasmBaseUrl, request.modelHost);
+      stage = "识别音频";
       post({ type: "progress", id: request.id, message: "正在本地识别并生成单词时间轴…", percent: null });
       const result = await transcriber(request.audio, {
         chunk_length_s: 29,
@@ -99,7 +118,7 @@ workerScope.addEventListener("message", (event) => {
       post({
         type: "error",
         id: request.id,
-        message: error instanceof Error ? error.message : "本地 Whisper 识别失败。"
+        message: `${stage}失败：${error instanceof Error ? error.message : "未知错误"}`
       });
     }
   })();

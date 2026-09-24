@@ -2,6 +2,17 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 1.5.4 - 2026-09-24
+
+### Added
+
+- Added an optional HTTPS source for the pinned Whisper Base English model when Hugging Face cannot be reached; the default remains Hugging Face
+
+### Fixed
+
+- Refreshed the model-cache status when the source changes and clarified whether Whisper failed while preparing the model or recognizing audio
+- Hid the empty status indicator beside the model-source field until there is feedback to show
+
 ## 1.5.3 - 2026-09-22
 
 ### Added

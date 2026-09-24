@@ -7,7 +7,11 @@ export {
   WHISPER_MODEL_REVISION,
   WHISPER_RUNTIME_VERSION
 } from "./whisper-model";
-import { WHISPER_MODEL_ID, WHISPER_MODEL_REVISION } from "./whisper-model";
+import {
+  DEFAULT_WHISPER_MODEL_HOST,
+  WHISPER_MODEL_ID,
+  WHISPER_MODEL_REVISION
+} from "./whisper-model";
 
 const ONNXRUNTIME_WEB_VERSION = "1.22.0-dev.20250409-89f8206ba4";
 const ONNXRUNTIME_WEB_DIST_URL =
@@ -63,11 +67,20 @@ export function getWhisperCacheFolder(
   );
 }
 
-export function isWhisperModelCacheUrl(value: string): boolean {
+/** modelHost=null 仅供“清除模型”识别过去使用过的备用来源。 */
+export function isWhisperModelCacheUrl(
+  value: string,
+  modelHost: string | null = DEFAULT_WHISPER_MODEL_HOST
+): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname.toLocaleLowerCase("en-US") === "huggingface.co" &&
-      url.pathname.startsWith(`/${WHISPER_MODEL_ID}/resolve/${WHISPER_MODEL_REVISION}/`);
+    if (url.protocol !== "https:") {
+      return false;
+    }
+    const modelPath = `${WHISPER_MODEL_ID}/resolve/${WHISPER_MODEL_REVISION}/`;
+    return modelHost === null
+      ? url.pathname.includes(`/${modelPath}`)
+      : url.href.startsWith(`${modelHost}${modelPath}`);
   } catch {
     return false;
   }

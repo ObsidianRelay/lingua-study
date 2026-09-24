@@ -172,7 +172,8 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
   assert.match(source, /this\.plugin\.settings\.baiduSecretId/u);
   assert.match(source, /this\.plugin\.settings\.kimiSecretId/u);
   assert.match(source, /Whisper Base English 模型/u);
-  assert.match(source, /管理手动文稿的本地时间轴对齐/u);
+  assert.match(source, /管理本地英语识别与文稿时间轴对齐/u);
+  assert.match(source, /备用模型下载地址/u);
   assert.match(source, /options: STUDY_PROFILE_LONG_LABELS/u);
   assert.match(source, /isStudyProfile\(value\)/u);
   assert.match(source, /refreshBilibiliStatusIndicators/u);

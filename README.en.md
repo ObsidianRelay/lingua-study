@@ -5,10 +5,11 @@
 Turn English YouTube and Bilibili videos into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 1.5.3 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.5.4 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
-## Recent updates (1.3.0–1.5.3)
+## Recent updates (1.3.0–1.5.4)
 
+- **Whisper model download source**: keep Hugging Face as the default or enter a trusted compatible HTTPS source when the official host is unreachable
 - **Local Bilibili transcription**: on desktop, generate English subtitles with Whisper Base English for a cacheable English-language video without usable English captions after confirming the model download; retry from the existing player if transcription is interrupted
 - **Bilibili cache folder**: choose a video-cache directory outside the Obsidian vault on macOS or Windows; legacy default caches remain available as a read-only fallback and are never moved or deleted automatically
 - **Selection-translation toggle**: disable the automatic transcript-selection popover without affecting double-click lookup or the manual translation command
@@ -128,6 +129,8 @@ Transcript creation follows this order:
 6. Player-only import if no usable English track is available
 
 The first use of step 5 asks before downloading the pinned model and runtime. Recognition stays on the device and never uploads the video or audio; it does not translate Chinese, Japanese, or another spoken language into English. If caching, platform access, or recognition fails, the player block remains available for a later SRT/VTT or creator-document import.
+
+If Hugging Face is unreachable, enter a trusted HTTPS model-host root URL in **Settings → Lingua Study → 文稿导入与对齐 → 备用模型下载地址**. The host must directly serve the same pinned model files at the same paths. Leave the field empty to use Hugging Face. A mirror that redirects back to Hugging Face will not help when the official host is blocked. Switching sources may download the model again; video and audio stay on the device.
 
 After a player-only block is created, the original visible Bilibili link is removed while surrounding note text is retained. A compact caption icon remains next to the source-video button so that SRT/VTT or a creator-provided PDF, DOCX, TXT, Markdown, or pasted transcript can be added later. Imported Chinese is stored as the corresponding local translation without calling the translation API.
 

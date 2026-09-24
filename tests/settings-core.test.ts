@@ -13,6 +13,7 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal("whisperModel" in settings, false);
   assert.equal(settings.transcriptFolder, "Study/Transcripts");
   assert.equal(settings.ytDlpPath, "/opt/homebrew/bin/yt-dlp");
+  assert.equal(settings.whisperModelSource, "");
   assert.equal(settings.autoImportPastedVideoLinks, false);
   assert.equal(settings.translateWholeTranscript, false);
   assert.equal(settings.cacheTranslations, false);
@@ -26,6 +27,21 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal("speechCloudBaseUrl" in settings, false);
   assert.equal("speechCloudModel" in settings, false);
   assert.equal("speechCloudSecretId" in settings, false);
+});
+
+test("备用 Whisper 模型来源只接受 HTTPS 根地址", () => {
+  assert.equal(
+    sanitizeSettings({ whisperModelSource: " https://models.example.org/hub " }).whisperModelSource,
+    "https://models.example.org/hub/"
+  );
+  for (const source of [
+    "http://models.example.org",
+    "https://user:secret@models.example.org",
+    "https://models.example.org/?token=secret",
+    "https://models.example.org/#fragment"
+  ]) {
+    assert.equal(sanitizeSettings({ whisperModelSource: source }).whisperModelSource, "");
+  }
 });
 
 test("双击查词开关兼容旧设置", () => {

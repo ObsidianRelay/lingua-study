@@ -37,6 +37,16 @@ test("只识别固定版本 Whisper Base English 模型缓存", () => {
   );
 });
 
+test("切换模型来源后只把当前来源当作已缓存，清理时可匹配旧来源", () => {
+  const modelPath = `${WHISPER_MODEL_ID}/resolve/${WHISPER_MODEL_REVISION}/config.json`;
+  const official = `https://huggingface.co/${modelPath}`;
+  const alternative = `https://models.example.org/hub/${modelPath}`;
+  assert.equal(isWhisperModelCacheUrl(official, "https://models.example.org/hub/"), false);
+  assert.equal(isWhisperModelCacheUrl(alternative, "https://models.example.org/hub/"), true);
+  assert.equal(isWhisperModelCacheUrl(alternative, null), true);
+  assert.equal(isWhisperModelCacheUrl("https://models.example.org/hub/another/model/config.json", null), false);
+});
+
 test("固定 WASM 运行文件校验值与构建依赖一致", async () => {
   assert.deepEqual(
     WHISPER_RUNTIME_ASSETS.map((asset) => asset.fileName),

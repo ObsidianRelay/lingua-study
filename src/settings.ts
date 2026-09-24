@@ -14,6 +14,7 @@ import {
   type InterfaceTheme,
   type LinguaStudySettings
 } from "./settings-core";
+import { sanitizeWhisperModelSource } from "./whisper-model";
 import {
   isStudyProfile,
   STUDY_PROFILE_LONG_LABELS
@@ -150,6 +151,8 @@ class ClearCustomDictionaryModal extends Modal {
 export class LinguaStudySettingTab extends PluginSettingTab {
   private readonly bilibiliStatusEls = new Set<HTMLElement>();
   private dictionaryUpdatePromptHandled = false;
+  private whisperModelStatusEl: HTMLElement | null = null;
+  private whisperModelStatusRequest = 0;
 
   constructor(app: App, private readonly plugin: LinguaStudyPlugin) {
     super(app, plugin);
@@ -930,18 +933,18 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return {
       type: "page",
       name: "文稿导入与对齐",
-      desc: "管理手动文稿的本地时间轴对齐。",
-      displayValue: "仅用于手动文稿",
+      desc: "管理本地英语识别与文稿时间轴对齐。",
+      displayValue: "本地 Whisper",
       items: [
         {
           type: "group",
-          heading: "本地文稿对齐",
+          heading: "本地英语识别与对齐",
           cls: "lingua-study-settings-section lingua-study-settings-page-alignment",
           visible: () => this.plugin.capabilities.localWhisper,
           items: [
             {
               name: "Whisper Base English 模型",
-              desc: `用于手动文稿对齐；音视频不会上传。目录：${this.plugin.getWhisperAlignmentCacheFolder()}`,
+              desc: `用于本地英语识别和文稿对齐；音视频不会上传。运行文件目录：${this.plugin.getWhisperAlignmentCacheFolder()}`,
               render: (setting) => {
                 const status = setting.controlEl.createSpan({
                   cls: "lingua-study-settings-status",
@@ -949,19 +952,49 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                 });
                 status.setAttribute("role", "status");
                 status.setAttribute("aria-live", "polite");
-                void this.plugin.hasWhisperAlignmentModel().then((cached) => {
-                  status.setText(cached ? "模型已缓存" : "尚未下载");
-                  status.classList.toggle("is-success", cached);
-                  status.classList.toggle("is-warning", !cached);
-                }).catch(() => {
-                  status.setText("状态检查失败");
-                  status.classList.add("is-error");
+                this.whisperModelStatusEl = status;
+                this.refreshWhisperModelStatus();
+              }
+            },
+            {
+              name: "备用模型下载地址",
+              desc: "留空使用 Hugging Face。备用站点须直接提供同一固定版本的模型文件；切换来源可能重新下载模型。音视频不会发往该站点。",
+              render: (setting) => {
+                let feedback: HTMLSpanElement;
+                setting.addText((text) => {
+                  text.setPlaceholder("留空使用 huggingface.co")
+                    .setValue(this.plugin.settings.whisperModelSource);
+                  text.inputEl.addEventListener("change", () => {
+                    feedback.hidden = false;
+                    const input = text.getValue().trim();
+                    const source = sanitizeWhisperModelSource(input);
+                    if (input && !source) {
+                      feedback.setText("请输入不含账号或参数的 HTTPS 站点地址");
+                      feedback.classList.add("is-error");
+                      return;
+                    }
+                    feedback.setText("正在保存…");
+                    feedback.classList.remove("is-error");
+                    void this.plugin.updateSettings({ whisperModelSource: source }).then(() => {
+                      text.setValue(source);
+                      feedback.setText(source ? "已保存备用来源" : "已使用官方来源");
+                      this.refreshWhisperModelStatus();
+                    }).catch(() => {
+                      feedback.setText("模型来源保存失败");
+                      feedback.classList.add("is-error");
+                    });
+                  });
                 });
+                feedback = setting.controlEl.createSpan({
+                  cls: "lingua-study-settings-status",
+                  attr: { role: "status", "aria-live": "polite" }
+                });
+                feedback.hidden = true;
               }
             },
             {
               name: "管理本地模型",
-              desc: "打开目录或清除模型；不影响已有字幕。",
+              desc: "打开运行文件目录或清除模型缓存；不影响已有字幕。",
               render: (setting) => {
                 setting.addButton((button) => {
                   button.setButtonText("打开缓存目录").onClick(() => {
@@ -999,12 +1032,35 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "与 B站字幕获取相互独立",
-              desc: "仅用于手动文稿对齐，不处理 B站官方字幕。"
+              desc: "可用于手动文稿对齐，或在英语视频没有可用字幕时本地识别；不会替换 B站官方字幕。"
             }
           ]
         }
       ]
     };
+  }
+
+  private refreshWhisperModelStatus(): void {
+    const status = this.whisperModelStatusEl;
+    if (!status) {
+      return;
+    }
+    const request = ++this.whisperModelStatusRequest;
+    status.setText("正在检查模型…");
+    status.classList.remove("is-success", "is-warning", "is-error");
+    void this.plugin.hasWhisperAlignmentModel().then((cached) => {
+      if (this.whisperModelStatusEl !== status || request !== this.whisperModelStatusRequest) {
+        return;
+      }
+      status.setText(cached ? "模型已缓存" : "尚未下载");
+      status.classList.add(cached ? "is-success" : "is-warning");
+    }).catch(() => {
+      if (this.whisperModelStatusEl !== status || request !== this.whisperModelStatusRequest) {
+        return;
+      }
+      status.setText("状态检查失败");
+      status.classList.add("is-error");
+    });
   }
 
   private translationPage(): SettingDefinitionPage {

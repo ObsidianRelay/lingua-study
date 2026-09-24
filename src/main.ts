@@ -5688,7 +5688,10 @@ export default class LinguaStudyPlugin extends Plugin {
         this.bilibiliCacheService,
         () => this.settings
       );
-      this.localWhisperService = new LocalWhisperService(this.bilibiliCacheService);
+      this.localWhisperService = new LocalWhisperService(
+        this.bilibiliCacheService,
+        () => this.settings.whisperModelSource
+      );
       ytDlpFetcher = fetchTranscriptWithYtDlp;
       try {
         await removeLegacyWhisperCachesOnce();
