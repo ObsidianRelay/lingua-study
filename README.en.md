@@ -7,6 +7,13 @@ Turn English YouTube and Bilibili videos into materials you can shadow, dictate,
 > [!IMPORTANT]
 > Lingua Study 1.5.3 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
+## Join the QQ Group
+
+Scan the QR code below to join the Lingua Study QQ group:
+
+<p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 124526985" width="320"></p>
+<p align="center"><strong>QQ group number: 124526985</strong></p>
+
 ## Recent updates (1.3.0–1.5.3)
 
 - **Local Bilibili transcription**: on desktop, generate English subtitles with Whisper Base English for a cacheable English-language video without usable English captions after confirming the model download; retry from the existing player if transcription is interrupted
