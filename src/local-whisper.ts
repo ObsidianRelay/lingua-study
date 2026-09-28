@@ -15,6 +15,7 @@ import {
   WHISPER_RUNTIME_ASSETS,
   whisperChunksToTokens
 } from "./local-whisper-core";
+import { getWhisperModelHost } from "./whisper-model";
 import type {
   WhisperWorkerResponse,
   WhisperWorkerTranscribeRequest
@@ -37,7 +38,10 @@ export class LocalWhisperService {
   private nextRequestId = 1;
   private active = false;
 
-  constructor(private readonly localAssetServer: BilibiliCacheService) {}
+  constructor(
+    private readonly localAssetServer: BilibiliCacheService,
+    private readonly getModelSource: () => string
+  ) {}
 
   async transcribe(
     cached: CachedAudioMedia,
@@ -48,12 +52,14 @@ export class LocalWhisperService {
     }
     this.active = true;
     try {
+      // 一次识别的所有音频块使用同一来源，即使用户处理中修改了设置。
+      const modelHost = getWhisperModelHost(this.getModelSource());
       const wasmBaseUrl = await this.prepareRuntime(onProgress);
       const chunks = await decodeCachedAudio(cached, onProgress);
       const tokens: TimedRecognitionToken[] = [];
       for (const [index, chunk] of chunks.entries()) {
         onProgress(`正在本地识别音轨 ${index + 1}/${chunks.length}…`);
-        const result = await this.requestWorker(chunk.samples, wasmBaseUrl, onProgress);
+        const result = await this.requestWorker(chunk.samples, wasmBaseUrl, modelHost, onProgress);
         tokens.push(...whisperChunksToTokens(result, chunk.offsetSeconds));
       }
       return tokens;
@@ -67,7 +73,8 @@ export class LocalWhisperService {
       return false;
     }
     const cache = await window.caches.open("transformers-cache");
-    return (await cache.keys()).some((request) => isWhisperModelCacheUrl(request.url));
+    const modelHost = getWhisperModelHost(this.getModelSource());
+    return (await cache.keys()).some((request) => isWhisperModelCacheUrl(request.url, modelHost));
   }
 
   async clearCache(): Promise<void> {
@@ -75,7 +82,7 @@ export class LocalWhisperService {
     if (window.caches) {
       const cache = await window.caches.open("transformers-cache");
       await Promise.all((await cache.keys())
-        .filter((request) => isWhisperModelCacheUrl(request.url))
+        .filter((request) => isWhisperModelCacheUrl(request.url, null))
         .map((request) => cache.delete(request)));
     }
     await rm(this.cacheFolder, { recursive: true, force: true });
@@ -110,6 +117,7 @@ export class LocalWhisperService {
   private requestWorker(
     audio: Float32Array,
     wasmBaseUrl: string,
+    modelHost: string,
     onProgress: (message: string) => void
   ): Promise<unknown> {
     const worker = this.getWorker();
@@ -121,7 +129,8 @@ export class LocalWhisperService {
         type: "transcribe",
         id,
         audio,
-        wasmBaseUrl
+        wasmBaseUrl,
+        modelHost
       };
       worker.postMessage(request, [audio.buffer]);
     });

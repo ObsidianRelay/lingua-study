@@ -37,6 +37,16 @@ test("只识别固定版本 Whisper Base English 模型缓存", () => {
   );
 });
 
+test("切换模型来源后只把当前来源当作已缓存，清理时可匹配旧来源", () => {
+  const modelPath = `${WHISPER_MODEL_ID}/resolve/${WHISPER_MODEL_REVISION}/config.json`;
+  const official = `https://huggingface.co/${modelPath}`;
+  const alternative = `https://models.example.org/hub/${modelPath}`;
+  assert.equal(isWhisperModelCacheUrl(official, "https://models.example.org/hub/"), false);
+  assert.equal(isWhisperModelCacheUrl(alternative, "https://models.example.org/hub/"), true);
+  assert.equal(isWhisperModelCacheUrl(alternative, null), true);
+  assert.equal(isWhisperModelCacheUrl("https://models.example.org/hub/another/model/config.json", null), false);
+});
+
 test("固定 WASM 运行文件校验值与构建依赖一致", async () => {
   assert.deepEqual(
     WHISPER_RUNTIME_ASSETS.map((asset) => asset.fileName),
@@ -72,5 +82,18 @@ test("Whisper 单词时间轴会生成可读的完整英文字幕", () => {
   ]), [
     { text: "Hello everyone.", start: 0, end: 0.8 },
     { text: "Welcome back!", start: 1, end: 1.8 }
+  ]);
+});
+
+test("Whisper 重叠或倒序的词级时间轴会被安全整理后保存", () => {
+  assert.deepEqual(whisperTokensToTranscriptSegments([
+    { text: "hello", spokenText: "Hello", start: 0, end: 0.4 },
+    { text: "again", spokenText: "again", start: 0.2, end: 0.35 },
+    { text: "world.", spokenText: "world.", start: 0.3, end: 0.9 },
+    { text: "Next", spokenText: "Next", start: 1.2, end: 1.5 },
+    { text: "one.", spokenText: "one.", start: 1.5, end: 1.8 }
+  ]), [
+    { text: "Hello world.", start: 0, end: 0.9 },
+    { text: "Next one.", start: 1.2, end: 1.8 }
   ]);
 });

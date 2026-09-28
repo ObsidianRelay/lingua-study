@@ -1390,6 +1390,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     iframe.setAttribute("allowfullscreen", "");
     const sourceToolbar = playerDock.createDiv({ cls: "evs-toolbar evs-bilibili-toolbar" });
     this.createTranscriptImportButton(sourceToolbar, config, transcriptData !== null);
+    if (!transcriptData) {
+      this.createLocalWhisperRetryButton(sourceToolbar, config);
+    }
     this.createSourceLink(sourceToolbar, sourceUrl);
     this.createMobileFloatingToggle(sourceToolbar, playerDock);
     const status = root.createDiv({ cls: "evs-status evs-bilibili-status" });
@@ -1610,6 +1613,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     );
     this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
     this.createTranscriptImportButton(toolbar, config, transcriptData !== null);
+    if (!transcriptData) {
+      this.createLocalWhisperRetryButton(toolbar, config);
+    }
     this.createSpeedControls(toolbar);
     this.createSourceLink(toolbar, sourceUrl);
     this.createMobileFloatingToggle(toolbar, playerDock);
@@ -4625,6 +4631,24 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     return button;
   }
 
+  private createLocalWhisperRetryButton(
+    parent: HTMLElement,
+    config: BilibiliCodeBlockConfig
+  ): HTMLButtonElement {
+    const button = parent.createEl("button", {
+      cls: "evs-button evs-icon-button evs-add-transcript-button"
+    });
+    button.type = "button";
+    this.setControlIcon(button, "audio-lines", "重新本地识别英文音轨（耗时较长）");
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      void this.plugin.retryBilibiliLocalWhisper(this.sourcePath, config).finally(() => {
+        button.disabled = false;
+      });
+    });
+    return button;
+  }
+
   private createSeekButton(
     parent: HTMLElement,
     label: string,
@@ -5796,7 +5820,10 @@ export default class LinguaStudyPlugin extends Plugin {
         this.bilibiliCacheService,
         () => this.settings
       );
-      this.localWhisperService = new LocalWhisperService(this.bilibiliCacheService);
+      this.localWhisperService = new LocalWhisperService(
+        this.bilibiliCacheService,
+        () => this.settings.whisperModelSource
+      );
       this.podcastCacheService = new PodcastCacheService(this.bilibiliCacheService);
       this.podcastImporter = new PodcastImportController(
         this.app,
@@ -7269,6 +7296,13 @@ export default class LinguaStudyPlugin extends Plugin {
     config: BilibiliCodeBlockConfig
   ): Promise<void> {
     return this.getBilibiliImporter().openTranscriptImport(sourcePath, config);
+  }
+
+  retryBilibiliLocalWhisper(
+    sourcePath: string,
+    config: BilibiliCodeBlockConfig
+  ): Promise<void> {
+    return this.getBilibiliImporter().retryLocalWhisper(sourcePath, config);
   }
 
   cleanupLegacyBilibiliSourceLink(

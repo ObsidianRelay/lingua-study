@@ -3,6 +3,7 @@ export interface WhisperWorkerTranscribeRequest {
   id: number;
   audio: Float32Array;
   wasmBaseUrl: string;
+  modelHost: string;
 }
 
 export interface WhisperWorkerProgressMessage {

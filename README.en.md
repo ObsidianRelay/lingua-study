@@ -5,10 +5,12 @@
 Turn English YouTube and Bilibili videos, plus public podcast episodes, into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 1.5.2 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 1.5.4 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
-## Recent updates (1.3.0–1.5.2)
+## Recent updates (1.3.0–1.5.4)
 
+- **Whisper model download source**: keep Hugging Face as the default or enter a trusted compatible HTTPS source when the official host is unreachable
+- **Local Bilibili transcription**: on desktop, generate English subtitles with Whisper Base English for a cacheable English-language video without usable English captions after confirming the model download; retry from the existing player if transcription is interrupted
 - **Bilibili cache folder**: choose a video-cache directory outside the Obsidian vault on macOS or Windows; legacy default caches remain available as a read-only fallback and are never moved or deleted automatically
 - **Selection-translation toggle**: disable the automatic transcript-selection popover without affecting double-click lookup or the manual translation command
 - **Local-video study**: import local MP4 files from the existing Lingua Study entry and automatically match same-name SRT/VTT subtitles
@@ -38,6 +40,7 @@ Turn English YouTube and Bilibili videos, plus public podcast episodes, into mat
 - A settings-page update check against the latest official GitHub Release, opening the plugin page inside Obsidian only when a newer version is available
 - Direct Bilibili English subtitle import, with an isolated in-Obsidian login only when Bilibili requires it
 - Public manual-English caption preference with automatic English captions as fallback
+- Desktop-local Whisper Base English transcription when a video is spoken in English but has no English subtitle track
 - Independent keyless YouTube mobile-client fallback when the normal page route is blocked
 - Automatic local `yt-dlp` fallback on desktop when it is already installed
 - Local SRT/VTT import when public captions cannot be fetched
@@ -123,7 +126,12 @@ Transcript creation follows this order:
 2. Direct Bilibili subtitle request, preferring manual English over automatic English; in-Obsidian login only when required
 3. Local `.srt` or `.vtt` selection, up to 10 MB
 4. Import a creator-provided document and align it locally with Whisper Base English
-5. Player-only import if no usable English track is available
+5. Local Whisper Base English transcription when the video is spoken in English and can be cached
+6. Player-only import if no usable English track is available
+
+The first use of step 5 asks before downloading the pinned model and runtime. Recognition stays on the device and never uploads the video or audio; it does not translate Chinese, Japanese, or another spoken language into English. If caching, platform access, or recognition fails, the player block remains available for a later SRT/VTT or creator-document import.
+
+If Hugging Face is unreachable, enter a trusted HTTPS model-host root URL in **Settings → Lingua Study → 文稿导入与对齐 → 备用模型下载地址**. The host must directly serve the same pinned model files at the same paths. Leave the field empty to use Hugging Face. A mirror that redirects back to Hugging Face will not help when the official host is blocked. Switching sources may download the model again; video and audio stay on the device.
 
 After a player-only block is created, the original visible Bilibili link is removed while surrounding note text is retained. A compact caption icon remains next to the source-video button so that SRT/VTT or a creator-provided PDF, DOCX, TXT, Markdown, or pasted transcript can be added later. Imported Chinese is stored as the corresponding local translation without calling the translation API.
 
@@ -261,7 +269,7 @@ example.zh-CN.study.json
 - If direct import fails and local `yt-dlp` is available, Lingua Study runs it without a shell, ignores user-wide yt-dlp configuration, downloads subtitles only into a temporary folder, and deletes that folder after parsing. It does not request video or audio.
 - Local SRT/VTT fallback files are read on the device and are not uploaded by Lingua Study.
 - PDF, DOCX, TXT, Markdown, and pasted creator transcripts are parsed locally. Image-only PDFs require OCR before import.
-- Local transcript alignment downloads a pinned Whisper Base English model and runtime only after confirmation; the video and transcript remain on the device.
+- Local transcript alignment and English-audio transcription download a pinned Whisper Base English model and runtime only after confirmation; the video, audio, and transcript remain on the device.
 - Translation requests connect only to the configured Baidu Translate, DeepSeek, Kimi, or OpenAI-compatible HTTPS endpoint.
 - A study-card request sends only the segment explicitly selected by the user, the selected study profile, and matching local dictionary tags.
 - Offline dictionary lookups and system pronunciation do not make network requests.
@@ -283,7 +291,7 @@ example.zh-CN.study.json
 - Public-caption import depends on an unofficial YouTube interface and may require a plugin update if YouTube changes it.
 - `yt-dlp` is not bundled, installed, or updated by Lingua Study. Its fallback works only when a compatible executable is already available on the computer.
 - YouTube videos without retrievable English captions still require a local English SRT/VTT file. Other languages are not silently machine-translated into English.
-- Lingua Study does not operate a transcription service. Local Whisper alignment runs on the user's device after the required model files have been downloaded.
+- Lingua Study does not operate a transcription service. Local Whisper alignment and English-audio transcription run on the user's device after the required model files have been downloaded, without translating non-English speech.
 - The interface and translation target are currently Simplified Chinese.
 - IELTS study tips are profile-based guidance, not claims about an official fixed IELTS vocabulary list.
 

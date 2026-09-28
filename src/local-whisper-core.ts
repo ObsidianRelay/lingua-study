@@ -7,7 +7,11 @@ export {
   WHISPER_MODEL_REVISION,
   WHISPER_RUNTIME_VERSION
 } from "./whisper-model";
-import { WHISPER_MODEL_ID, WHISPER_MODEL_REVISION } from "./whisper-model";
+import {
+  DEFAULT_WHISPER_MODEL_HOST,
+  WHISPER_MODEL_ID,
+  WHISPER_MODEL_REVISION
+} from "./whisper-model";
 
 const ONNXRUNTIME_WEB_VERSION = "1.22.0-dev.20250409-89f8206ba4";
 const ONNXRUNTIME_WEB_DIST_URL =
@@ -63,11 +67,20 @@ export function getWhisperCacheFolder(
   );
 }
 
-export function isWhisperModelCacheUrl(value: string): boolean {
+/** modelHost=null 仅供“清除模型”识别过去使用过的备用来源。 */
+export function isWhisperModelCacheUrl(
+  value: string,
+  modelHost: string | null = DEFAULT_WHISPER_MODEL_HOST
+): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname.toLocaleLowerCase("en-US") === "huggingface.co" &&
-      url.pathname.startsWith(`/${WHISPER_MODEL_ID}/resolve/${WHISPER_MODEL_REVISION}/`);
+    if (url.protocol !== "https:") {
+      return false;
+    }
+    const modelPath = `${WHISPER_MODEL_ID}/resolve/${WHISPER_MODEL_REVISION}/`;
+    return modelHost === null
+      ? url.pathname.includes(`/${modelPath}`)
+      : url.href.startsWith(`${modelHost}${modelPath}`);
   } catch {
     return false;
   }
@@ -110,13 +123,27 @@ export function whisperChunksToTokens(
 export function whisperTokensToTranscriptSegments(
   tokens: readonly TimedRecognitionToken[]
 ): TranscriptSegment[] {
-  const wordSegments = tokens.flatMap((token): TranscriptSegment[] => {
+  const rawWordSegments = tokens.flatMap((token): TranscriptSegment[] => {
     const text = (token.spokenText ?? token.text).trim();
     return Number.isFinite(token.start) && Number.isFinite(token.end) &&
       token.start >= 0 && token.end > token.start && text !== ""
       ? [{ start: token.start, end: token.end, text }]
       : [];
-  });
+  }).sort((left, right) => left.start - right.start || left.end - right.end);
+  const wordSegments: TranscriptSegment[] = [];
+  for (const segment of rawWordSegments) {
+    const previous = wordSegments.at(-1);
+    if (!previous || segment.start >= previous.end) {
+      wordSegments.push(segment);
+      continue;
+    }
+    // Whisper 的滑动窗口偶尔会在接缝处返回重复或交叉的词级时间。
+    // 无法为完全重叠的词伪造可靠时间，直接忽略；部分重叠则裁剪到上一词末尾。
+    if (segment.end <= previous.end) {
+      continue;
+    }
+    wordSegments.push({ ...segment, start: previous.end });
+  }
   if (wordSegments.length === 0) {
     throw new Error("本地语音识别没有生成可保存的英文字幕。");
   }

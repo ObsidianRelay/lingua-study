@@ -2,6 +2,7 @@ import { DEFAULT_TRANSCRIPT_FOLDER, sanitizeTranscriptFolder } from "./import-co
 import type { DeepSeekModel, KimiModel, TranslationProvider } from "./translation-core";
 import { isStudyProfile, type StudyProfile } from "./study-core";
 import type { StudyChatProvider } from "./study-chat-core";
+import { sanitizeWhisperModelSource } from "./whisper-model";
 import {
   DEFAULT_FSRS_REQUEST_RETENTION,
   sanitizeFsrsRequestRetention
@@ -16,6 +17,7 @@ export function isInterfaceTheme(value: unknown): value is InterfaceTheme {
 export interface LinguaStudySettings {
   transcriptFolder: string;
   ytDlpPath: string;
+  whisperModelSource: string;
   autoImportPastedVideoLinks: boolean;
   autoOpenRssSidebar: boolean;
   autoRefreshRssSubscriptions: boolean;
@@ -51,6 +53,7 @@ export const MAX_DESKTOP_PLAYER_WIDTH = 1200;
 export const DEFAULT_SETTINGS: LinguaStudySettings = {
   transcriptFolder: DEFAULT_TRANSCRIPT_FOLDER,
   ytDlpPath: "",
+  whisperModelSource: "",
   // 默认由用户点击左侧 Lingua Study Logo 后开始导入，避免粘贴资料时误触发。
   autoImportPastedVideoLinks: false,
   // 订阅入口默认不占用工作区；需要时由用户在设置中开启。
@@ -101,6 +104,7 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
   return {
     transcriptFolder: sanitizeTranscriptFolder(data.transcriptFolder),
     ytDlpPath: typeof data.ytDlpPath === "string" ? data.ytDlpPath.trim() : "",
+    whisperModelSource: sanitizeWhisperModelSource(data.whisperModelSource),
     autoImportPastedVideoLinks:
       typeof data.autoImportPastedVideoLinks === "boolean"
         ? data.autoImportPastedVideoLinks

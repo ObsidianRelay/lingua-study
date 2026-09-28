@@ -322,7 +322,8 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
   assert.match(source, /this\.plugin\.settings\.baiduSecretId/u);
   assert.match(source, /this\.plugin\.settings\.kimiSecretId/u);
   assert.match(source, /Whisper Base English 模型/u);
-  assert.match(source, /管理手动文稿的本地时间轴对齐/u);
+  assert.match(source, /管理本地英语识别与文稿时间轴对齐/u);
+  assert.match(source, /备用模型下载地址/u);
   assert.match(source, /options: STUDY_PROFILE_LONG_LABELS/u);
   assert.match(source, /isStudyProfile\(value\)/u);
   assert.match(source, /refreshBilibiliStatusIndicators/u);
@@ -529,12 +530,17 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.doesNotMatch(source, /this\.createSourceLink\(utilities,/u);
   assert.equal(source.match(/this\.createSourceLink\(toolbar, sourceUrl\)/gu)?.length, 2);
   assert.equal(source.match(/this\.createTranscriptImportButton\(/gu)?.length, 2);
-  assert.match(source, /this\.createTranscriptImportButton\(toolbar, config, transcriptData !== null\);\s*this\.createSpeedControls\(toolbar\);\s*this\.createSourceLink\(toolbar, sourceUrl\);/u);
+  assert.match(
+    source,
+    /this\.createTranscriptImportButton\(toolbar, config, transcriptData !== null\);\s*if \(!transcriptData\) \{\s*this\.createLocalWhisperRetryButton\(toolbar, config\);\s*\}\s*this\.createSpeedControls\(toolbar\);\s*this\.createSourceLink\(toolbar, sourceUrl\);/u
+  );
   assert.match(
     source,
     /this\.createSeekButton\(primaryControls, "后退 5 秒"[\s\S]*?this\.playPauseButton = this\.createControlButton[\s\S]*?this\.createSeekButton\(primaryControls, "前进 5 秒"/u
   );
-  assert.doesNotMatch(source, /if \(!transcriptData\) \{\s*this\.createTranscriptImportButton/u);
+  assert.match(source, /private createLocalWhisperRetryButton/u);
+  assert.match(source, /重新本地识别英文音轨（耗时较长）/u);
+  assert.match(source, /retryBilibiliLocalWhisper/u);
   assert.match(source, /hasTranscript \? "替换字幕或导入文稿" : "添加字幕或导入博主文稿"/u);
   assert.match(source, /cleanupLegacyBilibiliSourceLink/u);
   assert.match(source, /button\.createSpan\(\{ cls: "evs-seek-seconds", text: "5s" \}\)/u);
