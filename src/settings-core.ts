@@ -5,6 +5,11 @@ import {
   DEFAULT_FSRS_REQUEST_RETENTION,
   sanitizeFsrsRequestRetention
 } from "./vocabulary-core";
+import {
+  DEFAULT_HIGHLIGHT_CATEGORIES,
+  sanitizeHighlightCategories,
+  type HighlightCategory
+} from "./highlight-core";
 
 export type InterfaceTheme = "classic" | "paper";
 
@@ -35,6 +40,8 @@ export interface LinguaStudySettings {
   interfaceTheme: InterfaceTheme;
   enableDoubleClickLookup: boolean;
   enableSelectionTranslation: boolean;
+  enableHighlights: boolean;
+  highlightCategories: HighlightCategory[];
 }
 
 export const DEFAULT_DESKTOP_PLAYER_WIDTH = 860;
@@ -68,7 +75,10 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   // 老用户升级后继续保持原有双击查词行为，可在设置中主动关闭。
   enableDoubleClickLookup: true,
   // 保留 1.5.0 的字幕划词翻译行为，用户可在设置中主动关闭。
-  enableSelectionTranslation: true
+  enableSelectionTranslation: true,
+  // 高亮只在用户主动选择字幕时出现，不修改原始字幕正文。
+  enableHighlights: true,
+  highlightCategories: DEFAULT_HIGHLIGHT_CATEGORIES.map((category) => ({ ...category }))
 };
 
 /** 读取旧配置时只保留仍受支持的字段；旧 whisperModel 会在这里被移除。 */
@@ -142,6 +152,11 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
     enableSelectionTranslation:
       typeof data.enableSelectionTranslation === "boolean"
         ? data.enableSelectionTranslation
-        : DEFAULT_SETTINGS.enableSelectionTranslation
+        : DEFAULT_SETTINGS.enableSelectionTranslation,
+    enableHighlights:
+      typeof data.enableHighlights === "boolean"
+        ? data.enableHighlights
+        : DEFAULT_SETTINGS.enableHighlights,
+    highlightCategories: sanitizeHighlightCategories(data.highlightCategories)
   };
 }

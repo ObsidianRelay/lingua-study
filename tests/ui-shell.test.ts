@@ -104,11 +104,11 @@ test("字幕导入会话保留草稿并避免同一视频重复启动", async ()
 test("设置首页固定使用卡片布局并提供可选界面主题", async () => {
   const source = await readFile("src/settings.ts", "utf8");
   const pageDefinitions = source.match(/type: "page"/gu) ?? [];
-  assert.equal(pageDefinitions.length, 7);
+  assert.equal(pageDefinitions.length, 8);
   assert.match(source, /setting\.settingEl\.addClass\("lingua-study-settings-profile"\)/u);
   assert.match(source, /text: "LS"/u);
   assert.match(source, /已收录生词/u);
-  assert.match(source, /heading: "学习与数据"[\s\S]*?items: \[this\.learningPage\(\), this\.translationPage\(\), this\.generalPage\(\)\]/u);
+  assert.match(source, /heading: "学习与数据"[\s\S]*?this\.learningPage\(\),[\s\S]*?this\.plugin\.capabilities\.desktop \? \[this\.highlightPage\(\)\] : \[\][\s\S]*?this\.translationPage\(\),[\s\S]*?this\.generalPage\(\)/u);
   assert.match(source, /heading: "内容导入"[\s\S]*?items: \[this\.youtubePage\(\), this\.bilibiliPage\(\), this\.documentAlignmentPage\(\)\]/u);
   assert.match(source, /heading: "外观"[\s\S]*?items: \[this\.appearancePage\(\)\]/u);
   assert.ok(source.indexOf('heading: "外观"') > source.indexOf('heading: "内容导入"'));
@@ -134,6 +134,7 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
   for (const pageName of [
     "YouTube 字幕",
     "学习与词典",
+    "高亮笔记",
     "文稿导入与对齐",
     "翻译服务",
     "通用选项",
@@ -158,6 +159,7 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
     "autoImportPastedVideoLinks",
     "enableDoubleClickLookup",
     "enableSelectionTranslation",
+    "enableHighlights",
     "cacheTranslations"
   ]) {
     assert.match(source, new RegExp(`key: "${settingKey}"`, "u"));
@@ -536,7 +538,7 @@ test("简洁样式铺开全部字幕并移除内部滚动窗口", async () => {
   );
   assert.match(
     css,
-    /\.lingua-dictionary-view \.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?background: color-mix\([\s\S]*?var\(--lingua-paper-card\) 90%[\s\S]*?var\(--text-normal\) 10%[\s\S]*?\) !important;[\s\S]*?color: var\(--text-normal\) !important;/u
+    /\.lingua-dictionary-view \.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?background: color-mix\([\s\S]*?var\(--lingua-paper-card\) 94%[\s\S]*?var\(--text-normal\) 6%[\s\S]*?\) !important;[\s\S]*?box-shadow: 0 6px 14px rgba\(0, 0, 0, 0\.1\) !important;[\s\S]*?transform: translateY\(-2px\);/u
   );
   assert.match(css, /--lingua-paper-secondary-text: color-mix\(in srgb, var\(--text-normal\) 58%, transparent\);/u);
   assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-vocabulary-list-heading span \{[\s\S]*?color: var\(--lingua-paper-secondary-text\);/u);
@@ -544,7 +546,7 @@ test("简洁样式铺开全部字幕并移除内部滚动窗口", async () => {
   assert.match(css, /\.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \.lingua-vocabulary-list-heading span \{[\s\S]*?color: var\(--lingua-paper-secondary-text\) !important;/u);
   assert.match(
     css,
-    /body:not\(\.is-mobile\):not\(\.lingua-study-theme-paper\) \.lingua-dictionary-view \.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?background: color-mix\(in srgb, var\(--background-primary\) 90%, var\(--text-normal\) 10%\) !important;[\s\S]*?color: var\(--text-normal\) !important;/u
+    /body:not\(\.is-mobile\):not\(\.lingua-study-theme-paper\) \.lingua-dictionary-view \.lingua-vocabulary-list-item:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?background: color-mix\(in srgb, var\(--background-primary\) 94%, var\(--text-normal\) 6%\) !important;[\s\S]*?box-shadow: 0 6px 14px rgba\(0, 0, 0, 0\.1\) !important;[\s\S]*?transform: translateY\(-2px\);/u
   );
   assert.match(
     css,
@@ -724,7 +726,8 @@ test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async
   const css = await readFile("styles.css", "utf8");
 
   assert.match(source, /primary\.createDiv\(\{ cls: "evs-segment-text" \}\)/u);
-  assert.match(source, /transcriptList\.createDiv\(\{ cls: "evs-segment-action-dock" \}\)/u);
+  assert.match(source, /transcriptList\.createDiv\(\{ cls: "evs-segment-tool-stack" \}\)/u);
+  assert.match(source, /toolStack\.createDiv\(\{ cls: "evs-segment-action-dock" \}\)/u);
   assert.match(source, /this\.selectSegmentForActions\(index, true\)/u);
   assert.match(source, /dock\.appendChild\(view\.primaryButton\)/u);
   assert.match(source, /dock\.appendChild\(dictationButton\)/u);
@@ -743,7 +746,7 @@ test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async
   assert.match(source, /legacyRow\.appendChild\(view\.supplementButton\)/u);
   assert.match(source, /text: "延伸拓展"/u);
   assert.match(source, /studyEntry\.analysis\.extensions \?\? \[\]/u);
-  assert.match(source, /由原句中的“\$\{extension\.anchor\}”延伸/u);
+  assert.match(source, /annotatePart\(anchor\.createSpan\(\), "由原句中的“"[\s\S]*?`extensions\.\$\{index\}\.anchor`/u);
   assert.match(source, /this\.handlePrimaryTranslationAction\(index\)/u);
   assert.match(source, /this\.plugin\.settings\.translateWholeTranscript/u);
   assert.match(source, /this\.plugin\.settings\.translationProvider === "baidu"[\s\S]*?this\.plugin\.translateSentence\(segment\.text\)/u);
@@ -755,7 +758,8 @@ test("字幕编辑、翻译、听写与跟读共用右侧固定操作栏", async
   assert.match(source, /this\.requestTranslation\(index, "supplement"\)/u);
   assert.doesNotMatch(source, /segmentRestoreButtons|text: "恢复原文"/u);
 
-  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-segment-action-dock \{[\s\S]*?position: sticky;[\s\S]*?top: var\(--evs-segment-action-top, calc\(50vh - 71px\)\);[\s\S]*?width: 38px;[\s\S]*?flex-direction: column;/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-segment-tool-stack \{[\s\S]*?position: sticky;[\s\S]*?top: var\(--evs-segment-action-top, calc\(50vh - 100px\)\);[\s\S]*?width: 38px;/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-segment-action-dock \{[\s\S]*?position: static;[\s\S]*?width: 38px;[\s\S]*?flex-direction: column;/u);
   assert.match(source, /this\.transcriptResizeObserver\.observe\(this\.playerDockEl\)/u);
   assert.match(source, /updateSegmentActionDockInset\(\)[\s\S]*?playerHeight \+ 16/u);
   assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-segment \{[\s\S]*?border: 1px solid var\(--lingua-paper-line\);[\s\S]*?border-radius: 12px;/u);
@@ -786,31 +790,134 @@ test("Markdown 选中文本可通过命令调用当前翻译服务", async () =>
   assert.match(css, /\.lingua-study-selection-translation-text \{/u);
 });
 
-test("字幕多词选区直接显示悬浮翻译且不会误触第一个单词查词", async () => {
+test("独立高亮笔与划句翻译正确分流，双击仍只查词", async () => {
   const source = await readFile("src/main.ts", "utf8");
   const css = await readFile("styles.css", "utf8");
 
-  assert.match(source, /textEl\.onpointerup =/u);
-  assert.match(source, /if \(!this\.plugin\.settings\.enableSelectionTranslation\)/u);
-  assert.match(source, /textEl\.onpointerup = null/u);
+  assert.match(source, /cls: "evs-segment-tool-stack"[\s\S]*?cls: "evs-segment-action-dock"[\s\S]*?cls: "evs-highlight-pen-palette"/u);
+  assert.match(source, /private activeHighlightCategoryId: string \| null = null/u);
+  assert.match(source, /this\.activeHighlightCategoryId === category\.id[\s\S]*?\? null[\s\S]*?: category\.id/u);
+  assert.match(source, /button\.classList\.toggle\("is-selected", selected\)/u);
+  assert.match(css, /\.evs-highlight-pen-check \{[\s\S]*?color: #ffffff;/u);
+  assert.doesNotMatch(source, /--evs-highlight-pen-check/u);
+  assert.doesNotMatch(source, /getHighlightCheckColor/u);
+  assert.match(source, /createHighlightPenCursor\(activeCategory\.color\)/u);
+  assert.match(source, /transform="rotate\(35 12 12\)"/u);
+  assert.match(source, /\$\{encodeURIComponent\(svg\)\}"\) 6 21, crosshair/u);
+  assert.match(source, /textEl\.onpointerdown = \(event\) =>/u);
+  assert.match(source, /viewDocument\.addEventListener\("pointerup", finishPointer, true\)/u);
+  assert.match(source, /Math\.hypot\(event\.clientX - start\.x, event\.clientY - start\.y\) >= 3/u);
+  assert.match(source, /if \(!dragged\) return;/u);
+  assert.match(source, /if \(this\.activeHighlightCategoryId\)[\s\S]*?saveHighlightPenSelection[\s\S]*?else if \(this\.plugin\.settings\.enableSelectionTranslation\)/u);
   assert.match(source, /if \(\/\\s\/u\.test\(selectedText\)\)/u);
-  assert.match(source, /this\.showSelectionTranslationPopover\(textEl\)/u);
+  assert.match(source, /this\.showSelectionTranslationPopover\(textEl, segmentIndex\)/u);
+  assert.doesNotMatch(source, /trimSelectionToAvailableHighlightRange/u);
   assert.doesNotMatch(source, /text: "翻译选中句子"/u);
-  assert.match(source, /this\.openSelectionTranslationPopover\(sourceText, rangeRect, viewDocument, viewWindow\)/u);
+  assert.doesNotMatch(source, /getHighlightSelectionActions\(/u);
+  assert.match(source, /getSubtitleSelection\(textEl, segmentIndex, true\)/u);
+  assert.match(source, /高亮笔一次只能标记一句字幕/u);
+  assert.match(source, /exactHighlight\?\.categoryIds\.includes\(categoryId\)/u);
+  assert.match(source, /\[\.\.\.exactHighlight\.categoryIds, categoryId\]/u);
+  assert.match(source, /this\.addHighlightFromSelection\(selected\.context, \[categoryId\], ""\)/u);
+  assert.match(source, /getSelection\(\)\?\.removeAllRanges\(\)/u);
   assert.match(source, /class SelectionTranslationModal extends Modal/u);
-  assert.match(source, /"aria-label": "选中文本翻译"/u);
+  assert.match(source, /"aria-label": existingHighlight \? "编辑高亮笔记" : "翻译选中文本"/u);
   assert.match(source, /this\.plugin\.translateSentence\(sourceText\)/u);
   assert.match(source, /this\.hideSelectionTranslationPopover\(\)/u);
+  assert.match(source, /if \(event\.button !== 0 \|\| event\.detail > 1\)/u);
+  assert.match(source, /mark\.addEventListener\("dblclick"/u);
+  assert.match(source, /cls: "lingua-highlight-category-picker"/u);
+  assert.match(source, /const selectedCategoryIds = new Set\(existingHighlight\.categoryIds\)/u);
+  assert.match(source, /categoryButton\.addEventListener\("click", \(\) => toggleCategory\(category\.id\)\)/u);
+  assert.match(source, /if \(selectedCategoryIds\.has\(categoryId\)\) selectedCategoryIds\.delete\(categoryId\)/u);
+  assert.match(source, /if \(categoryIds\.length === 0\)[\s\S]*?this\.plugin\.removeHighlight\(id, false\)/u);
+  assert.match(source, /viewWindow\.setTimeout\(\(\) => \{ void saveNote\(\); \}, 500\)/u);
+  assert.match(source, /可多选；再次点击可移除该类别，移除最后一个类别会删除高亮。笔记会自动保存。/u);
+  assert.doesNotMatch(source, /actions\.createEl\("button", \{ text: "播放原句"/u);
+  assert.doesNotMatch(source, /text: "删除", cls: "mod-warning"/u);
+  assert.match(source, /选择颜色并自动保存/u);
+  assert.doesNotMatch(source, /text: existingHighlight \? "保存修改" : "保存高亮"/u);
   assert.match(source, /header\.addEventListener\("pointerdown"/u);
   assert.match(source, /viewDocument\.addEventListener\("pointermove", movePopover\)/u);
   assert.doesNotMatch(css, /\.lingua-study-selection-translate-action \{/u);
   assert.match(css, /\.lingua-study-selection-translation-popover \{/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) :is\([\s\S]*?\.lingua-study-selection-translation-popover[\s\S]*?--lingua-paper-card:/u);
+  assert.match(css, /\.lingua-study-selection-translation-popover \{[\s\S]*?border: 1px solid var\(--lingua-paper-line,[\s\S]*?border-radius: 18px;[\s\S]*?background: var\(--lingua-paper-card,/u);
+  assert.match(css, /\.lingua-study-selection-translation-popover-close \{[\s\S]*?border-radius: 50%;[\s\S]*?background: transparent;/u);
+  assert.match(css, /\.lingua-study-selection-translation-popover[\s\S]*?\.lingua-highlight-editor > \.lingua-highlight-editor-field:last-child \{[\s\S]*?border-top: 1px solid var\(--lingua-paper-rule/u);
+  assert.match(css, /\.lingua-study-selection-translation-popover[\s\S]*?\.lingua-highlight-editor-field textarea:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?background-color: var\(--lingua-paper-muted,[^;]+\) !important;/u);
+  assert.match(css, /\.lingua-dictionary-view[\s\S]*?\.lingua-highlight-detail[\s\S]*?\.lingua-highlight-editor-field textarea:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?background-color: var\(--lingua-paper-muted,[^;]+\) !important;/u);
+  assert.match(css, /\.lingua-highlight-detail \.lingua-highlight-editor-field \{[\s\S]*?width: 100%;[\s\S]*?margin: 0;[\s\S]*?padding: 0;/u);
+  assert.match(css, /\.lingua-highlight-editor-field textarea \{[\s\S]*?box-sizing: border-box;[\s\S]*?max-width: 100%;[\s\S]*?margin: 0;/u);
+  assert.match(css, /\.lingua-dictionary-view[\s\S]*?\.lingua-highlight-detail[\s\S]*?textarea:is\(:focus, :focus-visible\) \{[\s\S]*?outline: none !important;[\s\S]*?box-shadow: inset 0 0 0 1px/u);
+  assert.match(css, /\.lingua-highlight-category-option-swatch \{[\s\S]*?background: var\(--lingua-highlight-color/u);
+  assert.match(css, /\.lingua-highlight-controls \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 104px/u);
+  assert.match(css, /\.lingua-highlight-controls \.lingua-centered-select-text \{[\s\S]*?padding-right: 24px/u);
   assert.match(css, /cursor: move;/u);
+  assert.match(css, /\.evs-highlight-pen-palette \{[\s\S]*?width: 38px;[\s\S]*?grid-template-columns: repeat\(3, 9px\)/u);
+  assert.match(css, /\.evs-highlight-pen-color\.is-selected \.evs-highlight-pen-check/u);
+  assert.match(css, /\.evs-root \.evs-highlight-pen-palette \.evs-highlight-pen-color:is\(:hover, :focus, :focus-visible, :active\) \{[\s\S]*?background: var\(--evs-highlight-pen-color\) !important;/u);
+  assert.match(css, /\.evs-root\.is-highlight-pen-active \.evs-segment-text/u);
+  assert.match(source, /buildHighlightRenderSlices\([\s\S]*?highlightCategories\.map\(\(category\) => category\.id\)/u);
+  assert.match(source, /"data-highlight-ids": slice\.annotationIds\.join\(","\)/u);
+  assert.match(source, /openHighlightStackPopover\(activeAnnotations/u);
+});
+
+test("高亮笔记使用独立数据文件、稳定类别 ID 和电脑端高亮库", async () => {
+  const [source, settings, view, core, store, css] = await Promise.all([
+    readFile("src/main.ts", "utf8"),
+    readFile("src/settings.ts", "utf8"),
+    readFile("src/dictionary-view.ts", "utf8"),
+    readFile("src/highlight-core.ts", "utf8"),
+    readFile("src/highlight-store.ts", "utf8"),
+    readFile("styles.css", "utf8")
+  ]);
+  assert.match(core, /Lingua Study\/Highlights\/highlights\.json/u);
+  assert.match(core, /HIGHLIGHT_BOOK_VERSION = 3/u);
+  assert.match(core, /categoryIds: string\[\]/u);
+  assert.match(core, /value\.version !== 1 && value\.version !== 2 && value\.version !== HIGHLIGHT_BOOK_VERSION/u);
+  assert.match(store, /this\.writeQueue\.run\(this\.path/u);
+  assert.match(core, /highlights\.v1\.backup\.json/u);
+  assert.match(store, /HIGHLIGHT_BOOK_V1_BACKUP_PATH/u);
+  assert.match(store, /migratedFromVersion !== null[\s\S]*?ensureLegacyBackup/u);
+  assert.match(store, /writeBlockedReason/u);
+  assert.match(store, /高亮笔记文件格式错误，已停止写入/u);
+  assert.match(store, /adapter\.exists\(this\.path\)/u);
+  assert.match(store, /请检查附件管理或同步插件/u);
+  assert.match(settings, /sanitizeHighlightCategories\(next\)/u);
+  assert.match(settings, /migrateHighlightCategory\(category\.id, replacementId\)/u);
+  assert.match(view, /type DictionaryTab = "lookup" \| "book" \| "review" \| "highlights"/u);
+  assert.match(view, /this\.plugin\.capabilities\.desktop/u);
+  assert.match(view, /this\.createTabButton\(tabs, "highlights", "笔记本"/u);
+  assert.match(view, /搜索标注、笔记或原句/u);
+  assert.match(view, /共 \$\{allAnnotations\.length\.toLocaleString\(\)\} 条标注 · 来自 \$\{sourceCount\.toLocaleString\(\)\} 个笔记/u);
+  assert.match(view, /按时间 \$\{this\.highlightSortDescending \? "↓" : "↑"\}/u);
+  assert.match(view, /cls: `lingua-highlight-card\$\{selected \? " is-selected" : ""\}`/u);
+  assert.match(view, /if \(event\.target !== card\) return;/u);
+  assert.match(view, /"回到知识点" : "回到原句"[\s\S]*?text: "编辑"[\s\S]*?text: "删除"/u);
+  assert.match(view, /setIcon\(icon, "paperclip"\)/u);
+  assert.match(view, /formatHighlightSource\(annotation\.sourcePath\)/u);
+  assert.match(view, /字幕已变化，需要重新定位/u);
+  assert.match(view, /annotation\.categoryIds\.includes\(this\.highlightFilter\)/u);
+  assert.match(view, /for \(const categoryId of annotation\.categoryIds\)/u);
+  assert.match(source, /id: "open-highlight-library"[\s\S]*?checkCallback/u);
+  assert.match(source, /annotationsForSegment\([\s\S]*?resolveHighlightAnchor/u);
+  assert.match(source, /this\.appendDictionaryText\([\s\S]*?mark,[\s\S]*?segmentIndex/u);
+  assert.doesNotMatch(source, /<mark>/u);
+  assert.match(css, /\.evs-root mark\.lingua-transcript-highlight \{[\s\S]*?padding: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: var\(--lingua-highlight-background,[\s\S]*?34%, transparent/u);
+  assert.doesNotMatch(css, /\.evs-root mark\.lingua-transcript-highlight \{[^}]*border-bottom:/u);
+  assert.doesNotMatch(css, /\.lingua-dictionary-view\.is-highlights-view \{[\s\S]{0,240}?height: calc\(100% - 24px\)/u);
+  assert.match(css, /\.lingua-dictionary-view\.is-highlights-view \.lingua-highlight-card:is\(:hover, :focus-visible\) \{[\s\S]*?box-shadow: 0 6px 14px rgba\(0, 0, 0, 0\.1\) !important;[\s\S]*?transform: translateY\(-2px\);/u);
+  assert.match(css, /\.lingua-dictionary-view\.is-highlights-view \.lingua-highlight-card\.is-selected/u);
+  assert.match(css, /\.lingua-highlight-note-icon \.svg-icon \{[\s\S]*?width: 13px;/u);
+  assert.match(source, /buildHighlightMarkerBackground\(activeCategoryColors\)/u);
+  assert.match(source, /"--lingua-highlight-background"/u);
 });
 
 test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", async () => {
-  const [source, css] = await Promise.all([
+  const [source, settings, css] = await Promise.all([
     readFile("src/main.ts", "utf8"),
+    readFile("src/settings.ts", "utf8"),
     readFile("styles.css", "utf8")
   ]);
 
@@ -826,7 +933,7 @@ test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", a
   assert.match(css, /\.evs-segment-action-dock \.evs-transcript-icon-button,[\s\S]*?\.lingua-vocabulary-export-button[\s\S]*?background: var\(--lingua-paper-control\) !important;/u);
   assert.match(css, /\.lingua-review-card > button\.mod-cta,[\s\S]*?background: var\(--lingua-paper-accent\) !important;/u);
   assert.match(css, /经典主题只借用设置页的卡片排版/u);
-  assert.match(css, /body:not\(\.is-mobile\) :is\(\.lingua-study-settings,[\s\S]*?--lingua-paper-bg: var\(--background-primary\);[\s\S]*?--lingua-paper-card: var\(--background-primary\);/u);
+  assert.match(css, /body:not\(\.is-mobile\) :is\([\s\S]*?\.lingua-study-settings,[\s\S]*?\.lingua-study-selection-translation-popover[\s\S]*?\) \{[\s\S]*?--lingua-paper-bg: var\(--background-primary\);[\s\S]*?--lingua-paper-card: var\(--background-primary\);/u);
   assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) :is\([^}]*?\.lingua-study-settings[^}]*?\) \{/u);
   assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root/u);
   assert.match(css, /body:not\(\.is-mobile\) \.lingua-study-settings-home-group/u);
@@ -836,7 +943,7 @@ test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", a
   assert.match(css, /\.evs-speed-label\.is-active \{[\s\S]*?color: #fff !important;/u);
   assert.match(css, /\.evs-player-utilities \{[\s\S]*?top: 0;[\s\S]*?right: -40px;/u);
   assert.match(css, /\.evs-player-frame \{[\s\S]*?overflow: hidden;[\s\S]*?border-radius: inherit;/u);
-  assert.match(css, /\.lingua-dictionary-tabs \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/u);
+  assert.match(css, /\.lingua-dictionary-tabs \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
   assert.match(css, /\.lingua-dictionary-tabs button\.is-active \{[\s\S]*?border-radius: 999px;/u);
   assert.match(css, /\.lingua-dictionary-empty,[\s\S]*?\.lingua-dictionary-missing \{[\s\S]*?background: transparent;/u);
   assert.match(css, /\.lingua-study-settings-home-group \{[\s\S]*?display: block;[\s\S]*?border: 0;/u);
@@ -859,13 +966,21 @@ test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", a
   assert.match(css, /\.setting-page-back-button,[\s\S]*?:hover \{[\s\S]*?background: var\(--lingua-paper-accent\);[\s\S]*?transform: translateY\(-1px\);/u);
   assert.match(css, /\.setting-item-control select:hover \{[\s\S]*?border-color: var\(--lingua-paper-accent\);[\s\S]*?box-shadow:/u);
   assert.match(css, /\.setting-item-control select:focus-visible \{[\s\S]*?outline: 2px solid var\(--lingua-paper-accent\);/u);
-  assert.match(css, /\.checkbox-container \{[\s\S]*?overflow: hidden;[\s\S]*?width: 54px;[\s\S]*?height: 30px;[\s\S]*?border: 0;[\s\S]*?background-image: radial-gradient\(circle 15px at center, var\(--lingua-paper-accent\) 0 100%, transparent 100%\);[\s\S]*?background-position: left center;[\s\S]*?background-size: 30px 30px;[\s\S]*?box-shadow: inset 0 0 0 1px var\(--lingua-paper-accent\);/u);
-  assert.match(css, /\.checkbox-container::after \{[\s\S]*?content: none;[\s\S]*?display: none;/u);
-  assert.match(css, /\.checkbox-container\.is-enabled \{[\s\S]*?background-image: radial-gradient\(circle 15px at center, var\(--lingua-paper-card\) 0 100%, transparent 100%\);[\s\S]*?background-position: right center;/u);
+  assert.match(css, /\.checkbox-container \{[\s\S]*?overflow: hidden;[\s\S]*?width: 54px;[\s\S]*?height: 30px;[\s\S]*?border: 0;[\s\S]*?background-image: none;[\s\S]*?box-shadow: inset 0 0 0 1px var\(--lingua-paper-accent\);[\s\S]*?transition: background-color 160ms/u);
+  assert.match(css, /\.checkbox-container::after \{[\s\S]*?content: "";[\s\S]*?width: 30px;[\s\S]*?height: 30px;[\s\S]*?transform: translate3d\(0, 0, 0\);[\s\S]*?transition: transform 160ms/u);
+  assert.match(css, /\.checkbox-container\.is-enabled::after \{[\s\S]*?background-color: var\(--lingua-paper-card\);[\s\S]*?transform: translate3d\(24px, 0, 0\);/u);
   assert.doesNotMatch(source, /播放器未确认操作/u);
   assert.match(source, /`播放器已就绪 · \$\{segmentCount\} 条英文字幕`/u);
   assert.match(source, /classList\.toggle\([\s\S]*?"lingua-study-theme-paper"[\s\S]*?this\.settings\.interfaceTheme === "paper"/u);
   assert.match(source, /renderer\.applyInterfaceTheme\(\)/u);
+  assert.match(settings, /setControlValue\(key: string, value: unknown\): void \| Promise<void>/u);
+  assert.match(settings, /key === "translateWholeTranscript"[\s\S]*?return this\.plugin\.updateSettings\(\{ translateWholeTranscript: value \}\)/u);
+  assert.match(settings, /key === "enableSelectionTranslation"[\s\S]*?return this\.plugin\.updateSettings\(\{ enableSelectionTranslation: value \}\)/u);
+  assert.match(settings, /key === "enableHighlights"[\s\S]*?return this\.plugin\.updateSettings\(\{ enableHighlights: value \}\)/u);
+  assert.match(source, /refreshSelectionFeatureSettings\(\)[\s\S]*?classList\.toggle\([\s\S]*?"evs-highlights-enabled"/u);
+  assert.match(source, /registerSelectionTranslation[\s\S]*?this\.activeHighlightCategoryId[\s\S]*?this\.plugin\.settings\.enableSelectionTranslation/u);
+  assert.match(source, /enableSelectionTranslation !== previousSelectionTranslation[\s\S]*?renderer\.refreshSelectionFeatureSettings\(\)/u);
+  assert.match(css, /not\(\.evs-highlights-enabled\) mark\.lingua-transcript-highlight[\s\S]*?background: transparent/u);
 });
 
 test("单句跟读按播放状态自动同步并使用紧凑播放器布局", async () => {

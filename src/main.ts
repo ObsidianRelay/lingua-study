@@ -71,7 +71,8 @@ import type {
 import {
   DICTIONARY_VIEW_TYPE,
   LinguaDictionaryView,
-  type DictionaryLookupContext
+  type DictionaryLookupContext,
+  type HighlightLibraryStatus
 } from "./dictionary-view";
 import {
   updateTranscriptSegmentText,
@@ -131,6 +132,23 @@ import {
   type VocabularyImageExportStorage
 } from "./vocabulary-image-export-core";
 import { selectNewestEligibleRenderer } from "./vocabulary-navigation-core";
+import { HighlightStore, type HighlightBookLoadResult } from "./highlight-store";
+import {
+  HIGHLIGHT_BOOK_VERSION,
+  MAX_HIGHLIGHT_NOTE_LENGTH,
+  annotationsForSegment,
+  buildHighlightMarkerBackground,
+  buildHighlightRenderSlices,
+  getStudyHighlightFields,
+  projectStudyGroupHighlight,
+  resolveHighlightAnchor,
+  resolveStudyHighlightAnchor,
+  type HighlightAnnotation,
+  type HighlightAnchorInput,
+  type HighlightBookFile,
+  type HighlightCategory,
+  type StudyHighlightAnchorInput
+} from "./highlight-core";
 import {
   containsStudyBlock,
   getStudyBlockCursorRecovery
@@ -264,6 +282,19 @@ interface TranscriptRenderData {
   studyFingerprints: Array<Record<StudyProfile, string>>;
   cache: TranslationCacheLoadResult;
   studyCache: StudyCacheLoadResult;
+  highlights: HighlightBookLoadResult;
+}
+
+interface HighlightSelectionContext {
+  segmentIndex: number;
+  startOffset: number;
+  endOffset: number;
+}
+
+interface SubtitleSelection {
+  context: HighlightSelectionContext;
+  sourceText: string;
+  rangeRect: DOMRect;
 }
 
 interface TranscriptFingerprintData {
@@ -278,6 +309,11 @@ interface TranscriptSegmentIdentity {
 }
 
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
+
+function createHighlightPenCursor(color: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(35 12 12)"><rect x="7" y="1" width="10" height="16" rx="2" fill="#fff" stroke="#211e1a" stroke-width="1.5"/><path d="M7 12h10v5H7z" fill="${color}"/><path d="M8 17h8l-2 6h-4z" fill="${color}" stroke="#211e1a" stroke-width="1.5" stroke-linejoin="round"/></g></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 6 21, crosshair`;
+}
 const YOUTUBE_PLAYER_ORIGINS = new Set([
   "https://www.youtube.com",
   "https://www.youtube-nocookie.com"
@@ -651,9 +687,16 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private translationViews: SegmentTranslationView[] = [];
   private cachedTranslations: Record<string, TranslationCacheEntry> = {};
   private cachedStudies: Record<string, StudyCacheEntry> = {};
+  private highlightBook: HighlightBookFile = { version: HIGHLIGHT_BOOK_VERSION, annotations: {} };
+  private unsubscribeHighlights: (() => void) | null = null;
   private unsubscribeStudyProfile: (() => void) | null = null;
   private segmentTextEls: HTMLElement[] = [];
+  private segmentToolStackEl: HTMLElement | null = null;
   private segmentActionDockEl: HTMLElement | null = null;
+  private highlightPenPaletteEl: HTMLElement | null = null;
+  private highlightPenButtons = new Map<string, HTMLButtonElement>();
+  private activeHighlightCategoryId: string | null = null;
+  private highlightPenSaving = false;
   private segmentEditButton: HTMLButtonElement | null = null;
   private segmentDictationButton: HTMLButtonElement | null = null;
   private segmentShadowingButton: HTMLButtonElement | null = null;
@@ -699,6 +742,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private selectionTranslationPopoverEl: HTMLElement | null = null;
   private selectionTranslationPopoverCleanup: (() => void) | null = null;
   private selectionTranslationRequestGeneration = 0;
+  private highlightClickTimer: number | null = null;
   private vocabularyTargetRowEl: HTMLElement | null = null;
   private vocabularyNavigationIndex: number | null = null;
 
@@ -722,6 +766,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   onunload(): void {
     this.destroyed = true;
+    if (this.highlightClickTimer !== null) {
+      window.clearTimeout(this.highlightClickTimer);
+      this.highlightClickTimer = null;
+    }
     this.hideSelectionTranslationPopover();
     this.closeDictation(false);
     this.closeShadowing(false);
@@ -738,6 +786,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     });
     this.unsubscribeStudyProfile?.();
     this.unsubscribeStudyProfile = null;
+    this.unsubscribeHighlights?.();
+    this.unsubscribeHighlights = null;
     this.clearTimer("poll");
     this.clearTimer("handshake");
     this.clearTimer("fallback");
@@ -800,8 +850,14 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.translationViews = [];
     this.cachedTranslations = {};
     this.cachedStudies = {};
+    this.highlightBook = { version: HIGHLIGHT_BOOK_VERSION, annotations: {} };
     this.segmentTextEls = [];
+    this.segmentToolStackEl = null;
     this.segmentActionDockEl = null;
+    this.highlightPenPaletteEl = null;
+    this.highlightPenButtons.clear();
+    this.activeHighlightCategoryId = null;
+    this.highlightPenSaving = false;
     this.segmentEditButton = null;
     this.segmentDictationButton = null;
     this.segmentShadowingButton = null;
@@ -1016,6 +1072,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     const rootClasses = ["evs-root"];
     if (this.plugin.capabilities.mobile) {
       rootClasses.push("evs-mobile");
+    }
+    if (this.plugin.capabilities.desktop && this.plugin.settings.enableHighlights) {
+      rootClasses.push("evs-highlights-enabled");
     }
     if (extraClass !== "") {
       rootClasses.push(extraClass);
@@ -1661,10 +1720,16 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   private async loadTranscriptRenderData(path: string): Promise<TranscriptRenderData> {
     const { file, transcript } = await this.readTranscript(path);
-    const [fingerprintData, cache, studyCache] = await Promise.all([
+    const [fingerprintData, cache, studyCache, highlights] = await Promise.all([
       this.plugin.getTranscriptFingerprintData(file, transcript),
       this.plugin.loadTranslationCache(path, transcript.videoId),
-      this.plugin.loadStudyCache(path, transcript.videoId)
+      this.plugin.loadStudyCache(path, transcript.videoId),
+      this.plugin.capabilities.desktop
+        ? this.plugin.loadHighlightBook()
+        : Promise.resolve({
+          book: { version: HIGHLIGHT_BOOK_VERSION, annotations: {} },
+          warning: null
+        })
     ]);
     return {
       transcript,
@@ -1672,7 +1737,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       fingerprints: fingerprintData.fingerprints,
       studyFingerprints: fingerprintData.studyFingerprints,
       cache,
-      studyCache
+      studyCache,
+      highlights
     };
   }
 
@@ -1803,12 +1869,14 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       fingerprints,
       studyFingerprints,
       cache,
-      studyCache
+      studyCache,
+      highlights
     } = data;
     this.transcript = transcript;
     this.transcriptPath = transcriptPath;
     this.cachedTranslations = cache.translations;
     this.cachedStudies = studyCache.analyses;
+    this.highlightBook = highlights.book;
 
     if (cache.warning) {
       const warning = root.createDiv({ cls: "evs-cache-warning", text: cache.warning });
@@ -1818,12 +1886,17 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       const warning = root.createDiv({ cls: "evs-cache-warning", text: studyCache.warning });
       warning.setAttribute("role", "status");
     }
+    if (highlights.warning) {
+      const warning = root.createDiv({ cls: "evs-cache-warning", text: highlights.warning });
+      warning.setAttribute("role", "alert");
+    }
 
     const transcriptList = root.createDiv({ cls: "evs-transcript" });
     transcriptList.setAttribute("aria-label", "英文视频字幕");
     this.transcriptListEl = transcriptList;
 
-    const actionDock = transcriptList.createDiv({ cls: "evs-segment-action-dock" });
+    const toolStack = transcriptList.createDiv({ cls: "evs-segment-tool-stack" });
+    const actionDock = toolStack.createDiv({ cls: "evs-segment-action-dock" });
     actionDock.setAttribute("aria-label", "字幕操作");
     const editButton = actionDock.createEl("button", {
       cls: "evs-icon-button evs-transcript-icon-button evs-global-edit-action"
@@ -1858,10 +1931,17 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.startShadowing(this.segmentActionTargetIndex);
       }
     });
+    const highlightPenPalette = toolStack.createDiv({
+      cls: "evs-highlight-pen-palette",
+      attr: { role: "group", "aria-label": "选择高亮笔颜色" }
+    });
+    this.segmentToolStackEl = toolStack;
     this.segmentActionDockEl = actionDock;
+    this.highlightPenPaletteEl = highlightPenPalette;
     this.segmentEditButton = editButton;
     this.segmentDictationButton = dictationButton;
     this.segmentShadowingButton = shadowingButton;
+    this.refreshHighlightPenPalette();
 
     transcript.segments.forEach((segment, index) => {
       const row = transcriptList.createDiv({ cls: "evs-segment" });
@@ -1994,33 +2074,239 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.translationViews.forEach((view) => this.updateTranslationView(view));
       }
     });
+    this.unsubscribeHighlights?.();
+    this.unsubscribeHighlights = this.plugin.subscribeHighlights(() => {
+      void this.reloadHighlights();
+    });
     this.plugin.notifyStudyRendererReady(this);
   }
 
+  /** 根据设置中的类别顺序重建独立高亮笔颜色面板。 */
+  private refreshHighlightPenPalette(): void {
+    const palette = this.highlightPenPaletteEl;
+    if (!palette) return;
+
+    const available = this.plugin.capabilities.desktop && this.plugin.settings.enableHighlights;
+    const categories = this.plugin.settings.highlightCategories;
+    if (
+      this.activeHighlightCategoryId &&
+      !categories.some((category) => category.id === this.activeHighlightCategoryId)
+    ) {
+      this.activeHighlightCategoryId = null;
+    }
+
+    palette.empty();
+    this.highlightPenButtons.clear();
+    palette.hidden = !available;
+    if (available) {
+      for (const category of categories) {
+        const button = palette.createEl("button", {
+          cls: "evs-highlight-pen-color",
+          attr: {
+            type: "button",
+            title: `高亮笔：${category.name} · ${category.color}`,
+            "aria-label": `使用${category.name}高亮笔`,
+            "aria-pressed": "false"
+          }
+        });
+        button.style.setProperty("--evs-highlight-pen-color", category.color);
+        button.createSpan({ cls: "evs-highlight-pen-check", text: "✓" });
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (this.highlightPenSaving) return;
+          this.activeHighlightCategoryId = this.activeHighlightCategoryId === category.id
+            ? null
+            : category.id;
+          if (this.activeHighlightCategoryId) this.hideSelectionTranslationPopover();
+          this.refreshHighlightPenModeUi();
+        });
+        this.highlightPenButtons.set(category.id, button);
+      }
+    } else {
+      this.activeHighlightCategoryId = null;
+    }
+    this.refreshHighlightPenModeUi();
+    this.updateSegmentToolStackMetrics();
+  }
+
+  /** 同步颜色球勾选状态，以及字幕区域中的高亮笔光标。 */
+  private refreshHighlightPenModeUi(): void {
+    const activeCategory = this.activeHighlightCategoryId
+      ? this.plugin.getHighlightCategory(this.activeHighlightCategoryId)
+      : null;
+    if (!activeCategory || !this.plugin.settings.enableHighlights || !this.plugin.capabilities.desktop) {
+      this.activeHighlightCategoryId = null;
+    }
+
+    for (const [categoryId, button] of this.highlightPenButtons) {
+      const selected = categoryId === this.activeHighlightCategoryId;
+      button.classList.toggle("is-selected", selected);
+      button.disabled = this.highlightPenSaving;
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+      const category = this.plugin.getHighlightCategory(categoryId);
+      button.setAttribute(
+        "aria-label",
+        selected ? `取消${category?.name ?? "当前"}高亮笔` : `使用${category?.name ?? "当前"}高亮笔`
+      );
+    }
+    this.highlightPenPaletteEl?.classList.toggle("is-saving", this.highlightPenSaving);
+    if (this.highlightPenSaving) {
+      this.highlightPenPaletteEl?.setAttribute("aria-busy", "true");
+    } else {
+      this.highlightPenPaletteEl?.removeAttribute("aria-busy");
+    }
+
+    const root = this.containerEl.querySelector<HTMLElement>(".evs-root");
+    const active = this.activeHighlightCategoryId !== null;
+    root?.classList.toggle("is-highlight-pen-active", active);
+    if (root && activeCategory && active) {
+      root.style.setProperty("--evs-highlight-pen-cursor", createHighlightPenCursor(activeCategory.color));
+    } else {
+      root?.style.removeProperty("--evs-highlight-pen-cursor");
+    }
+  }
+
+  /** 工具组高度随类别数量变化，用真实高度抵消文档流占位。 */
+  private updateSegmentToolStackMetrics(): void {
+    const stack = this.segmentToolStackEl;
+    const transcript = this.transcriptListEl;
+    if (!stack || !transcript) return;
+    const update = (): void => {
+      if (this.destroyed || !stack.isConnected) return;
+      const height = Math.ceil(stack.getBoundingClientRect().height);
+      if (height > 0) transcript.style.setProperty("--evs-segment-tools-height", `${height}px`);
+    };
+    update();
+    (this.containerEl.ownerDocument.defaultView ?? window).requestAnimationFrame(update);
+  }
+
   private renderDictionaryText(textEl: HTMLElement, text: string, segmentIndex: number): void {
+    if (this.highlightClickTimer !== null) {
+      window.clearTimeout(this.highlightClickTimer);
+      this.highlightClickTimer = null;
+    }
     this.hideSelectionTranslationPopover();
     if (this.lookupHighlightEl && textEl.contains(this.lookupHighlightEl)) {
       this.plugin.clearDictionaryHighlight();
     }
     textEl.empty();
-    if (!this.plugin.settings.enableDoubleClickLookup) {
+    if (this.plugin.settings.enableDoubleClickLookup) {
+      textEl.setAttribute(
+        "title",
+        this.plugin.capabilities.desktop
+          ? "双击单词查词；拖动选择文字可使用已开启的划词功能"
+          : "双击单词在右侧词典中查询"
+      );
+    } else {
       textEl.removeAttribute("title");
-      textEl.appendText(text);
-      this.registerSelectionTranslation(textEl);
+    }
+
+    const annotations = this.plugin.capabilities.desktop
+      ? annotationsForSegment(
+        this.highlightBook,
+        this.transcriptPath,
+        this.transcript?.segments[segmentIndex]?.start ?? -1,
+        this.transcript?.segments[segmentIndex]?.end ?? -1
+      )
+      : [];
+    const annotationById = new Map(annotations.map((annotation) => [annotation.id, annotation]));
+    const slices = buildHighlightRenderSlices(
+      annotations,
+      text,
+      this.plugin.settings.highlightCategories.map((category) => category.id)
+    );
+    let cursor = 0;
+    for (const slice of slices) {
+      this.appendDictionaryText(textEl, text.slice(cursor, slice.startOffset), segmentIndex);
+      const activeAnnotations = slice.annotationIds
+        .map((id) => annotationById.get(id))
+        .filter((annotation): annotation is HighlightAnnotation => Boolean(annotation));
+      const category = this.plugin.getHighlightCategory(slice.categoryId);
+      const activeCategoryIds = new Set(
+        activeAnnotations.flatMap((annotation) => annotation.categoryIds)
+      );
+      const activeCategoryColors = this.plugin.settings.highlightCategories
+        .filter((item) => activeCategoryIds.has(item.id))
+        .map((item) => item.color);
+      const descriptions = activeAnnotations.map((annotation) => {
+        const names = annotation.categoryIds
+          .map((id) => this.plugin.getHighlightCategory(id)?.name ?? "未分类")
+          .join("、");
+        const noteSummary = annotation.note.length > 80
+          ? `${annotation.note.slice(0, 80)}…`
+          : annotation.note;
+        return `${names}：${annotation.quote}${noteSummary ? `；笔记：${noteSummary}` : ""}`;
+      });
+      const mark = textEl.createEl("mark", {
+        cls: "lingua-transcript-highlight",
+        attr: {
+          "data-highlight-ids": slice.annotationIds.join(","),
+          "aria-label": descriptions.join("；"),
+          title: descriptions.join("\n")
+        }
+      });
+      mark.style.setProperty("--lingua-highlight-color", category?.color ?? "#F2C94C");
+      mark.style.setProperty(
+        "--lingua-highlight-background",
+        buildHighlightMarkerBackground(activeCategoryColors)
+      );
+      this.appendDictionaryText(
+        mark,
+        text.slice(slice.startOffset, slice.endOffset),
+        segmentIndex
+      );
+      mark.addEventListener("click", (event) => {
+        if (!this.plugin.settings.enableHighlights) return;
+        const selection = mark.ownerDocument.getSelection();
+        if (selection && !selection.isCollapsed) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.detail > 1) {
+          if (this.highlightClickTimer !== null) {
+            window.clearTimeout(this.highlightClickTimer);
+            this.highlightClickTimer = null;
+          }
+          return;
+        }
+        this.highlightClickTimer = window.setTimeout(() => {
+          this.highlightClickTimer = null;
+          if (!this.destroyed) {
+            this.openHighlightStackPopover(activeAnnotations, mark.getBoundingClientRect());
+          }
+        }, 220);
+      });
+      mark.addEventListener("dblclick", () => {
+        if (this.highlightClickTimer !== null) {
+          window.clearTimeout(this.highlightClickTimer);
+          this.highlightClickTimer = null;
+        }
+      });
+      cursor = slice.endOffset;
+    }
+    this.appendDictionaryText(textEl, text.slice(cursor), segmentIndex);
+    this.registerSelectionTranslation(textEl, segmentIndex);
+  }
+
+  private appendDictionaryText(parent: HTMLElement, text: string, segmentIndex: number): void {
+    if (!this.plugin.settings.enableDoubleClickLookup) {
+      parent.appendText(text);
       return;
     }
-    textEl.setAttribute("title", "双击单词在右侧词典中查询");
     for (const token of tokenizeDictionaryText(text)) {
       if (!token.isWord) {
-        textEl.appendText(token.text);
+        parent.appendText(token.text);
         continue;
       }
-      const wordEl = textEl.createSpan({ cls: "evs-dictionary-word", text: token.text });
+      const wordEl = parent.createSpan({ cls: "evs-dictionary-word", text: token.text });
       wordEl.addEventListener("dblclick", (event) => {
         const selectedText = wordEl.ownerDocument.getSelection()?.toString().trim() ?? "";
         if (/\s/u.test(selectedText)) {
           event.preventDefault();
-          this.showSelectionTranslationPopover(textEl);
+          this.showSelectionTranslationPopover(
+            parent.closest<HTMLElement>(".evs-segment-text") ?? parent,
+            segmentIndex
+          );
           return;
         }
         const segment = this.transcript?.segments[segmentIndex];
@@ -2043,48 +2329,273 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         });
       });
     }
-    this.registerSelectionTranslation(textEl);
   }
 
-  private registerSelectionTranslation(textEl: HTMLElement): void {
-    if (!this.plugin.settings.enableSelectionTranslation) {
-      textEl.onpointerup = null;
-      return;
-    }
-    textEl.onpointerup = (event) => {
+  private registerSelectionTranslation(textEl: HTMLElement, segmentIndex: number): void {
+    let pointerStart: { id: number; x: number; y: number } | null = null;
+    let detachDocumentListeners: (() => void) | null = null;
+    const finishPointer = (event: PointerEvent): void => {
+      detachDocumentListeners?.();
+      detachDocumentListeners = null;
+      const start = pointerStart;
+      pointerStart = null;
+      if (event.button !== 0 || event.detail > 1) return;
+      const dragged = start?.id === event.pointerId &&
+        Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 3;
+      if (!dragged) return;
+      window.setTimeout(() => {
+        if (this.activeHighlightCategoryId) {
+          void this.saveHighlightPenSelection(textEl, segmentIndex);
+        } else if (this.plugin.settings.enableSelectionTranslation) {
+          this.showSelectionTranslationPopover(textEl, segmentIndex);
+        }
+      }, 0);
+    };
+    textEl.onpointerdown = (event) => {
+      detachDocumentListeners?.();
+      detachDocumentListeners = null;
       if (event.button !== 0) {
+        pointerStart = null;
         return;
       }
-      window.setTimeout(() => this.showSelectionTranslationPopover(textEl), 0);
+      pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      const viewDocument = textEl.ownerDocument;
+      const cancelPointer = (): void => {
+        detachDocumentListeners?.();
+        detachDocumentListeners = null;
+        pointerStart = null;
+      };
+      viewDocument.addEventListener("pointerup", finishPointer, true);
+      viewDocument.addEventListener("pointercancel", cancelPointer, true);
+      detachDocumentListeners = () => {
+        viewDocument.removeEventListener("pointerup", finishPointer, true);
+        viewDocument.removeEventListener("pointercancel", cancelPointer, true);
+      };
+    };
+    textEl.onpointerup = null;
+    textEl.onpointercancel = null;
+  }
+
+  /** 字幕选区完成后，仅在未启用高亮笔时显示划句翻译。 */
+  private showSelectionTranslationPopover(textEl: HTMLElement, segmentIndex: number): void {
+    if (!this.plugin.settings.enableSelectionTranslation || this.activeHighlightCategoryId) return;
+    const selected = this.getSubtitleSelection(textEl, segmentIndex, false);
+    if (!selected || !/\s/u.test(selected.sourceText)) return;
+    const viewDocument = textEl.ownerDocument;
+    const viewWindow = viewDocument.defaultView ?? window;
+    this.openSelectionTranslationPopover(
+      selected.sourceText,
+      selected.rangeRect,
+      viewDocument,
+      viewWindow,
+      null
+    );
+  }
+
+  private getSubtitleSelection(
+    textEl: HTMLElement,
+    segmentIndex: number,
+    reportCrossSegment: boolean
+  ): SubtitleSelection | null {
+    const selection = textEl.ownerDocument.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!textEl.contains(range.startContainer) || !textEl.contains(range.endContainer)) {
+      if (reportCrossSegment) new Notice("高亮笔一次只能标记一句字幕。", 4_000);
+      return null;
+    }
+    const offsets = this.getSelectionOffsets(textEl, range);
+    const segment = this.transcript?.segments[segmentIndex];
+    if (!offsets || !segment) return null;
+    let { startOffset, endOffset } = offsets;
+    while (startOffset < endOffset && /\s/u.test(segment.text[startOffset] ?? "")) startOffset += 1;
+    while (endOffset > startOffset && /\s/u.test(segment.text[endOffset - 1] ?? "")) endOffset -= 1;
+    const sourceText = segment.text.slice(startOffset, endOffset);
+    const rangeRect = range.getBoundingClientRect();
+    if (sourceText.trim() === "" || rangeRect.width <= 0 || rangeRect.height <= 0) return null;
+    return {
+      context: { segmentIndex, startOffset, endOffset },
+      sourceText,
+      rangeRect
     };
   }
 
-  /** 参考 Vocabulary SRS：多词选区完成后直接弹出悬浮窗并自动翻译。 */
-  private showSelectionTranslationPopover(textEl: HTMLElement): void {
-    if (!this.plugin.settings.enableSelectionTranslation) {
-      this.hideSelectionTranslationPopover();
+  private async saveHighlightPenSelection(textEl: HTMLElement, segmentIndex: number): Promise<void> {
+    const categoryId = this.activeHighlightCategoryId;
+    if (!categoryId || this.highlightPenSaving) return;
+    const category = this.plugin.getHighlightCategory(categoryId);
+    if (!category || !this.plugin.settings.enableHighlights || !this.plugin.capabilities.desktop) {
+      this.activeHighlightCategoryId = null;
+      this.refreshHighlightPenModeUi();
       return;
     }
-    const selection = textEl.ownerDocument.getSelection();
-    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-      return;
-    }
-    const range = selection.getRangeAt(0);
-    if (!textEl.contains(range.startContainer) || !textEl.contains(range.endContainer)) {
-      return;
-    }
-    const sourceText = selection.toString().replace(/\s+/gu, " ").trim();
-    if (!/\s/u.test(sourceText)) {
-      return;
-    }
-    const rangeRect = range.getBoundingClientRect();
-    if (rangeRect.width <= 0 || rangeRect.height <= 0) {
-      return;
-    }
+    const selected = this.getSubtitleSelection(textEl, segmentIndex, true);
+    const segment = this.transcript?.segments[segmentIndex];
+    if (!selected || !segment) return;
 
-    const viewDocument = textEl.ownerDocument;
+    const exactHighlight = annotationsForSegment(
+      this.highlightBook,
+      this.transcriptPath,
+      segment.start,
+      segment.end
+    ).find((annotation) => {
+      const resolution = resolveHighlightAnchor(annotation, segment.text);
+      return resolution.status === "resolved" &&
+        resolution.startOffset === selected.context.startOffset &&
+        resolution.endOffset === selected.context.endOffset;
+    }) ?? null;
+
+    this.highlightPenSaving = true;
+    this.refreshHighlightPenModeUi();
+    try {
+      if (exactHighlight?.categoryIds.includes(categoryId)) {
+        textEl.ownerDocument.getSelection()?.removeAllRanges();
+        return;
+      }
+      const book = exactHighlight
+        ? await this.plugin.updateHighlight(
+          exactHighlight.id,
+          [...exactHighlight.categoryIds, categoryId],
+          exactHighlight.note
+        )
+        : await this.addHighlightFromSelection(selected.context, [categoryId], "");
+      this.highlightBook = book;
+      textEl.ownerDocument.getSelection()?.removeAllRanges();
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : "高亮笔记保存失败。", 6_000);
+    } finally {
+      this.highlightPenSaving = false;
+      this.refreshHighlightPenModeUi();
+    }
+  }
+
+  private getSelectionOffsets(
+    textEl: HTMLElement,
+    range: Range
+  ): { startOffset: number; endOffset: number } | null {
+    try {
+      const before = range.cloneRange();
+      before.selectNodeContents(textEl);
+      before.setEnd(range.startContainer, range.startOffset);
+      const startOffset = before.toString().length;
+      before.setEnd(range.endContainer, range.endOffset);
+      return { startOffset, endOffset: before.toString().length };
+    } catch {
+      return null;
+    }
+  }
+
+  private openExistingHighlightPopover(
+    annotation: HighlightAnnotation,
+    anchorRect: Pick<DOMRect, "left" | "top" | "bottom" | "width">
+  ): void {
+    const viewDocument = this.containerEl.ownerDocument;
+    this.openSelectionTranslationPopover(
+      annotation.quote,
+      anchorRect,
+      viewDocument,
+      viewDocument.defaultView ?? window,
+      annotation
+    );
+  }
+
+  private openHighlightStackPopover(
+    annotations: readonly HighlightAnnotation[],
+    anchorRect: Pick<DOMRect, "left" | "top" | "bottom" | "width">
+  ): void {
+    if (annotations.length <= 1) {
+      const annotation = annotations[0];
+      if (annotation) this.openExistingHighlightPopover(annotation, anchorRect);
+      return;
+    }
+    this.hideSelectionTranslationPopover();
+    const viewDocument = this.containerEl.ownerDocument;
     const viewWindow = viewDocument.defaultView ?? window;
-    this.openSelectionTranslationPopover(sourceText, rangeRect, viewDocument, viewWindow);
+    const priority = new Map(
+      this.plugin.settings.highlightCategories.map((category, index) => [category.id, index])
+    );
+    const ordered = [...annotations].sort((left, right) => {
+      const leftPriority = Math.min(...left.categoryIds.map((id) => priority.get(id) ?? Number.MAX_SAFE_INTEGER));
+      const rightPriority = Math.min(...right.categoryIds.map((id) => priority.get(id) ?? Number.MAX_SAFE_INTEGER));
+      return leftPriority - rightPriority || Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    });
+    const popover = viewDocument.body.createDiv({
+      cls: "lingua-study-selection-translation-popover lingua-highlight-stack-popover",
+      attr: { role: "dialog", "aria-label": "选择重叠高亮笔记", "aria-modal": "false" }
+    });
+    const header = popover.createDiv({ cls: "lingua-study-selection-translation-popover-header" });
+    header.createDiv({
+      cls: "lingua-study-selection-translation-popover-title",
+      text: `此处有 ${ordered.length} 条高亮笔记`
+    });
+    const closeButton = header.createEl("button", {
+      cls: "clickable-icon lingua-study-selection-translation-popover-close",
+      attr: { type: "button", "aria-label": "关闭高亮笔记列表" }
+    });
+    setIcon(closeButton, "x");
+    const content = popover.createDiv({ cls: "lingua-study-selection-translation-popover-content" });
+    const list = content.createDiv({ cls: "lingua-highlight-stack-list" });
+    for (const annotation of ordered) {
+      const item = list.createEl("button", {
+        cls: "lingua-highlight-stack-item",
+        attr: { type: "button", "aria-label": `编辑高亮：${annotation.quote}` }
+      });
+      const categories = item.createDiv({ cls: "lingua-highlight-stack-categories" });
+      for (const categoryId of annotation.categoryIds) {
+        const category = this.plugin.getHighlightCategory(categoryId);
+        const chip = categories.createSpan({ cls: "lingua-highlight-stack-category" });
+        chip.style.setProperty("--lingua-highlight-color", category?.color ?? "#F2C94C");
+        chip.createSpan({ cls: "lingua-highlight-category-option-swatch" });
+        chip.createSpan({ text: category?.name ?? "未分类" });
+      }
+      item.createDiv({ cls: "lingua-highlight-stack-quote", text: annotation.quote, attr: { lang: "en" } });
+      if (annotation.note) item.createDiv({ cls: "lingua-highlight-stack-note", text: annotation.note });
+      item.addEventListener("click", () => {
+        this.hideSelectionTranslationPopover();
+        this.openExistingHighlightPopover(annotation, anchorRect);
+      });
+    }
+    const positionPopover = (): void => {
+      const margin = 8;
+      const gap = 8;
+      const panelWidth = Math.max(200, Math.min(380, viewWindow.innerWidth - margin * 2));
+      popover.style.width = `${panelWidth}px`;
+      const panelHeight = popover.getBoundingClientRect().height;
+      const left = Math.min(
+        Math.max(margin, anchorRect.left + anchorRect.width / 2 - panelWidth / 2),
+        Math.max(margin, viewWindow.innerWidth - panelWidth - margin)
+      );
+      const top = Math.min(
+        Math.max(margin, anchorRect.bottom + gap),
+        Math.max(margin, viewWindow.innerHeight - panelHeight - margin)
+      );
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    };
+    const dismissOnPointerDown = (event: PointerEvent): void => {
+      if (!popover.contains(event.target as Node)) this.hideSelectionTranslationPopover();
+    };
+    const dismissOnKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") this.hideSelectionTranslationPopover();
+    };
+    const dismissOnScroll = (event: Event): void => {
+      if (!(event.target instanceof Node) || !popover.contains(event.target)) {
+        this.hideSelectionTranslationPopover();
+      }
+    };
+    closeButton.addEventListener("click", () => this.hideSelectionTranslationPopover());
+    viewDocument.addEventListener("pointerdown", dismissOnPointerDown, true);
+    viewDocument.addEventListener("keydown", dismissOnKeyDown, true);
+    viewWindow.addEventListener("scroll", dismissOnScroll, true);
+    viewWindow.addEventListener("resize", positionPopover);
+    this.selectionTranslationPopoverEl = popover;
+    this.selectionTranslationPopoverCleanup = () => {
+      viewDocument.removeEventListener("pointerdown", dismissOnPointerDown, true);
+      viewDocument.removeEventListener("keydown", dismissOnKeyDown, true);
+      viewWindow.removeEventListener("scroll", dismissOnScroll, true);
+      viewWindow.removeEventListener("resize", positionPopover);
+    };
+    positionPopover();
   }
 
   /** 在字幕选区附近显示非模态译文卡片，不遮挡播放器和字幕。 */
@@ -2092,7 +2603,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     sourceText: string,
     anchorRect: Pick<DOMRect, "left" | "top" | "bottom" | "width">,
     viewDocument: Document,
-    viewWindow: Window
+    viewWindow: Window,
+    existingHighlight: HighlightAnnotation | null = null
   ): void {
     this.hideSelectionTranslationPopover();
     const requestGeneration = this.selectionTranslationRequestGeneration + 1;
@@ -2102,12 +2614,19 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       cls: "lingua-study-selection-translation-popover",
       attr: {
         role: "dialog",
-        "aria-label": "选中文本翻译",
+        "aria-label": existingHighlight ? "编辑高亮笔记" : "翻译选中文本",
         "aria-modal": "false"
       }
     });
     const header = popover.createDiv({ cls: "lingua-study-selection-translation-popover-header" });
-    header.createDiv({ cls: "lingua-study-selection-translation-popover-title", text: "翻译选中文本" });
+    const canEditHighlight = this.plugin.capabilities.desktop &&
+      this.plugin.settings.enableHighlights && existingHighlight !== null;
+    const shouldTranslate = !existingHighlight && this.plugin.settings.enableSelectionTranslation &&
+      /\s/u.test(sourceText);
+    header.createDiv({
+      cls: "lingua-study-selection-translation-popover-title",
+      text: existingHighlight ? "编辑高亮笔记" : "翻译选中文本"
+    });
     const closeButton = header.createEl("button", {
       cls: "clickable-icon lingua-study-selection-translation-popover-close",
       attr: { type: "button", "aria-label": "关闭翻译悬浮窗" }
@@ -2121,19 +2640,189 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       text: sourceText,
       attr: { lang: "en" }
     });
-    const resultLabel = content.createDiv({
-      cls: "lingua-study-selection-translation-label",
-      text: "中文译文"
-    });
-    const resultEl = content.createDiv({
-      cls: "lingua-study-selection-translation-text is-result",
-      text: "正在翻译……",
+    const resultLabel = shouldTranslate ? content.createDiv({
+      cls: "lingua-study-selection-translation-label", text: "中文译文"
+    }) : null;
+    const resultEl = shouldTranslate ? content.createDiv({
+      cls: "lingua-study-selection-translation-text is-result", text: "正在翻译……",
       attr: { lang: "zh-CN", "aria-live": "polite" }
-    });
+    }) : null;
     const errorEl = content.createDiv({ cls: "lingua-study-import-error" });
-    const actions = content.createDiv({ cls: "lingua-study-selection-translation-popover-actions" });
-    const copyButton = actions.createEl("button", { cls: "mod-cta", text: "复制译文" });
-    copyButton.disabled = true;
+    const actions = shouldTranslate
+      ? content.createDiv({ cls: "lingua-study-selection-translation-popover-actions" })
+      : null;
+    const copyButton = actions?.createEl("button", { text: "复制译文" }) ?? null;
+    if (copyButton) copyButton.disabled = true;
+
+    let finalizeHighlightSession: (() => void) | null = null;
+    if (canEditHighlight) {
+      const fields = content.createDiv({ cls: "lingua-highlight-editor" });
+      const noteLabel = fields.createEl("label", { cls: "lingua-highlight-editor-field" });
+      noteLabel.createSpan({ text: "个人笔记（可选）" });
+      const note = noteLabel.createEl("textarea", {
+        attr: { maxlength: MAX_HIGHLIGHT_NOTE_LENGTH.toString(), "aria-label": "高亮个人笔记" }
+      });
+      note.value = existingHighlight.note;
+      const categoryField = fields.createDiv({ cls: "lingua-highlight-editor-field" });
+      categoryField.createSpan({ text: "选择颜色并自动保存" });
+      categoryField.createEl("small", {
+        cls: "lingua-highlight-category-hint",
+        text: "可多选；再次点击可移除该类别，移除最后一个类别会删除高亮。笔记会自动保存。"
+      });
+      const categoryPicker = categoryField.createDiv({
+        cls: "lingua-highlight-category-picker",
+        attr: { role: "group", "aria-label": "选择高亮颜色" }
+      });
+      const selectedCategoryIds = new Set(existingHighlight.categoryIds);
+      const categoryButtons = new Map<string, HTMLButtonElement>();
+      let currentHighlightId: string | null = existingHighlight.id;
+      let savedNote = existingHighlight.note;
+      let noteSaveTimer: number | null = null;
+      let mutationPending = false;
+      let sessionChanged = false;
+      let finalRefreshScheduled = false;
+      let lastMutation: Promise<void> = Promise.resolve();
+      const setButtonsDisabled = (disabled: boolean): void => {
+        for (const button of categoryButtons.values()) button.disabled = disabled;
+      };
+      const refreshCategoryButtons = (): void => {
+        for (const [categoryId, button] of categoryButtons) {
+          const selected = selectedCategoryIds.has(categoryId);
+          button.classList.toggle("is-selected", selected);
+          button.setAttribute("aria-pressed", selected ? "true" : "false");
+          const category = this.plugin.getHighlightCategory(categoryId);
+          button.setAttribute(
+            "aria-label",
+            selected ? `移除${category?.name ?? "高亮"}类别` : `添加${category?.name ?? "高亮"}类别`
+          );
+        }
+      };
+      const scheduleFinalRefresh = (): void => {
+        if (finalRefreshScheduled) return;
+        finalRefreshScheduled = true;
+        void lastMutation.finally(() => {
+          if (!sessionChanged) return;
+          viewWindow.setTimeout(() => this.plugin.notifyHighlightsChanged(), 0);
+        });
+      };
+      const runMutation = (
+        operation: () => Promise<HighlightBookFile>,
+        onSuccess: (book: HighlightBookFile) => void,
+        onFailure: () => void
+      ): void => {
+        mutationPending = true;
+        errorEl.empty();
+        setButtonsDisabled(true);
+        lastMutation = operation().then((book) => {
+          this.highlightBook = book;
+          sessionChanged = true;
+          onSuccess(book);
+        }).catch((caught) => {
+          onFailure();
+          const message = caught instanceof Error ? caught.message : "高亮笔记保存失败。";
+          errorEl.setText(message);
+          if (!popover.isConnected) new Notice(message, 6_000);
+        }).finally(() => {
+          mutationPending = false;
+          setButtonsDisabled(false);
+          refreshCategoryButtons();
+          positionPopover();
+        });
+      };
+      const saveNote = (): Promise<void> => {
+        if (noteSaveTimer !== null) {
+          viewWindow.clearTimeout(noteSaveTimer);
+          noteSaveTimer = null;
+        }
+        const nextNote = note.value.trim();
+        if (!currentHighlightId || nextNote === savedNote) return lastMutation;
+        if (mutationPending) {
+          return lastMutation.then(() => saveNote());
+        }
+        const id = currentHighlightId;
+        const categoryIds = [...selectedCategoryIds];
+        runMutation(
+          () => this.plugin.updateHighlight(id, categoryIds, nextNote, false),
+          () => { savedNote = nextNote; },
+          () => { note.value = savedNote; }
+        );
+        return lastMutation;
+      };
+      const toggleCategory = (categoryId: string): void => {
+        if (mutationPending || !this.plugin.getHighlightCategory(categoryId)) return;
+        if (noteSaveTimer !== null) {
+          viewWindow.clearTimeout(noteSaveTimer);
+          noteSaveTimer = null;
+        }
+        const previousIds = [...selectedCategoryIds];
+        const previousHighlightId = currentHighlightId;
+        if (selectedCategoryIds.has(categoryId)) selectedCategoryIds.delete(categoryId);
+        else selectedCategoryIds.add(categoryId);
+        refreshCategoryButtons();
+        const categoryIds = [...selectedCategoryIds];
+        const nextNote = note.value.trim();
+        if (categoryIds.length === 0) {
+          if (!currentHighlightId) return;
+          const id = currentHighlightId;
+          runMutation(
+            () => this.plugin.removeHighlight(id, false),
+            () => {
+              currentHighlightId = null;
+              savedNote = "";
+            },
+            () => {
+              currentHighlightId = previousHighlightId;
+              selectedCategoryIds.clear();
+              for (const value of previousIds) selectedCategoryIds.add(value);
+            }
+          );
+          return;
+        }
+        if (currentHighlightId) {
+          const id = currentHighlightId;
+          runMutation(
+            () => this.plugin.updateHighlight(id, categoryIds, nextNote, false),
+            () => { savedNote = nextNote; },
+            () => {
+              selectedCategoryIds.clear();
+              for (const value of previousIds) selectedCategoryIds.add(value);
+            }
+          );
+          return;
+        }
+        selectedCategoryIds.clear();
+        for (const value of previousIds) selectedCategoryIds.add(value);
+        refreshCategoryButtons();
+        errorEl.setText("这条高亮已经删除，请重新使用高亮笔标记文字。");
+      };
+      for (const category of this.plugin.settings.highlightCategories) {
+        const selected = selectedCategoryIds.has(category.id);
+        const categoryButton = categoryPicker.createEl("button", {
+          cls: `lingua-highlight-category-option${selected ? " is-selected" : ""}`,
+          attr: {
+            type: "button",
+            title: `${category.name} · ${category.color}`,
+            "aria-label": selected ? `移除${category.name}类别` : `添加${category.name}类别`,
+            "aria-pressed": selected ? "true" : "false"
+          }
+        });
+        categoryButton.style.setProperty("--lingua-highlight-color", category.color);
+        categoryButton.createSpan({ cls: "lingua-highlight-category-option-swatch" });
+        categoryButton.createSpan({ cls: "lingua-highlight-category-option-name", text: category.name });
+        categoryButton.addEventListener("click", () => toggleCategory(category.id));
+        categoryButtons.set(category.id, categoryButton);
+      }
+      note.addEventListener("input", () => {
+        if (noteSaveTimer !== null) viewWindow.clearTimeout(noteSaveTimer);
+        noteSaveTimer = viewWindow.setTimeout(() => { void saveNote(); }, 500);
+      });
+      note.addEventListener("blur", () => { void saveNote(); });
+      refreshCategoryButtons();
+      finalizeHighlightSession = () => {
+        if (noteSaveTimer !== null) viewWindow.clearTimeout(noteSaveTimer);
+        void saveNote().finally(scheduleFinalRefresh);
+      };
+    }
 
     const positionPopover = (): void => {
       const margin = 8;
@@ -2236,8 +2925,13 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       viewDocument.removeEventListener("pointercancel", stopDragging);
       viewWindow.removeEventListener("scroll", dismissOnScroll, true);
       viewWindow.removeEventListener("resize", repositionOnResize);
+      finalizeHighlightSession?.();
     };
 
+    if (!shouldTranslate || !resultEl || !resultLabel || !copyButton) {
+      positionPopover();
+      return;
+    }
     void this.plugin.translateSentence(sourceText).then((result) => {
       if (this.destroyed || requestGeneration !== this.selectionTranslationRequestGeneration) {
         return;
@@ -2263,6 +2957,35 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     });
   }
 
+  private addHighlightFromSelection(
+    selection: HighlightSelectionContext,
+    categoryIds: string[],
+    note: string,
+    id = `highlight-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    notify = true
+  ): Promise<HighlightBookFile> {
+    const segment = this.transcript?.segments[selection.segmentIndex];
+    const videoId = this.transcript?.videoId;
+    if (!segment || !videoId) {
+      return Promise.reject(new Error("当前字幕已经变化，请重新选择文字。"));
+    }
+    return this.plugin.addHighlight({
+      id,
+      categoryIds,
+      note,
+      sourcePath: this.sourcePath,
+      transcriptPath: this.transcriptPath,
+      videoId,
+      segmentIndex: selection.segmentIndex,
+      segmentStart: segment.start,
+      segmentEnd: segment.end,
+      segmentText: segment.text,
+      startOffset: selection.startOffset,
+      endOffset: selection.endOffset,
+      now: new Date()
+    }, notify);
+  }
+
   private hideSelectionTranslationPopover(): void {
     this.selectionTranslationRequestGeneration += 1;
     this.selectionTranslationPopoverCleanup?.();
@@ -2280,6 +3003,37 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.renderDictionaryText(textEl, segment.text, index);
       }
     });
+  }
+
+  /**
+   * 翻译与高亮开关只更新根容器状态，避免重建或遍历整篇字幕 DOM。
+   * 已保存的高亮始终保留在渲染结构中，关闭时仅隐藏样式与交互。
+   */
+  refreshSelectionFeatureSettings(): void {
+    this.containerEl.querySelector<HTMLElement>(".evs-root")?.classList.toggle(
+      "evs-highlights-enabled",
+      this.plugin.capabilities.desktop && this.plugin.settings.enableHighlights
+    );
+    if (!this.plugin.settings.enableHighlights) {
+      this.activeHighlightCategoryId = null;
+    }
+    this.refreshHighlightPenPalette();
+    if (!this.plugin.settings.enableSelectionTranslation) {
+      this.hideSelectionTranslationPopover();
+    }
+  }
+
+  private async reloadHighlights(): Promise<void> {
+    const loaded = await this.plugin.loadHighlightBook();
+    if (this.destroyed) return;
+    this.highlightBook = loaded.book;
+    this.refreshDictionaryLookupSetting();
+    this.translationViews.forEach((view, index) => {
+      if (view.visible) {
+        this.renderTranslationOutput(view, view.studyEntries[this.plugin.settings.studyProfile] ?? null, index);
+      }
+    });
+    this.refreshHighlightPenPalette();
   }
 
   /**
@@ -4009,9 +4763,25 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       committedSegment.text === transcript.segments[segmentIndex]?.text ? [] : [segmentIndex]
     );
     this.transcript = committed;
+    let highlightWarning: string | null = null;
+    try {
+      this.highlightBook = await this.plugin.reanchorHighlights(
+        this.transcriptPath,
+        segment.start,
+        committed.segments[index]?.text ?? text.trim()
+      );
+    } catch (caught) {
+      // 字幕已经成功落盘；高亮文件损坏或被移动时，不能把已保存的字幕误报为失败。
+      highlightWarning = caught instanceof Error ? caught.message : "高亮位置更新失败。";
+    }
     await Promise.all(changedIndexes.map((segmentIndex) => this.refreshSegmentText(segmentIndex)));
     this.scheduleTranscriptLayout(true);
-    new Notice("字幕已保存；时间轴未改变。", 4_000);
+    new Notice(
+      highlightWarning
+        ? `字幕已保存，但高亮位置未能更新：${highlightWarning}`
+        : "字幕已保存；时间轴未改变。",
+      highlightWarning ? 8_000 : 4_000
+    );
   }
 
   private async refreshSegmentText(index: number): Promise<void> {
@@ -4239,9 +5009,176 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
   }
 
+  private renderStudyHighlightText(
+    element: HTMLElement,
+    text: string,
+    segmentIndex: number,
+    field: string,
+    profile: StudyProfile | null,
+    annotations: readonly HighlightAnnotation[],
+    registerSelection = true
+  ): void {
+    element.addClass("evs-study-annotatable");
+    element.dataset.studyField = field;
+    const byId = new Map(annotations.map((annotation) => [annotation.id, annotation]));
+    const slices = buildHighlightRenderSlices(
+      annotations, text, this.plugin.settings.highlightCategories.map((category) => category.id)
+    );
+    let cursor = 0;
+    for (const slice of slices) {
+      element.appendText(text.slice(cursor, slice.startOffset));
+      const active = slice.annotationIds
+        .map((id) => this.highlightBook.annotations[id] ?? byId.get(id))
+        .filter((annotation): annotation is HighlightAnnotation => Boolean(annotation));
+      const categoryIds = new Set(active.flatMap((annotation) => annotation.categoryIds));
+      const colors = this.plugin.settings.highlightCategories
+        .filter((category) => categoryIds.has(category.id))
+        .map((category) => category.color);
+      const description = active.map((annotation) => {
+        const names = annotation.categoryIds
+          .map((id) => this.plugin.getHighlightCategory(id)?.name ?? "未分类")
+          .join("、");
+        return `${names}：${annotation.quote}${annotation.note ? `；笔记：${annotation.note.slice(0, 80)}` : ""}`;
+      }).join("\n");
+      const mark = element.createEl("mark", {
+        cls: "lingua-transcript-highlight",
+        text: text.slice(slice.startOffset, slice.endOffset),
+        attr: {
+          title: description,
+          "aria-label": description,
+          "data-highlight-ids": slice.annotationIds.join(",")
+        }
+      });
+      mark.style.setProperty("--lingua-highlight-background", buildHighlightMarkerBackground(colors));
+      mark.addEventListener("click", (event) => {
+        if (!this.plugin.settings.enableHighlights || !element.ownerDocument.getSelection()?.isCollapsed) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.detail > 1) {
+          if (this.highlightClickTimer !== null) window.clearTimeout(this.highlightClickTimer);
+          this.highlightClickTimer = null;
+          return;
+        }
+        this.highlightClickTimer = window.setTimeout(() => {
+          this.highlightClickTimer = null;
+          if (!this.destroyed) this.openHighlightStackPopover(active, mark.getBoundingClientRect());
+        }, 220);
+      });
+      mark.addEventListener("dblclick", () => {
+        if (this.highlightClickTimer !== null) window.clearTimeout(this.highlightClickTimer);
+        this.highlightClickTimer = null;
+      });
+      cursor = slice.endOffset;
+    }
+    element.appendText(text.slice(cursor));
+    if (registerSelection) {
+      this.registerStudyHighlightPointer(element, text, segmentIndex, field, profile, annotations);
+    }
+  }
+
+  private registerStudyHighlightPointer(
+    element: HTMLElement,
+    text: string,
+    segmentIndex: number,
+    field: string,
+    profile: StudyProfile | null,
+    annotations: readonly HighlightAnnotation[]
+  ): void {
+    if (!this.plugin.capabilities.desktop) return;
+    let pointerStart: { id: number; x: number; y: number } | null = null;
+    const finish = (event: PointerEvent): void => {
+      element.ownerDocument.removeEventListener("pointerup", finish, true);
+      element.ownerDocument.removeEventListener("pointercancel", cancel, true);
+      const start = pointerStart;
+      pointerStart = null;
+      if (!start || event.button !== 0 || event.detail > 1 || start.id !== event.pointerId) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 3) return;
+      window.setTimeout(() => {
+        if (this.activeHighlightCategoryId && element.isConnected) {
+          void this.saveStudyHighlightPenSelection(element, text, segmentIndex, field, profile, annotations);
+        }
+      }, 0);
+    };
+    const cancel = (): void => {
+      element.ownerDocument.removeEventListener("pointerup", finish, true);
+      element.ownerDocument.removeEventListener("pointercancel", cancel, true);
+      pointerStart = null;
+    };
+    element.onpointerdown = (event) => {
+      cancel();
+      if (event.button !== 0 || !this.activeHighlightCategoryId) return;
+      pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      element.ownerDocument.addEventListener("pointerup", finish, true);
+      element.ownerDocument.addEventListener("pointercancel", cancel, true);
+    };
+  }
+
+  private async saveStudyHighlightPenSelection(
+    element: HTMLElement,
+    text: string,
+    segmentIndex: number,
+    field: string,
+    profile: StudyProfile | null,
+    annotations: readonly HighlightAnnotation[]
+  ): Promise<void> {
+    const categoryId = this.activeHighlightCategoryId;
+    if (!categoryId || this.highlightPenSaving || !this.plugin.settings.enableHighlights) return;
+    const selection = element.ownerDocument.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) {
+      new Notice("一次只能标记一个知识点文本区域。", 4_000);
+      return;
+    }
+    const offsets = this.getSelectionOffsets(element, range);
+    const segment = this.transcript?.segments[segmentIndex];
+    const videoId = this.transcript?.videoId;
+    if (!offsets || !segment || !videoId) return;
+    let { startOffset, endOffset } = offsets;
+    while (startOffset < endOffset && /\s/u.test(text[startOffset] ?? "")) startOffset += 1;
+    while (endOffset > startOffset && /\s/u.test(text[endOffset - 1] ?? "")) endOffset -= 1;
+    if (text.slice(startOffset, endOffset).trim() === "") return;
+    const exact = annotations.find((annotation) =>
+      annotation.startOffset === startOffset && annotation.endOffset === endOffset
+    );
+    this.highlightPenSaving = true;
+    this.refreshHighlightPenModeUi();
+    try {
+      if (exact?.categoryIds.includes(categoryId)) {
+        selection.removeAllRanges();
+        return;
+      }
+      const input: StudyHighlightAnchorInput = {
+        id: `highlight-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+        categoryIds: [categoryId],
+        sourcePath: this.sourcePath,
+        transcriptPath: this.transcriptPath,
+        videoId,
+        segmentIndex,
+        segmentStart: segment.start,
+        segmentEnd: segment.end,
+        segmentText: text,
+        startOffset,
+        endOffset,
+        studyTarget: { profile, field },
+        now: new Date()
+      };
+      this.highlightBook = exact
+        ? await this.plugin.updateHighlight(exact.id, [...exact.categoryIds, categoryId], exact.note)
+        : await this.plugin.addStudyHighlight(input);
+      selection.removeAllRanges();
+    } catch (caught) {
+      new Notice(caught instanceof Error ? caught.message : "知识点标注保存失败。", 6_000);
+    } finally {
+      this.highlightPenSaving = false;
+      this.refreshHighlightPenModeUi();
+    }
+  }
+
   private renderTranslationOutput(
     view: SegmentTranslationView,
-    studyEntry: StudyCacheEntry | null
+    studyEntry: StudyCacheEntry | null,
+    segmentIndex = this.translationViews.indexOf(view)
   ): void {
     view.outputEl.empty();
     // 译文缓存独立于知识卡。即使这次知识点格式异常，也优先展示并保留
@@ -4250,11 +5187,53 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (!translation) {
       return;
     }
+    const segment = this.transcript?.segments[segmentIndex];
+    const fields = getStudyHighlightFields(studyEntry?.analysis ?? null, translation);
+    const resolvedByField = new Map<string, HighlightAnnotation[]>();
+    if (segment && this.plugin.capabilities.desktop) {
+      for (const annotation of Object.values(this.highlightBook.annotations)) {
+        if (
+          annotation.targetType !== "study" ||
+          annotation.transcriptPath !== this.transcriptPath ||
+          annotation.segmentStart !== segment.start ||
+          annotation.segmentEnd !== segment.end
+        ) continue;
+        const profile = annotation.studyTarget?.profile;
+        if (profile !== null && profile !== studyEntry?.profile) continue;
+        const candidateFields = profile === null
+          ? { translation }
+          : Object.fromEntries(Object.entries(fields).filter(([field]) => field !== "translation"));
+        const resolution = resolveStudyHighlightAnchor(annotation, candidateFields);
+        if (resolution.status !== "resolved") continue;
+        const matches = resolvedByField.get(resolution.field) ?? [];
+        matches.push({
+          ...annotation,
+          startOffset: resolution.startOffset,
+          endOffset: resolution.endOffset
+        });
+        resolvedByField.set(resolution.field, matches);
+      }
+    }
+    const annotate = (
+      element: HTMLElement,
+      text: string,
+      field: string,
+      profile: StudyProfile | null,
+      group?: { field: string; startOffset: number }
+    ): void => {
+      const direct = resolvedByField.get(field) ?? [];
+      const projected = group ? (resolvedByField.get(group.field) ?? [])
+        .map((annotation) => projectStudyGroupHighlight(annotation, text, group.startOffset))
+        .filter((annotation): annotation is HighlightAnnotation => annotation !== null) : [];
+      this.renderStudyHighlightText(
+        element, text, segmentIndex, field, profile, [...direct, ...projected], !group
+      );
+    };
     view.outputEl.appendChild(view.retranslateButton);
     view.retranslateButton.show();
     const translationSection = view.outputEl.createDiv({ cls: "evs-study-section" });
     translationSection.createDiv({ cls: "evs-study-heading", text: "中文译文" });
-    translationSection.createDiv({ cls: "evs-translation-copy", text: translation });
+    annotate(translationSection.createDiv({ cls: "evs-translation-copy" }), translation, "translation", null);
     if (!studyEntry) {
       const legacyRow = view.outputEl.createDiv({ cls: "evs-study-legacy-row" });
       legacyRow.createDiv({
@@ -4282,45 +5261,83 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       const section = view.outputEl.createDiv({ cls: "evs-study-section" });
       section.createDiv({ cls: "evs-study-heading", text: "重点词汇与搭配" });
       const list = section.createEl("ul", { cls: "evs-study-list" });
-      for (const point of studyEntry.analysis.keyPoints) {
+      for (const [index, point] of studyEntry.analysis.keyPoints.entries()) {
         const item = list.createEl("li");
-        item.createEl("strong", { text: point.expression });
-        item.createSpan({ text: `：${point.meaning}` });
-        item.createDiv({ cls: "evs-study-note", text: point.note });
+        const groupField = `keyPoints.${index}.group`;
+        annotate(item.createEl("strong"), point.expression, `keyPoints.${index}.expression`, studyEntry.profile,
+          { field: groupField, startOffset: 0 });
+        item.createSpan({ text: "：" });
+        annotate(item.createSpan(), point.meaning, `keyPoints.${index}.meaning`, studyEntry.profile,
+          { field: groupField, startOffset: point.expression.length + 1 });
+        item.appendText(" ");
+        annotate(item.createDiv({ cls: "evs-study-note" }), point.note, `keyPoints.${index}.note`, studyEntry.profile,
+          { field: groupField, startOffset: point.expression.length + point.meaning.length + 2 });
+        item.addClass("evs-study-annotatable");
+        this.registerStudyHighlightPointer(item, fields[groupField], segmentIndex, groupField,
+          studyEntry.profile, resolvedByField.get(groupField) ?? []);
       }
     }
     if (studyEntry.analysis.grammar.length > 0) {
       const section = view.outputEl.createDiv({ cls: "evs-study-section" });
       section.createDiv({ cls: "evs-study-heading", text: "语法与句型" });
       const list = section.createEl("ul", { cls: "evs-study-list" });
-      for (const grammar of studyEntry.analysis.grammar) {
+      for (const [index, grammar] of studyEntry.analysis.grammar.entries()) {
         const item = list.createEl("li");
-        item.createEl("strong", { text: grammar.pattern });
-        item.createDiv({ cls: "evs-study-note", text: grammar.explanation });
+        const groupField = `grammar.${index}.group`;
+        annotate(item.createEl("strong"), grammar.pattern, `grammar.${index}.pattern`, studyEntry.profile,
+          { field: groupField, startOffset: 0 });
+        item.appendText(" ");
+        annotate(item.createDiv({ cls: "evs-study-note" }), grammar.explanation, `grammar.${index}.explanation`, studyEntry.profile,
+          { field: groupField, startOffset: grammar.pattern.length + 1 });
+        item.addClass("evs-study-annotatable");
+        this.registerStudyHighlightPointer(item, fields[groupField], segmentIndex, groupField,
+          studyEntry.profile, resolvedByField.get(groupField) ?? []);
       }
     }
     const tip = view.outputEl.createDiv({ cls: "evs-study-section evs-study-exam-tip" });
     tip.createDiv({ cls: "evs-study-heading", text: "备考提示" });
-    tip.createDiv({ text: studyEntry.analysis.examTip });
+    annotate(tip.createDiv(), studyEntry.analysis.examTip, "examTip", studyEntry.profile);
 
     const extensions = studyEntry.analysis.extensions ?? [];
     if (extensions.length > 0) {
       const section = view.outputEl.createDiv({ cls: "evs-study-section evs-study-extensions" });
       section.createDiv({ cls: "evs-study-heading", text: "延伸拓展" });
       const list = section.createDiv({ cls: "evs-study-extension-list" });
-      for (const extension of extensions) {
+      for (const [index, extension] of extensions.entries()) {
         const item = list.createDiv({ cls: "evs-study-extension-item" });
-        item.createDiv({
-          cls: "evs-study-extension-anchor",
-          text: `由原句中的“${extension.anchor}”延伸`
-        });
+        const groupField = `extensions.${index}.group`;
+        let groupOffset = 0;
+        const annotatePart = (element: HTMLElement, text: string, field: string): void => {
+          annotate(element, text, field, studyEntry.profile,
+            { field: groupField, startOffset: groupOffset });
+          groupOffset += text.length;
+        };
+        const separate = (parent: HTMLElement): void => {
+          parent.appendText(" ");
+          groupOffset += 1;
+        };
+        const anchor = item.createDiv({ cls: "evs-study-extension-anchor" });
+        annotatePart(anchor.createSpan(), "由原句中的“", `${groupField}.prefix`);
+        annotatePart(anchor.createSpan(), extension.anchor, `extensions.${index}.anchor`);
+        annotatePart(anchor.createSpan(), "”延伸", `${groupField}.suffix`);
+        separate(item);
         const title = item.createDiv({ cls: "evs-study-extension-title" });
-        title.createEl("strong", { text: extension.expression });
-        title.createSpan({ text: `：${extension.meaning}` });
-        item.createDiv({ cls: "evs-study-note", text: extension.note });
+        annotatePart(title.createEl("strong"), extension.expression, `extensions.${index}.expression`);
+        annotatePart(title.createSpan(), "：", `${groupField}.colon`);
+        annotatePart(title.createSpan(), extension.meaning, `extensions.${index}.meaning`);
+        separate(item);
+        annotatePart(item.createDiv({ cls: "evs-study-note" }), extension.note, `extensions.${index}.note`);
+        separate(item);
         const example = item.createDiv({ cls: "evs-study-extension-example" });
-        example.createDiv({ text: extension.example, attr: { lang: "en" } });
-        example.createDiv({ text: extension.exampleTranslation, attr: { lang: "zh-CN" } });
+        const englishExample = example.createDiv({ attr: { lang: "en" } });
+        annotatePart(englishExample, extension.example, `extensions.${index}.example`);
+        englishExample.appendText(" ");
+        groupOffset += 1;
+        annotatePart(example.createDiv({ attr: { lang: "zh-CN" } }), extension.exampleTranslation,
+          `extensions.${index}.exampleTranslation`);
+        item.addClass("evs-study-annotatable");
+        this.registerStudyHighlightPointer(item, fields[groupField], segmentIndex, groupField,
+          studyEntry.profile, resolvedByField.get(groupField) ?? []);
       }
     }
   }
@@ -5407,7 +6424,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   /** 悬浮播放器开启时，让右侧字幕操作栏始终从播放器下方开始吸顶。 */
   private updateSegmentActionDockInset(): void {
-    const actionDock = this.segmentActionDockEl;
+    const actionDock = this.segmentToolStackEl;
     const playerDock = this.playerDockEl;
     if (!actionDock) {
       return;
@@ -5591,6 +6608,26 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   async navigateToVocabularyContext(context: VocabularyContext): Promise<void> {
     await this.focusVocabularyContext(context);
   }
+
+  async navigateToHighlightContext(annotation: HighlightAnnotation, context: VocabularyContext): Promise<void> {
+    if (annotation.targetType === "study" && annotation.studyTarget?.profile) {
+      const profile = annotation.studyTarget.profile as StudyProfile;
+      if (this.plugin.settings.studyProfile !== profile) await this.plugin.setStudyProfile(profile);
+    }
+    const index = this.getVocabularyContextIndex(context);
+    const view = this.translationViews[index];
+    if (annotation.targetType === "study" && view) {
+      view.visible = true;
+      this.updateTranslationView(view);
+    }
+    await this.focusVocabularyContext(context);
+    if (annotation.targetType !== "study" || !view) return;
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    const mark = Array.from(view.outputEl.querySelectorAll<HTMLElement>("mark[data-highlight-ids]"))
+      .find((candidate) => candidate.dataset.highlightIds?.split(",").includes(annotation.id));
+    this.markTranscriptProgrammaticScroll();
+    (mark ?? view.outputEl).scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+  }
 }
 
 export default class LinguaStudyPlugin extends Plugin {
@@ -5600,11 +6637,13 @@ export default class LinguaStudyPlugin extends Plugin {
   private translationCacheStore: TranslationCacheStore | null = null;
   private studyCacheStore: StudyCacheStore | null = null;
   private vocabularyStore: VocabularyStore | null = null;
+  private highlightStore: HighlightStore | null = null;
   private readonly offlineDictionary = new OfflineDictionary();
   private fullDictionaryService: FullDictionaryService | null = null;
   private customDictionaryService: CustomDictionaryService | null = null;
   private readonly studyProfileListeners = new Set<(profile: StudyProfile) => void>();
   private readonly vocabularyListeners = new Set<() => void>();
+  private readonly highlightListeners = new Set<() => void>();
   private readonly studyRenderers = new Set<LinguaStudyRenderChild>();
   private readonly studyRendererReadyOrder = new WeakMap<LinguaStudyRenderChild, number>();
   private studyRendererReadyCounter = 0;
@@ -5612,6 +6651,8 @@ export default class LinguaStudyPlugin extends Plugin {
   private pendingVocabularyJump: {
     id: number;
     context: VocabularyContext;
+    kind: "vocabulary" | "highlight";
+    annotation?: HighlightAnnotation;
     targetLeaf: WorkspaceLeaf;
     timeout: number;
   } | null = null;
@@ -5644,6 +6685,7 @@ export default class LinguaStudyPlugin extends Plugin {
     this.translationCacheStore = new TranslationCacheStore(this.app);
     this.studyCacheStore = new StudyCacheStore(this.app);
     this.vocabularyStore = new VocabularyStore(this.app);
+    this.highlightStore = new HighlightStore(this.app);
     let ytDlpFetcher: YtDlpTranscriptFetcher | null = null;
     if (this.capabilities.desktop) {
       const [
@@ -5759,6 +6801,17 @@ export default class LinguaStudyPlugin extends Plugin {
       name: "打开生词本",
       callback: () => {
         void this.openDictionarySection("book");
+      }
+    });
+
+    this.addCommand({
+      id: "open-highlight-library",
+      name: "打开高亮笔记",
+      checkCallback: (checking) => {
+        if (!checking && this.capabilities.desktop) {
+          void this.openDictionarySection("highlights");
+        }
+        return this.capabilities.desktop;
       }
     });
 
@@ -5922,6 +6975,8 @@ export default class LinguaStudyPlugin extends Plugin {
     this.transcriptFingerprintCache.clear();
     this.studyProfileListeners.clear();
     this.vocabularyListeners.clear();
+    this.highlightListeners.clear();
+    this.highlightStore = null;
     this.studyRenderers.clear();
     this.activeDictionaryHighlightOwner = null;
     if (this.pendingVocabularyJump) {
@@ -6122,6 +7177,8 @@ export default class LinguaStudyPlugin extends Plugin {
     const previousInterfaceTheme = this.settings.interfaceTheme;
     const previousDoubleClickLookup = this.settings.enableDoubleClickLookup;
     const previousSelectionTranslation = this.settings.enableSelectionTranslation;
+    const previousEnableHighlights = this.settings.enableHighlights;
+    const previousHighlightCategories = JSON.stringify(this.settings.highlightCategories);
     this.settings = sanitizeSettings({ ...this.settings, ...changes });
     await this.saveData(this.settings);
     if (this.settings.interfaceTheme !== previousInterfaceTheme) {
@@ -6151,16 +7208,24 @@ export default class LinguaStudyPlugin extends Plugin {
         renderer.applyDesktopPlayerWidth(this.settings.desktopPlayerWidth);
       }
     }
-    if (
-      this.settings.enableDoubleClickLookup !== previousDoubleClickLookup ||
-      this.settings.enableSelectionTranslation !== previousSelectionTranslation
-    ) {
+    const highlightCategoriesChanged = JSON.stringify(this.settings.highlightCategories) !== previousHighlightCategories;
+    if (this.settings.enableDoubleClickLookup !== previousDoubleClickLookup) {
       if (!this.settings.enableDoubleClickLookup) {
         this.clearDictionaryHighlight();
       }
       for (const renderer of this.studyRenderers) {
         renderer.refreshDictionaryLookupSetting();
       }
+    } else if (
+      this.settings.enableSelectionTranslation !== previousSelectionTranslation ||
+      this.settings.enableHighlights !== previousEnableHighlights
+    ) {
+      for (const renderer of this.studyRenderers) {
+        renderer.refreshSelectionFeatureSettings();
+      }
+    }
+    if (highlightCategoriesChanged) {
+      this.notifyHighlightsChanged();
     }
   }
 
@@ -6393,12 +7458,18 @@ export default class LinguaStudyPlugin extends Plugin {
     }
   }
 
-  async openDictionarySection(section: "book" | "review"): Promise<void> {
+  async openDictionarySection(section: "book" | "review" | "highlights"): Promise<void> {
+    if (section === "highlights" && !this.capabilities.desktop) {
+      new Notice("高亮笔记库第一版仅支持电脑端。", 4_000);
+      return;
+    }
     const view = await this.ensureDictionaryView();
     if (section === "book") {
       view.openVocabularyBook();
-    } else {
+    } else if (section === "review") {
       view.openReview();
+    } else {
+      view.openHighlights();
     }
   }
 
@@ -6700,14 +7771,206 @@ export default class LinguaStudyPlugin extends Plugin {
     }
   }
 
+  getHighlightCategory(id: string): HighlightCategory | null {
+    return this.settings.highlightCategories.find((category) => category.id === id) ?? null;
+  }
+
+  async loadHighlightBook(): Promise<HighlightBookLoadResult> {
+    return this.getHighlightStore().load();
+  }
+
+  private validateHighlightCategoryIds(categoryIds: readonly string[]): void {
+    if (
+      categoryIds.length === 0 ||
+      new Set(categoryIds).size !== categoryIds.length ||
+      categoryIds.some((categoryId) => !this.getHighlightCategory(categoryId))
+    ) {
+      throw new Error("高亮类别已经变化，请重新选择。");
+    }
+  }
+
+  async addHighlight(input: HighlightAnchorInput, notify = true): Promise<HighlightBookFile> {
+    this.validateHighlightCategoryIds(input.categoryIds);
+    const book = await this.getHighlightStore().add(input);
+    if (notify) this.notifyHighlightsChanged();
+    return book;
+  }
+
+  async addStudyHighlight(input: StudyHighlightAnchorInput): Promise<HighlightBookFile> {
+    this.validateHighlightCategoryIds(input.categoryIds);
+    const book = await this.getHighlightStore().addStudy(input);
+    this.notifyHighlightsChanged();
+    return book;
+  }
+
+  async updateHighlight(
+    id: string,
+    categoryIds: string[],
+    note: string,
+    notify = true
+  ): Promise<HighlightBookFile> {
+    this.validateHighlightCategoryIds(categoryIds);
+    const book = await this.getHighlightStore().update(id, categoryIds, note, new Date());
+    if (notify) this.notifyHighlightsChanged();
+    return book;
+  }
+
+  async removeHighlight(id: string, notify = true): Promise<HighlightBookFile> {
+    const book = await this.getHighlightStore().remove(id);
+    if (notify) this.notifyHighlightsChanged();
+    return book;
+  }
+
+  async migrateHighlightCategory(fromCategoryId: string, toCategoryId: string): Promise<void> {
+    if (!this.getHighlightCategory(toCategoryId)) {
+      throw new Error("替代高亮类别已经变化，请重新选择。");
+    }
+    await this.getHighlightStore().migrateCategory(fromCategoryId, toCategoryId, new Date());
+    this.notifyHighlightsChanged();
+  }
+
+  async countHighlightsByCategory(categoryId: string): Promise<number> {
+    const loaded = await this.getHighlightStore().load();
+    if (loaded.warning) throw new Error(loaded.warning);
+    return Object.values(loaded.book.annotations)
+      .filter((annotation) => annotation.categoryIds.includes(categoryId)).length;
+  }
+
+  async reanchorHighlights(
+    transcriptPath: string,
+    segmentStart: number,
+    segmentText: string
+  ): Promise<HighlightBookFile> {
+    const book = await this.getHighlightStore().reanchorSegment(
+      transcriptPath,
+      segmentStart,
+      segmentText,
+      new Date()
+    );
+    this.notifyHighlightsChanged();
+    return book;
+  }
+
+  subscribeHighlights(listener: () => void): () => void {
+    this.highlightListeners.add(listener);
+    return () => this.highlightListeners.delete(listener);
+  }
+
+  notifyHighlightsChanged(): void {
+    for (const listener of this.highlightListeners) listener();
+  }
+
+  async openHighlightContext(annotation: HighlightAnnotation): Promise<void> {
+    await this.openVocabularyContextForNavigation({
+      sentence: annotation.quote,
+      sourcePath: annotation.sourcePath,
+      transcriptPath: annotation.transcriptPath,
+      videoId: annotation.videoId,
+      segmentIndex: annotation.segmentIndex,
+      start: annotation.segmentStart,
+      end: annotation.segmentEnd,
+      studyProfile: (annotation.studyTarget?.profile ?? this.settings.studyProfile) as StudyProfile,
+      addedAt: annotation.createdAt
+    }, "highlight", annotation);
+  }
+
+  async inspectHighlights(
+    annotations: readonly HighlightAnnotation[]
+  ): Promise<Map<string, HighlightLibraryStatus>> {
+    const transcripts = new Map<string, TranscriptFile | null>();
+    const studyCaches = new Map<string, StudyCacheLoadResult>();
+    const translationCaches = new Map<string, TranslationCacheLoadResult>();
+    const statuses = new Map<string, HighlightLibraryStatus>();
+    for (const annotation of annotations) {
+      if (!(this.app.vault.getAbstractFileByPath(annotation.sourcePath) instanceof TFile)) {
+        statuses.set(annotation.id, { status: "missing-source", sentence: null });
+        continue;
+      }
+      if (!transcripts.has(annotation.transcriptPath)) {
+        const file = this.app.vault.getAbstractFileByPath(annotation.transcriptPath);
+        let transcript: TranscriptFile | null = null;
+        if (file instanceof TFile) {
+          try {
+            transcript = validateTranscript(
+              JSON.parse(await this.app.vault.cachedRead(file)) as unknown
+            );
+          } catch {
+            transcript = null;
+          }
+        }
+        transcripts.set(annotation.transcriptPath, transcript);
+      }
+      const transcript = transcripts.get(annotation.transcriptPath) ?? null;
+      if (!transcript) {
+        statuses.set(annotation.id, { status: "missing-transcript", sentence: null });
+        continue;
+      }
+      const segment = transcript.segments.find((item) =>
+        item.start === annotation.segmentStart && item.end === annotation.segmentEnd
+      );
+      if (!segment) {
+        statuses.set(annotation.id, { status: "unresolved", sentence: null });
+        continue;
+      }
+      if (annotation.targetType === "transcript") {
+        statuses.set(annotation.id, {
+          status: resolveHighlightAnchor(annotation, segment.text).status,
+          sentence: segment.text
+        });
+        continue;
+      }
+      const profile = annotation.studyTarget?.profile;
+      let fields: Record<string, string>;
+      if (profile === null) {
+        let cache = translationCaches.get(annotation.transcriptPath);
+        if (!cache) {
+          cache = await this.loadTranslationCache(annotation.transcriptPath, transcript.videoId);
+          translationCaches.set(annotation.transcriptPath, cache);
+        }
+        const fingerprint = await createSegmentFingerprint(segment.start, segment.end, segment.text);
+        const translation = cache.translations[fingerprint]?.text ?? null;
+        fields = getStudyHighlightFields(null, translation);
+      } else {
+        let cache = studyCaches.get(annotation.transcriptPath);
+        if (!cache) {
+          cache = await this.loadStudyCache(annotation.transcriptPath, transcript.videoId);
+          studyCaches.set(annotation.transcriptPath, cache);
+        }
+        const fingerprint = await createStudyFingerprint(
+          segment.start, segment.end, segment.text, profile as StudyProfile
+        );
+        fields = getStudyHighlightFields(cache.analyses[fingerprint]?.analysis ?? null, null);
+      }
+      if (Object.keys(fields).length === 0) {
+        statuses.set(annotation.id, { status: "missing-study", sentence: segment.text });
+        continue;
+      }
+      const resolution = resolveStudyHighlightAnchor(annotation, fields);
+      statuses.set(annotation.id, {
+        status: resolution.status,
+        sentence: segment.text,
+        searchText: Object.values(fields).join(" ")
+      });
+    }
+    return statuses;
+  }
+
   async openVocabularyContext(context: VocabularyContext): Promise<void> {
     await this.openVocabularyContextForNavigation(context);
   }
 
-  private async openVocabularyContextForNavigation(context: VocabularyContext): Promise<void> {
+  private async openVocabularyContextForNavigation(
+    context: VocabularyContext,
+    kind: "vocabulary" | "highlight" = "vocabulary",
+    annotation?: HighlightAnnotation
+  ): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(context.sourcePath);
     if (!(file instanceof TFile)) {
-      throw new Error(`找不到生词来源笔记：${context.sourcePath}`);
+      throw new Error(
+        kind === "highlight"
+          ? `找不到高亮来源笔记：${context.sourcePath}`
+          : `找不到生词来源笔记：${context.sourcePath}`
+      );
     }
 
     new Notice("正在打开来源笔记并定位原句…", 2_000);
@@ -6735,7 +7998,7 @@ export default class LinguaStudyPlugin extends Plugin {
       this.pendingVocabularyJump = null;
       new Notice("来源笔记已打开，但对应播放器未能在 10 秒内准备好。", 7_000);
     }, 10_000);
-    this.pendingVocabularyJump = { id, context, targetLeaf, timeout };
+    this.pendingVocabularyJump = { id, context, kind, annotation, targetLeaf, timeout };
 
     try {
       if (shouldOpenFile) {
@@ -6786,8 +8049,19 @@ export default class LinguaStudyPlugin extends Plugin {
     window.clearTimeout(pending.timeout);
     this.pendingVocabularyJump = null;
     try {
-      await renderer.navigateToVocabularyContext(pending.context);
-      new Notice("已定位到生词所在原句；视频没有自动播放。", 4_000);
+      if (pending.annotation) {
+        await renderer.navigateToHighlightContext(pending.annotation, pending.context);
+      } else {
+        await renderer.navigateToVocabularyContext(pending.context);
+      }
+      new Notice(
+        pending.kind === "highlight"
+          ? pending.annotation?.targetType === "study"
+            ? "已打开知识卡并定位标注；视频没有自动播放。"
+            : "已定位到标注所在原句；视频没有自动播放。"
+          : "已定位到生词所在原句；视频没有自动播放。",
+        4_000
+      );
     } catch (caught) {
       new Notice(caught instanceof Error ? caught.message : "无法跳转到视频原句。", 7_000);
     }
@@ -7128,6 +8402,13 @@ export default class LinguaStudyPlugin extends Plugin {
       throw new Error("生词本尚未初始化，请重新加载插件。");
     }
     return this.vocabularyStore;
+  }
+
+  private getHighlightStore(): HighlightStore {
+    if (!this.highlightStore) {
+      throw new Error("高亮笔记尚未初始化，请重新加载插件。");
+    }
+    return this.highlightStore;
   }
 
   private getYouTubeImporter(): YouTubeImportController {

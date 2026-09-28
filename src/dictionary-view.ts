@@ -21,6 +21,7 @@ import {
   type VocabularyEntry
 } from "./vocabulary-core";
 import type LinguaStudyPlugin from "./main";
+import type { HighlightAnnotation, HighlightBookFile } from "./highlight-core";
 
 export const DICTIONARY_VIEW_TYPE = "lingua-study-dictionary";
 
@@ -35,8 +36,15 @@ export interface DictionaryLookupContext {
   end: number | null;
 }
 
-type DictionaryTab = "lookup" | "book" | "review";
+type DictionaryTab = "lookup" | "book" | "review" | "highlights";
 type VocabularyFilter = "all" | StudyProfile | "due" | "new";
+type HighlightFilter = string;
+
+export interface HighlightLibraryStatus {
+  status: "resolved" | "unresolved" | "missing-source" | "missing-transcript" | "missing-study";
+  sentence: string | null;
+  searchText?: string;
+}
 
 class VocabularyTextModal extends Modal {
   constructor(
@@ -227,6 +235,36 @@ class VocabularyDeleteModal extends Modal {
   }
 }
 
+class HighlightDeleteModal extends Modal {
+  constructor(
+    app: LinguaStudyPlugin["app"],
+    private readonly quote: string,
+    private readonly onConfirm: () => Promise<void>
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText("删除标注笔记");
+    this.contentEl.createEl("p", { text: `确定删除“${this.quote}”的标注和笔记吗？` });
+    const error = this.contentEl.createDiv({ cls: "lingua-vocabulary-modal-error" });
+    const actions = this.contentEl.createDiv({ cls: "lingua-vocabulary-modal-actions" });
+    actions.createEl("button", { text: "取消" }).addEventListener("click", () => this.close());
+    const remove = actions.createEl("button", { text: "确认删除", cls: "mod-warning" });
+    remove.addEventListener("click", () => {
+      remove.disabled = true;
+      void this.onConfirm().then(() => this.close()).catch((caught) => {
+        remove.disabled = false;
+        error.setText(caught instanceof Error ? caught.message : "删除失败，请重试。");
+      });
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
 export class LinguaDictionaryView extends ItemView {
   private lookupContext: DictionaryLookupContext | null = null;
   private lookupResult: DictionaryLookupResult | null = null;
@@ -242,6 +280,15 @@ export class LinguaDictionaryView extends ItemView {
   private vocabularyExporting = false;
   private vocabularyImageExporting = false;
   private unsubscribeVocabulary: (() => void) | null = null;
+  private highlightBook: HighlightBookFile | null = null;
+  private highlightWarning: string | null = null;
+  private highlightStatuses = new Map<string, HighlightLibraryStatus>();
+  private highlightSearch = "";
+  private highlightFilter: HighlightFilter = "all";
+  private highlightSortDescending = true;
+  private selectedHighlightId: string | null = null;
+  private editingHighlightId: string | null = null;
+  private unsubscribeHighlights: (() => void) | null = null;
   private opened = false;
 
   constructor(
@@ -268,13 +315,23 @@ export class LinguaDictionaryView extends ItemView {
     this.unsubscribeVocabulary = this.plugin.subscribeVocabulary(() => {
       void this.reloadVocabulary();
     });
-    await this.reloadVocabulary();
+    if (this.plugin.capabilities.desktop) {
+      this.unsubscribeHighlights = this.plugin.subscribeHighlights(() => {
+        void this.reloadHighlights();
+      });
+    }
+    await Promise.all([
+      this.reloadVocabulary(),
+      this.plugin.capabilities.desktop ? this.reloadHighlights() : Promise.resolve()
+    ]);
   }
 
   async onClose(): Promise<void> {
     this.opened = false;
     this.unsubscribeVocabulary?.();
     this.unsubscribeVocabulary = null;
+    this.unsubscribeHighlights?.();
+    this.unsubscribeHighlights = null;
     if (this.reviewRefreshTimer !== null) {
       window.clearTimeout(this.reviewRefreshTimer);
       this.reviewRefreshTimer = null;
@@ -301,6 +358,13 @@ export class LinguaDictionaryView extends ItemView {
     this.reviewEntryId = null;
     this.reviewRevealed = false;
     void this.prepareReviewCard();
+  }
+
+  openHighlights(): void {
+    this.activeTab = "highlights";
+    this.selectedHighlightId = null;
+    this.editingHighlightId = null;
+    this.renderShell();
   }
 
   refreshStudyProfile(): void {
@@ -333,12 +397,36 @@ export class LinguaDictionaryView extends ItemView {
     this.renderShell();
   }
 
+  private async reloadHighlights(): Promise<void> {
+    const loaded = await this.plugin.loadHighlightBook();
+    const entries = Object.values(loaded.book.annotations);
+    const statuses = await this.plugin.inspectHighlights(entries);
+    if (!this.opened) return;
+    this.highlightBook = loaded.book;
+    this.highlightWarning = loaded.warning;
+    this.highlightStatuses = statuses;
+    if (
+      this.highlightFilter !== "all" &&
+      !this.plugin.getHighlightCategory(this.highlightFilter)
+    ) {
+      this.highlightFilter = "all";
+    }
+    if (this.selectedHighlightId && !loaded.book.annotations[this.selectedHighlightId]) {
+      this.selectedHighlightId = null;
+    }
+    if (this.editingHighlightId && !loaded.book.annotations[this.editingHighlightId]) {
+      this.editingHighlightId = null;
+    }
+    this.renderShell();
+  }
+
   private renderShell(): void {
     if (!this.opened) {
       return;
     }
     this.contentEl.empty();
     this.contentEl.addClass("lingua-dictionary-view");
+    this.contentEl.classList.toggle("is-highlights-view", this.activeTab === "highlights");
     if (this.activeTab !== "review" && this.reviewRefreshTimer !== null) {
       window.clearTimeout(this.reviewRefreshTimer);
       this.reviewRefreshTimer = null;
@@ -362,6 +450,11 @@ export class LinguaDictionaryView extends ItemView {
     this.createTabButton(tabs, "lookup", "查词");
     this.createTabButton(tabs, "book", "生词本");
     this.createTabButton(tabs, "review", "今日复习", summary.total);
+    if (this.plugin.capabilities.desktop) {
+      this.createTabButton(tabs, "highlights", "笔记本", this.highlightBook
+        ? Object.keys(this.highlightBook.annotations).length
+        : 0);
+    }
 
     const body = this.contentEl.createDiv({ cls: "lingua-dictionary-body" });
     if (this.vocabularyWarning) {
@@ -371,12 +464,21 @@ export class LinguaDictionaryView extends ItemView {
         attr: { role: "alert" }
       });
     }
+    if (this.activeTab === "highlights" && this.highlightWarning) {
+      body.createDiv({
+        cls: "lingua-vocabulary-warning",
+        text: this.highlightWarning,
+        attr: { role: "alert" }
+      });
+    }
     if (this.activeTab === "lookup") {
       this.renderLookup(body);
     } else if (this.activeTab === "book") {
       this.renderVocabularyBook(body);
-    } else {
+    } else if (this.activeTab === "review") {
       this.renderReview(body);
+    } else {
+      this.renderHighlights(body);
     }
   }
 
@@ -399,12 +501,18 @@ export class LinguaDictionaryView extends ItemView {
       button.createSpan({
         cls: "lingua-dictionary-tab-badge",
         text: badgeCount.toLocaleString(),
-        attr: { "aria-label": `${badgeCount.toLocaleString()} 项待复习` }
+        attr: {
+          "aria-label": tab === "review"
+            ? `${badgeCount.toLocaleString()} 项待复习`
+            : `${badgeCount.toLocaleString()} 条标注`
+        }
       });
     }
     button.addEventListener("click", () => {
       this.activeTab = tab;
       this.selectedVocabularyId = null;
+      this.selectedHighlightId = null;
+      this.editingHighlightId = null;
       if (tab === "review") {
         this.reviewEntryId = null;
         this.reviewRevealed = false;
@@ -413,6 +521,298 @@ export class LinguaDictionaryView extends ItemView {
         this.renderShell();
       }
     });
+  }
+
+  private renderHighlights(parent: HTMLElement): void {
+    const book = this.highlightBook;
+    if (!book) {
+      parent.createDiv({ cls: "lingua-dictionary-empty", text: "正在读取标注笔记…" });
+      return;
+    }
+    if (this.editingHighlightId) {
+      const annotation = book.annotations[this.editingHighlightId];
+      if (annotation) {
+        this.renderHighlightDetail(parent, annotation);
+        return;
+      }
+    }
+    const controls = parent.createDiv({ cls: "lingua-vocabulary-controls lingua-highlight-controls" });
+    const search = controls.createEl("input", {
+      type: "search",
+      value: this.highlightSearch,
+      attr: { placeholder: "搜索标注、笔记或原句", "aria-label": "搜索标注笔记" }
+    });
+    const filterWrap = controls.createDiv({ cls: "lingua-centered-select lingua-highlight-filter" });
+    const filter = filterWrap.createEl("select", { attr: { "aria-label": "筛选标注类别" } });
+    filter.createEl("option", { value: "all", text: "全部类别" });
+    for (const category of this.plugin.settings.highlightCategories) {
+      filter.createEl("option", { value: category.id, text: category.name });
+    }
+    const filterText = filterWrap.createSpan({
+      cls: "lingua-centered-select-text",
+      attr: { "aria-hidden": "true" }
+    });
+    const syncFilterText = (): void => {
+      filterText.setText(filter.selectedOptions[0]?.textContent ?? "");
+    };
+    filter.value = this.highlightFilter;
+    syncFilterText();
+
+    const allAnnotations = Object.values(book.annotations);
+    const sourceCount = new Set(allAnnotations.map((annotation) => annotation.sourcePath)).size;
+    const summary = parent.createDiv({ cls: "lingua-highlight-library-summary" });
+    summary.createSpan({
+      text: `共 ${allAnnotations.length.toLocaleString()} 条标注 · 来自 ${sourceCount.toLocaleString()} 个笔记`
+    });
+    const sort = summary.createEl("button", {
+      cls: "lingua-highlight-sort",
+      attr: { type: "button", "aria-label": "切换标注时间排序" }
+    });
+    const syncSortText = (): void => {
+      sort.setText(`按时间 ${this.highlightSortDescending ? "↓" : "↑"}`);
+    };
+    syncSortText();
+
+    const results = parent.createDiv({ cls: "lingua-highlight-results" });
+    const renderResults = (): void => {
+      results.empty();
+      const query = this.highlightSearch.trim().toLocaleLowerCase("en-US");
+      const annotations = allAnnotations
+        .filter((annotation) =>
+          this.highlightFilter === "all" || annotation.categoryIds.includes(this.highlightFilter)
+        )
+        .filter((annotation) => {
+          const sentence = this.highlightStatuses.get(annotation.id)?.sentence ?? "";
+          return query === "" || [annotation.quote, annotation.note, sentence,
+            this.highlightStatuses.get(annotation.id)?.searchText ?? "", annotation.sourcePath]
+            .some((value) => value.toLocaleLowerCase("en-US").includes(query));
+        })
+        .sort((left, right) => {
+          const difference = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+          return this.highlightSortDescending ? difference : -difference;
+        });
+      if (annotations.length === 0) {
+        results.createDiv({
+          cls: "lingua-dictionary-empty",
+          text: Object.keys(book.annotations).length === 0
+            ? "还没有标注笔记。请在电脑端选择字幕或知识点文字后使用标注笔。"
+            : "没有符合当前条件的标注。"
+        });
+        return;
+      }
+      for (const annotation of annotations) {
+        const status = this.highlightStatuses.get(annotation.id);
+        const selected = this.selectedHighlightId === annotation.id;
+        const card = results.createDiv({
+          cls: `lingua-highlight-card${selected ? " is-selected" : ""}`,
+          attr: {
+            role: "button",
+            tabindex: "0",
+            "aria-expanded": selected ? "true" : "false",
+            "aria-label": `${selected ? "收起" : "展开"}标注：${annotation.quote}`
+          }
+        });
+        const heading = card.createDiv({ cls: "lingua-highlight-card-heading" });
+        const categoryList = heading.createSpan({ cls: "lingua-highlight-card-categories" });
+        heading.createSpan({
+          cls: "lingua-highlight-source-kind",
+          text: annotation.targetType === "study" ? "知识点" : "字幕"
+        });
+        for (const categoryId of annotation.categoryIds) {
+          const category = this.plugin.getHighlightCategory(categoryId);
+          const categoryItem = categoryList.createSpan({ cls: "lingua-highlight-card-category" });
+          const swatch = categoryItem.createSpan({ cls: "lingua-highlight-swatch" });
+          swatch.style.setProperty("--lingua-highlight-color", category?.color ?? "#F2C94C");
+          categoryItem.createSpan({ cls: "lingua-highlight-category-name", text: category?.name ?? "未分类" });
+        }
+        card.createDiv({
+          cls: "lingua-highlight-quote",
+          text: annotation.quote,
+          attr: { lang: annotation.targetType === "study" ? "zh-CN" : "en" }
+        });
+        if (annotation.note) {
+          const note = card.createDiv({ cls: "lingua-highlight-note" });
+          const icon = note.createSpan({ cls: "lingua-highlight-note-icon", attr: { "aria-hidden": "true" } });
+          setIcon(icon, "paperclip");
+          note.createSpan({ cls: "lingua-highlight-note-text", text: annotation.note });
+        }
+        card.createDiv({ cls: "lingua-highlight-source", text: this.formatHighlightSource(annotation.sourcePath) });
+        if (status && status.status !== "resolved") {
+          card.createDiv({ cls: "lingua-highlight-status is-warning", text: this.highlightStatusLabel(status.status, annotation) });
+        }
+        if (selected) {
+          const actions = card.createDiv({ cls: "lingua-highlight-card-actions" });
+          const open = actions.createEl("button", {
+            text: annotation.targetType === "study" ? "回到知识点" : "回到原句",
+            attr: { type: "button" }
+          });
+          open.addEventListener("click", (event) => {
+            event.stopPropagation();
+            open.disabled = true;
+            void this.plugin.openHighlightContext(annotation).catch((caught) => {
+              open.disabled = false;
+              new Notice(caught instanceof Error ? caught.message : "无法定位原句。", 6_000);
+            });
+          });
+          const edit = actions.createEl("button", { text: "编辑", attr: { type: "button" } });
+          edit.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.editingHighlightId = annotation.id;
+            this.renderShell();
+          });
+          const remove = actions.createEl("button", {
+            text: "删除",
+            cls: "mod-warning",
+            attr: { type: "button" }
+          });
+          remove.addEventListener("click", (event) => {
+            event.stopPropagation();
+            new HighlightDeleteModal(this.app, annotation.quote, async () => {
+              await this.plugin.removeHighlight(annotation.id);
+              this.selectedHighlightId = null;
+            }).open();
+          });
+        }
+        const toggleCard = (): void => {
+          this.selectedHighlightId = selected ? null : annotation.id;
+          renderResults();
+        };
+        card.addEventListener("click", toggleCard);
+        card.addEventListener("keydown", (event) => {
+          if (event.target !== card) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          toggleCard();
+        });
+      }
+    };
+    search.addEventListener("input", () => {
+      this.highlightSearch = search.value;
+      renderResults();
+    });
+    filter.addEventListener("change", () => {
+      syncFilterText();
+      this.highlightFilter = filter.value;
+      renderResults();
+    });
+    sort.addEventListener("click", () => {
+      this.highlightSortDescending = !this.highlightSortDescending;
+      syncSortText();
+      renderResults();
+    });
+    renderResults();
+  }
+
+  private renderHighlightDetail(parent: HTMLElement, annotation: HighlightAnnotation): void {
+    const back = parent.createEl("button", {
+      cls: "lingua-highlight-detail-back",
+      text: "← 返回标注列表"
+    });
+    back.addEventListener("click", () => {
+      this.editingHighlightId = null;
+      this.renderShell();
+    });
+    const detail = parent.createDiv({ cls: "lingua-highlight-detail" });
+    detail.createDiv({
+      cls: "lingua-highlight-quote",
+      text: annotation.quote,
+      attr: { lang: annotation.targetType === "study" ? "zh-CN" : "en" }
+    });
+    const categoryField = detail.createDiv({ cls: "lingua-highlight-editor-field" });
+    categoryField.createSpan({ text: "标注类别（可多选）" });
+    const categoryPicker = categoryField.createDiv({
+      cls: "lingua-highlight-category-picker",
+      attr: { role: "group", "aria-label": "修改标注类别" }
+    });
+    const selectedCategoryIds = new Set(annotation.categoryIds);
+    for (const item of this.plugin.settings.highlightCategories) {
+      const selected = selectedCategoryIds.has(item.id);
+      const button = categoryPicker.createEl("button", {
+        cls: `lingua-highlight-category-option${selected ? " is-selected" : ""}`,
+        attr: {
+          type: "button",
+          "aria-pressed": selected ? "true" : "false",
+          "aria-label": `${selected ? "移除" : "添加"}${item.name}类别`
+        }
+      });
+      button.style.setProperty("--lingua-highlight-color", item.color);
+      button.createSpan({ cls: "lingua-highlight-category-option-swatch" });
+      button.createSpan({ cls: "lingua-highlight-category-option-name", text: item.name });
+      button.addEventListener("click", () => {
+        if (selectedCategoryIds.has(item.id)) {
+          if (selectedCategoryIds.size <= 1) return;
+          selectedCategoryIds.delete(item.id);
+        } else {
+          selectedCategoryIds.add(item.id);
+        }
+        const active = selectedCategoryIds.has(item.id);
+        button.classList.toggle("is-selected", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+        button.setAttribute("aria-label", `${active ? "移除" : "添加"}${item.name}类别`);
+      });
+    }
+    const noteLabel = detail.createEl("label", { cls: "lingua-highlight-editor-field" });
+    noteLabel.createSpan({ text: "个人笔记（可选）" });
+    const note = noteLabel.createEl("textarea", {
+      attr: { maxlength: "2000", "aria-label": "修改标注个人笔记" }
+    });
+    note.value = annotation.note;
+    const status = this.highlightStatuses.get(annotation.id);
+    if (status?.sentence) detail.createDiv({ cls: "lingua-highlight-sentence", text: status.sentence });
+    detail.createDiv({
+      cls: "lingua-highlight-source",
+      text: `${annotation.targetType === "study" ? "知识点 · " : ""}${this.formatTimestamp(annotation.segmentStart)} · ${annotation.sourcePath}`
+    });
+    if (status && status.status !== "resolved") {
+      detail.createDiv({ cls: "lingua-highlight-status is-warning", text: this.highlightStatusLabel(status.status, annotation) });
+    }
+    const error = detail.createDiv({ cls: "lingua-vocabulary-modal-error" });
+    const actions = detail.createDiv({ cls: "lingua-vocabulary-modal-actions" });
+    const save = actions.createEl("button", { text: "保存修改", cls: "mod-cta" });
+    save.addEventListener("click", () => {
+      save.disabled = true;
+      void this.plugin.updateHighlight(annotation.id, [...selectedCategoryIds], note.value).catch((caught) => {
+        save.disabled = false;
+        error.setText(caught instanceof Error ? caught.message : "保存失败，请重试。");
+      });
+    });
+    const open = actions.createEl("button", {
+      text: annotation.targetType === "study" ? "定位知识点" : "定位原句"
+    });
+    open.addEventListener("click", () => {
+      open.disabled = true;
+      void this.plugin.openHighlightContext(annotation).catch((caught) => {
+        open.disabled = false;
+        error.setText(caught instanceof Error ? caught.message : "无法定位原句。");
+      });
+    });
+    const remove = actions.createEl("button", { text: "删除", cls: "mod-warning" });
+    remove.addEventListener("click", () => {
+      new HighlightDeleteModal(this.app, annotation.quote, async () => {
+        await this.plugin.removeHighlight(annotation.id);
+        this.selectedHighlightId = null;
+        this.editingHighlightId = null;
+      }).open();
+    });
+  }
+
+  private formatHighlightSource(sourcePath: string): string {
+    return sourcePath
+      .replace(/\.md$/iu, "")
+      .split("/")
+      .join(" / ");
+  }
+
+  private highlightStatusLabel(
+    status: HighlightLibraryStatus["status"],
+    annotation: HighlightAnnotation
+  ): string {
+    if (status === "missing-source") return "来源笔记不存在";
+    if (status === "missing-transcript") return "字幕文件不存在或无法读取";
+    if (status === "missing-study") return "知识点缓存不存在或已关闭，标注仍保留";
+    return annotation.targetType === "study"
+      ? "知识点已变化，需要重新定位"
+      : "字幕已变化，需要重新定位";
   }
 
   private renderLookup(parent: HTMLElement): void {
