@@ -7,6 +7,13 @@
 > [!IMPORTANT]
 > Lingua Study 1.5.4 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
 
+## 加入 QQ 交流群
+
+扫描下方二维码加入 Lingua Study QQ 群：
+
+<p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ 群二维码，群号 124526985" width="320"></p>
+<p align="center"><strong>QQ群号：124526985</strong></p>
+
 ## 近期更新（1.3.0–1.5.4）
 
 - **Whisper 模型下载来源**：默认使用 Hugging Face，官方站点无法连接时可填写可信且兼容的 HTTPS 备用来源
