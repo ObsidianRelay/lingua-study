@@ -52,6 +52,15 @@ test("Atom enclosure、相对链接和重复 guid 能被一致处理", () => {
   assert.equal(feed.episodes[0]?.enclosureUrl, "https://cdn.example.test/shows/audio/one.m4a");
 });
 
+test("播客单集简介从 RSS 读取并作为纯文本保存", () => {
+  const xml = `<rss><channel><title>Example</title><item><guid>one</guid><title>One</title>
+    <description><![CDATA[<p>How to <strong>learn</strong> English.</p>]]></description>
+    <enclosure url="https://example.test/one.mp3" type="audio/mpeg" />
+  </item></channel></rss>`;
+  const feed = parsePodcastFeed(xml, "https://example.test/feed.xml");
+  assert.equal(feed.episodes[0]?.description, "How to learn English.");
+});
+
 test("没有 enclosure 或不安全协议的 RSS 会给出可操作错误", () => {
   assert.throws(
     () => parsePodcastFeed("<rss><channel><item><title>Missing</title></item></channel></rss>", "https://example.test/feed.xml"),

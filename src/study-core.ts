@@ -94,6 +94,10 @@ const PROFILE_INSTRUCTIONS: Readonly<Record<StudyProfile, string>> = {
   toefl: "面向托福（TOEFL）学习者，优先解释学术词汇、讲座与讨论场景搭配、同义改写、逻辑关系和复杂句结构，并提示听说读写中的自然用法；不得声称内容属于官方固定词表。"
 };
 
+export function getStudyProfileInstruction(profile: StudyProfile): string {
+  return PROFILE_INSTRUCTIONS[profile];
+}
+
 const STUDY_SYSTEM_PROMPT = [
   "你是一名严谨的英语备考教师。",
   "只分析用户给出的一个英文句子，不补写上下文，不虚构考试大纲归属。",

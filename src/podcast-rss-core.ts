@@ -10,6 +10,7 @@ export interface PodcastEpisode {
   sourceId: string;
   guid: string | null;
   title: string;
+  description?: string;
   publishedAt: string | null;
   enclosureUrl: string;
   enclosureType: string | null;
@@ -24,6 +25,7 @@ export interface PodcastFeed {
 }
 
 const MAX_EPISODES = 500;
+export const MAX_FEED_DESCRIPTION_LENGTH = 6000;
 
 export function decodeXmlText(value: string): string {
   return value
@@ -42,6 +44,17 @@ export function decodeXmlText(value: string): string {
     })
     .replace(/\s+/gu, " ")
     .trim();
+}
+
+/** Feed descriptions may contain CDATA or escaped HTML; show source text, never markup. */
+export function plainFeedDescription(value: string | null): string | undefined {
+  if (!value) return undefined;
+  const text = decodeXmlText(value)
+    .replace(/<[^>]*>/gu, " ")
+    .replace(/&nbsp;|&#160;|&#xA0;/giu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return text ? text.slice(0, MAX_FEED_DESCRIPTION_LENGTH) : undefined;
 }
 
 function attributes(value: string): Record<string, string> {
@@ -131,9 +144,13 @@ function parseEpisode(
     }
   }
   const title = tagText(body, ["title"]) ?? "未命名节目";
+  const description = plainFeedDescription(tagText(body, atom
+    ? ["summary", "content", "description"]
+    : ["description", "summary", "encoded"]));
   return {
     guid: tagText(body, atom ? ["id"] : ["guid", "id"]),
     title,
+    ...(description ? { description } : {}),
     publishedAt: tagText(body, atom ? ["published", "updated"] : ["pubDate", "date", "published"]),
     enclosureUrl,
     enclosureType: enclosure.type?.toLowerCase() ?? null,

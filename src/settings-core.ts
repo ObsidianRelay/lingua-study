@@ -1,6 +1,7 @@
 import { DEFAULT_TRANSCRIPT_FOLDER, sanitizeTranscriptFolder } from "./import-core";
 import type { DeepSeekModel, KimiModel, TranslationProvider } from "./translation-core";
 import { isStudyProfile, type StudyProfile } from "./study-core";
+import type { StudyChatProvider } from "./study-chat-core";
 import {
   DEFAULT_FSRS_REQUEST_RETENTION,
   sanitizeFsrsRequestRetention
@@ -16,7 +17,13 @@ export interface LinguaStudySettings {
   transcriptFolder: string;
   ytDlpPath: string;
   autoImportPastedVideoLinks: boolean;
+  autoOpenRssSidebar: boolean;
+  autoRefreshRssSubscriptions: boolean;
   translationProvider: TranslationProvider;
+  chatProvider: StudyChatProvider;
+  chatDeepSeekModel: DeepSeekModel;
+  chatDeepSeekEffort: "none" | "low" | "high" | "max";
+  chatKimiThinking: boolean;
   translateWholeTranscript: boolean;
   baiduAppId: string;
   baiduSecretId: string;
@@ -46,7 +53,15 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   ytDlpPath: "",
   // 默认由用户点击左侧 Lingua Study Logo 后开始导入，避免粘贴资料时误触发。
   autoImportPastedVideoLinks: false,
+  // 订阅入口默认不占用工作区；需要时由用户在设置中开启。
+  autoOpenRssSidebar: false,
+  // Refresh only after the first hour; no network request on plugin startup.
+  autoRefreshRssSubscriptions: true,
   translationProvider: "disabled",
+  chatProvider: "disabled",
+  chatDeepSeekModel: "deepseek-v4-flash",
+  chatDeepSeekEffort: "none",
+  chatKimiThinking: false,
   // 默认只处理用户当前选择的句子，避免新用户误触整篇翻译并产生额外费用。
   translateWholeTranscript: false,
   baiduAppId: "",
@@ -79,6 +94,7 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
 
   const data = value as Record<string, unknown>;
   const provider = data.translationProvider;
+  const chatProvider = data.chatProvider;
   const model = data.deepSeekModel;
   const kimiModel = data.kimiModel;
 
@@ -89,11 +105,39 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
       typeof data.autoImportPastedVideoLinks === "boolean"
         ? data.autoImportPastedVideoLinks
         : DEFAULT_SETTINGS.autoImportPastedVideoLinks,
+    autoOpenRssSidebar:
+      typeof data.autoOpenRssSidebar === "boolean"
+        ? data.autoOpenRssSidebar
+        : DEFAULT_SETTINGS.autoOpenRssSidebar,
+    autoRefreshRssSubscriptions:
+      typeof data.autoRefreshRssSubscriptions === "boolean"
+        ? data.autoRefreshRssSubscriptions
+        : DEFAULT_SETTINGS.autoRefreshRssSubscriptions,
     translationProvider:
       provider === "baidu" || provider === "deepseek" || provider === "kimi" ||
         provider === "openai-compatible" || provider === "disabled"
         ? provider
         : DEFAULT_SETTINGS.translationProvider,
+    chatProvider:
+      chatProvider === "deepseek" || chatProvider === "kimi" ||
+        chatProvider === "openai-compatible" || chatProvider === "disabled"
+        ? chatProvider
+        : DEFAULT_SETTINGS.chatProvider,
+    chatDeepSeekModel:
+      data.chatDeepSeekModel === "deepseek-v4-flash" || data.chatDeepSeekModel === "deepseek-v4-pro"
+        ? data.chatDeepSeekModel
+        : model === "deepseek-v4-flash" || model === "deepseek-v4-pro"
+          ? model
+          : DEFAULT_SETTINGS.chatDeepSeekModel,
+    chatDeepSeekEffort:
+      data.chatDeepSeekEffort === "none" || data.chatDeepSeekEffort === "low" ||
+        data.chatDeepSeekEffort === "high" || data.chatDeepSeekEffort === "max"
+        ? data.chatDeepSeekEffort
+        : DEFAULT_SETTINGS.chatDeepSeekEffort,
+    chatKimiThinking:
+      typeof data.chatKimiThinking === "boolean"
+        ? data.chatKimiThinking
+        : DEFAULT_SETTINGS.chatKimiThinking,
     translateWholeTranscript:
       typeof data.translateWholeTranscript === "boolean"
         ? data.translateWholeTranscript

@@ -19,6 +19,8 @@ import {
   type StudyDictionaryHint,
   type StudyProfile
 } from "./study-core";
+import { buildStudyChatRequestBody, type StudyChatContext, type StudyChatMessage } from "./study-chat-core";
+import { streamStudyChat } from "./study-chat-stream";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const BAIDU_MIN_REQUEST_INTERVAL_MS = 1_100;
@@ -119,6 +121,29 @@ export class TranslationService {
     };
   }
 
+  async chat(
+    profile: StudyProfile,
+    context: StudyChatContext | null,
+    history: readonly StudyChatMessage[],
+    question: string,
+    onDelta: (text: string) => void,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const settings = this.getSettings();
+    if (settings.chatProvider === "disabled") {
+      throw new Error("请先在插件设置中选择聊天服务。");
+    }
+    const config = this.resolveConfig(settings.chatProvider);
+    const model = settings.chatProvider === "deepseek" ? settings.chatDeepSeekModel : config.model;
+    const effort = settings.chatProvider === "deepseek"
+      ? settings.chatDeepSeekEffort
+      : settings.chatProvider === "kimi" && settings.chatKimiThinking ? "high" : "none";
+    const body = buildStudyChatRequestBody(
+      settings.chatProvider, model, profile, context, history, question, effort
+    );
+    return streamStudyChat(config.endpoint, config.apiKey, { ...body, stream: true }, onDelta, signal);
+  }
+
   private async requestBaiduTranslation(
     config: ResolvedTranslationConfig,
     sourceText: string
@@ -216,9 +241,11 @@ export class TranslationService {
     }
   }
 
-  private resolveConfig(): ResolvedTranslationConfig {
+  private resolveConfig(provider?: Exclude<TranslationProvider, "disabled">): ResolvedTranslationConfig {
     const settings = this.getSettings();
-    const config = validateTranslationConfiguration(settings);
+    const config = validateTranslationConfiguration(provider
+      ? { ...settings, translationProvider: provider }
+      : settings);
 
     return {
       provider: config.provider,

@@ -156,7 +156,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     this.containerEl.addClass("lingua-study-settings");
   }
 
-  /** 顶层按学习与导入分组；六个原生子页面仍参与 Obsidian 设置搜索。 */
+  /** 顶层按学习与导入分组；各原生子页面仍参与 Obsidian 设置搜索。 */
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [
       {
@@ -222,7 +222,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         type: "group",
         heading: "学习与数据",
         cls: "lingua-study-settings-home-group",
-        items: [this.learningPage(), this.translationPage(), this.generalPage()]
+        items: [this.learningPage(), this.translationPage(), this.chatPage(), this.generalPage()]
       },
       {
         type: "group",
@@ -1016,7 +1016,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
       items: [
         {
           type: "group",
-          heading: "服务选择",
+          heading: "翻译设置",
           cls: "lingua-study-settings-section lingua-study-settings-page-translation",
           items: [
             {
@@ -1055,166 +1055,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             }
           ]
         },
-        {
-          type: "group",
-          heading: "百度翻译 API",
-          cls: "lingua-study-settings-section",
-          visible: () => this.plugin.settings.translationProvider === "baidu",
-          items: [
-            {
-              name: "API 地址",
-              desc: "固定的百度官方地址。",
-              render: (setting) => {
-                setting.addText((text) => {
-                  text.setValue("https://fanyi-api.baidu.com").setDisabled(true);
-                });
-              }
-            },
-            {
-              name: "百度翻译 AppID",
-              desc: "在百度翻译开放平台获取。",
-              control: {
-                type: "text",
-                key: "baiduAppId",
-                defaultValue: DEFAULT_SETTINGS.baiduAppId,
-                placeholder: "填写 AppID"
-              }
-            },
-            {
-              name: "百度翻译密钥",
-              desc: "保存在 Obsidian 安全凭据库中。",
-              render: (setting) => {
-                new SecretComponent(this.app, setting.controlEl)
-                  .setValue(this.plugin.settings.baiduSecretId)
-                  .onChange(async (value) => {
-                    await this.plugin.updateSettings({ baiduSecretId: value });
-                  });
-              }
-            },
-            {
-              name: "功能范围",
-              desc: "支持句子、整篇字幕和 Markdown 选区；不生成知识卡。"
-            }
-          ]
-        },
-        {
-          type: "group",
-          heading: "Kimi 官方（国内）",
-          cls: "lingua-study-settings-section",
-          visible: () => this.plugin.settings.translationProvider === "kimi",
-          items: [
-            {
-              name: "API 地址",
-              desc: "固定的 Moonshot 国内官方地址。",
-              render: (setting) => {
-                setting.addText((text) => {
-                  text.setValue("https://api.moonshot.cn/v1").setDisabled(true);
-                });
-              }
-            },
-            {
-              name: "模型",
-              desc: "使用 Kimi K2.6。",
-              control: {
-                type: "dropdown",
-                key: "kimiModel",
-                defaultValue: DEFAULT_SETTINGS.kimiModel,
-                options: {
-                  "kimi-k2.6": "Kimi K2.6"
-                }
-              }
-            },
-            {
-              name: "Kimi API Key",
-              desc: "保存在 Obsidian 安全凭据库中。",
-              render: (setting) => {
-                new SecretComponent(this.app, setting.controlEl)
-                  .setValue(this.plugin.settings.kimiSecretId)
-                  .onChange(async (value) => {
-                    await this.plugin.updateSettings({ kimiSecretId: value });
-                  });
-              }
-            }
-          ]
-        },
-        {
-          type: "group",
-          heading: "DeepSeek 官方",
-          cls: "lingua-study-settings-section",
-          visible: () => this.plugin.settings.translationProvider === "deepseek",
-          items: [
-            {
-              name: "API 地址",
-              desc: "固定的 DeepSeek 官方地址。",
-              render: (setting) => {
-                setting.addText((text) => {
-                  text.setValue("https://api.deepseek.com").setDisabled(true);
-                });
-              }
-            },
-            {
-              name: "模型",
-              desc: "Flash 速度更快、成本更低；Pro 能力更强。",
-              control: {
-                type: "dropdown",
-                key: "deepSeekModel",
-                defaultValue: DEFAULT_SETTINGS.deepSeekModel,
-                options: {
-                  "deepseek-v4-flash": "DeepSeek V4 Flash",
-                  "deepseek-v4-pro": "DeepSeek V4 Pro"
-                }
-              }
-            },
-            {
-              name: "DeepSeek API Key",
-              desc: "保存在 Obsidian 安全凭据库中。",
-              render: (setting) => {
-                new SecretComponent(this.app, setting.controlEl)
-                  .setValue(this.plugin.settings.deepSeekSecretId)
-                  .onChange(async (value) => {
-                    await this.plugin.updateSettings({ deepSeekSecretId: value });
-                  });
-              }
-            }
-          ]
-        },
-        {
-          type: "group",
-          heading: "OpenAI 兼容中转站",
-          cls: "lingua-study-settings-section",
-          visible: () => this.plugin.settings.translationProvider === "openai-compatible",
-          items: [
-            {
-              name: "API 地址",
-              desc: "填写 /v1 或完整的 /chat/completions 地址。",
-              control: {
-                type: "text",
-                key: "customBaseUrl",
-                placeholder: "https://example.com/v1"
-              }
-            },
-            {
-              name: "模型名称",
-              desc: "填写中转站提供的模型 ID。",
-              control: {
-                type: "text",
-                key: "customModel",
-                placeholder: "例如 deepseek-v4-flash"
-              }
-            },
-            {
-              name: "中转站 API Key",
-              desc: "单独保存在 Obsidian 安全凭据库中。",
-              render: (setting) => {
-                new SecretComponent(this.app, setting.controlEl)
-                  .setValue(this.plugin.settings.customSecretId)
-                  .onChange(async (value) => {
-                    await this.plugin.updateSettings({ customSecretId: value });
-                  });
-              }
-            }
-          ]
-        },
+        ...this.apiCredentialGroups("translation"),
         {
           type: "group",
           heading: "连接与隐私",
@@ -1251,13 +1092,267 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     };
   }
 
+  private chatPage(): SettingDefinitionPage {
+    return {
+      type: "page",
+      name: "学习聊天",
+      desc: "选择聊天服务并配置 API；模型档位和思考深度在聊天页选择。",
+      displayValue: () => this.chatProviderLabel(),
+      items: [
+        {
+          type: "group",
+          heading: "聊天服务",
+          cls: "lingua-study-settings-section lingua-study-settings-page-chat",
+          items: [
+            {
+              name: "聊天服务",
+              desc: "独立于翻译服务；同一提供商的 API 地址和 Key 共用。发送问题时才会调用 API 并产生费用。",
+              control: {
+                type: "dropdown",
+                key: "chatProvider",
+                defaultValue: DEFAULT_SETTINGS.chatProvider,
+                options: {
+                  disabled: "关闭聊天",
+                  deepseek: "DeepSeek 官方",
+                  kimi: "Kimi 官方（国内）",
+                  "openai-compatible": "OpenAI 兼容中转站"
+                }
+              }
+            }
+          ]
+        },
+        ...this.apiCredentialGroups("chat"),
+        {
+          type: "group",
+          heading: "使用提醒",
+          cls: "lingua-study-settings-section",
+          items: [
+            {
+              name: "隐私与费用",
+              desc: "仅发送当前问题和聊天页显示的学习材料；凭据保存在 Obsidian 安全库中。"
+            }
+          ]
+        }
+      ]
+    };
+  }
+
+  private apiCredentialGroups(purpose: "translation" | "chat"): SettingDefinitionItem[] {
+    const selectedProvider = () => purpose === "translation"
+      ? this.plugin.settings.translationProvider
+      : this.plugin.settings.chatProvider;
+    return [
+      {
+        type: "group",
+        heading: "百度翻译 API",
+        cls: "lingua-study-settings-section",
+        visible: () => selectedProvider() === "baidu",
+        items: [
+          {
+            name: "API 地址",
+            desc: "固定的百度官方地址。",
+            render: (setting) => {
+              setting.addText((text) => {
+                text.setValue("https://fanyi-api.baidu.com").setDisabled(true);
+              });
+            }
+          },
+          {
+            name: "百度翻译 AppID",
+            desc: "在百度翻译开放平台获取。",
+            control: {
+              type: "text",
+              key: "baiduAppId",
+              defaultValue: DEFAULT_SETTINGS.baiduAppId,
+              placeholder: "填写 AppID"
+            }
+          },
+          {
+            name: "百度翻译密钥",
+            desc: "保存在 Obsidian 安全凭据库中。",
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(this.plugin.settings.baiduSecretId)
+                .onChange(async (value) => {
+                  await this.plugin.updateSettings({ baiduSecretId: value });
+                });
+            }
+          },
+          {
+            name: "功能范围",
+            desc: "支持句子、整篇字幕和 Markdown 选区；不生成知识卡。"
+          }
+        ]
+      },
+      {
+        type: "group",
+        heading: "Kimi 官方（国内）",
+        cls: "lingua-study-settings-section",
+        visible: () => selectedProvider() === "kimi",
+        items: [
+          {
+            name: "API 地址",
+            desc: "固定的 Moonshot 国内官方地址。",
+            render: (setting) => {
+              setting.addText((text) => {
+                text.setValue("https://api.moonshot.cn/v1").setDisabled(true);
+              });
+            }
+          },
+          {
+            name: "模型",
+            desc: "使用 Kimi K2.6。",
+            visible: () => purpose === "translation",
+            control: {
+              type: "dropdown",
+              key: "kimiModel",
+              defaultValue: DEFAULT_SETTINGS.kimiModel,
+              options: {
+                "kimi-k2.6": "Kimi K2.6"
+              }
+            }
+          },
+          {
+            name: "Kimi API Key",
+            desc: "保存在 Obsidian 安全凭据库中。",
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(this.plugin.settings.kimiSecretId)
+                .onChange(async (value) => {
+                  await this.plugin.updateSettings({ kimiSecretId: value });
+                });
+            }
+          }
+        ]
+      },
+      {
+        type: "group",
+        heading: "DeepSeek 官方",
+        cls: "lingua-study-settings-section",
+        visible: () => selectedProvider() === "deepseek",
+        items: [
+          {
+            name: "API 地址",
+            desc: "固定的 DeepSeek 官方地址。",
+            render: (setting) => {
+              setting.addText((text) => {
+                text.setValue("https://api.deepseek.com").setDisabled(true);
+              });
+            }
+          },
+          {
+            name: "模型",
+            desc: "Flash 速度更快、成本更低；Pro 能力更强。",
+            visible: () => purpose === "translation",
+            control: {
+              type: "dropdown",
+              key: "deepSeekModel",
+              defaultValue: DEFAULT_SETTINGS.deepSeekModel,
+              options: {
+                "deepseek-v4-flash": "DeepSeek V4 Flash",
+                "deepseek-v4-pro": "DeepSeek V4 Pro"
+              }
+            }
+          },
+          {
+            name: "DeepSeek API Key",
+            desc: "保存在 Obsidian 安全凭据库中。",
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(this.plugin.settings.deepSeekSecretId)
+                .onChange(async (value) => {
+                  await this.plugin.updateSettings({ deepSeekSecretId: value });
+                });
+            }
+          }
+        ]
+      },
+      {
+        type: "group",
+        heading: "OpenAI 兼容中转站",
+        cls: "lingua-study-settings-section",
+        visible: () => selectedProvider() === "openai-compatible",
+        items: [
+          {
+            name: "API 地址",
+            desc: "填写 /v1 或完整的 /chat/completions 地址。",
+            control: {
+              type: "text",
+              key: "customBaseUrl",
+              placeholder: "https://example.com/v1"
+            }
+          },
+          {
+            name: "模型名称",
+            desc: purpose === "chat"
+              ? "填写中转站提供的模型 ID；同一接口用于翻译时也会使用它。"
+              : "填写中转站提供的模型 ID。",
+            control: {
+              type: "text",
+              key: "customModel",
+              placeholder: "例如 deepseek-v4-flash"
+            }
+          },
+          {
+            name: "中转站 API Key",
+            desc: "单独保存在 Obsidian 安全凭据库中。",
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(this.plugin.settings.customSecretId)
+                .onChange(async (value) => {
+                  await this.plugin.updateSettings({ customSecretId: value });
+                });
+            }
+          }
+        ]
+      }
+    ]
+  }
+
   private generalPage(): SettingDefinitionPage {
     return {
       type: "page",
       name: "通用选项",
-      desc: "设置导入方式和翻译缓存。",
-      displayValue: "手动创建与缓存",
+      desc: "设置订阅入口、导入方式和翻译缓存。",
+      displayValue: "订阅与缓存",
       items: [
+        {
+          type: "group",
+          heading: "播客与频道订阅",
+          cls: "lingua-study-settings-section lingua-study-settings-page-general",
+          items: [
+            {
+              name: "启动时显示订阅侧栏",
+              desc: "开启后立即在右侧显示完整订阅页，以后启动时也会主动打开。关闭后若标签仍在，可手动关闭该标签。",
+              visible: () => this.plugin.capabilities.desktop,
+              control: {
+                type: "toggle",
+                key: "autoOpenRssSidebar",
+                defaultValue: DEFAULT_SETTINGS.autoOpenRssSidebar
+              }
+            },
+            {
+              name: "每小时自动刷新订阅",
+              desc: "插件启动后每隔一小时依次刷新订阅源；启动瞬间不请求网络，失败时保留原内容。",
+              visible: () => this.plugin.capabilities.desktop,
+              control: {
+                type: "toggle",
+                key: "autoRefreshRssSubscriptions",
+                defaultValue: DEFAULT_SETTINGS.autoRefreshRssSubscriptions
+              }
+            },
+            {
+              name: "右侧订阅页",
+              desc: "在右侧查看频道、分类和视频封面，不占用中间的笔记区域。",
+              visible: () => this.plugin.capabilities.desktop,
+              render: (setting) => {
+                setting.addButton((button) => button.setButtonText("立即打开").onClick(() => {
+                  void this.plugin.openRssSubscriptions();
+                }));
+              }
+            }
+          ]
+        },
         {
           type: "group",
           heading: "自动化",
@@ -1356,6 +1451,13 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return "已关闭";
   }
 
+  private chatProviderLabel(): string {
+    if (this.plugin.settings.chatProvider === "deepseek") return "DeepSeek 官方";
+    if (this.plugin.settings.chatProvider === "kimi") return "Kimi 官方（国内）";
+    if (this.plugin.settings.chatProvider === "openai-compatible") return "OpenAI 兼容中转站";
+    return "已关闭";
+  }
+
   /** 明确读取插件自己的设置，避免把值误写到 Obsidian 的全局配置。 */
   getControlValue(key: string): unknown {
     if (key in this.plugin.settings) {
@@ -1400,6 +1502,15 @@ export class LinguaStudySettingTab extends PluginSettingTab {
       return;
     }
 
+    if (
+      key === "chatProvider" &&
+      (value === "disabled" || value === "deepseek" || value === "kimi" || value === "openai-compatible")
+    ) {
+      await this.plugin.updateSettings({ chatProvider: value });
+      this.refreshDomState();
+      return;
+    }
+
     if (key === "translateWholeTranscript" && typeof value === "boolean") {
       await this.plugin.updateSettings({ translateWholeTranscript: value });
       return;
@@ -1440,6 +1551,16 @@ export class LinguaStudySettingTab extends PluginSettingTab {
 
     if (key === "autoImportPastedVideoLinks" && typeof value === "boolean") {
       await this.plugin.updateSettings({ autoImportPastedVideoLinks: value });
+      return;
+    }
+
+    if (key === "autoOpenRssSidebar" && typeof value === "boolean") {
+      await this.plugin.updateSettings({ autoOpenRssSidebar: value });
+      return;
+    }
+
+    if (key === "autoRefreshRssSubscriptions" && typeof value === "boolean") {
+      await this.plugin.updateSettings({ autoRefreshRssSubscriptions: value });
       return;
     }
 

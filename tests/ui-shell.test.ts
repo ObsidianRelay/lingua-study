@@ -69,6 +69,128 @@ test("Podcast RSS 命令创建桌面本地播放器与字幕学习块", async ()
   assert.match(importer, /extractPodcastSourceIdsFromStudyBlocks/u);
 });
 
+test("订阅入口可手动打开，自动侧栏只在启用且布局就绪后显示", async () => {
+  const [main, settings] = await Promise.all([
+    readFile("src/main.ts", "utf8"),
+    readFile("src/settings.ts", "utf8")
+  ]);
+  assert.match(main, /this\.app\.workspace\.onLayoutReady\(\(\) => \{[\s\S]*?this\.settings\.autoOpenRssSidebar/u);
+  assert.match(main, /this\.app\.workspace\.ensureSideLeaf\(RSS_SUBSCRIPTION_HOME_VIEW_TYPE, "right"/u);
+  assert.match(main, /if \(oldLeaf !== leaf\) oldLeaf\.detach\(\)/u);
+  assert.match(main, /id: "open-rss-sidebar"/u);
+  assert.match(settings, /name: "启动时显示订阅侧栏"[\s\S]*?key: "autoOpenRssSidebar"/u);
+  assert.match(settings, /name: "右侧订阅页"[\s\S]*?this\.plugin\.openRssSubscriptions\(\)/u);
+});
+
+test("分类颜色选择器覆盖 Obsidian 默认按钮背景", async () => {
+  const [view, styles] = await Promise.all([
+    readFile("src/rss-subscription-view.ts", "utf8"),
+    readFile("styles.css", "utf8")
+  ]);
+  assert.match(view, /lingua-rss-color-choice \$\{colorClass\(color\)\}/u);
+  assert.match(styles, /\.lingua-rss-modal button\.lingua-rss-color-choice\s*\{[^}]*background: var\(--rss-tag-color\) !important;/u);
+});
+
+test("没有无标签订阅时隐藏筛选并退出空筛选", async () => {
+  const view = await readFile("src/rss-subscription-view.ts", "utf8");
+  assert.match(view, /if \(uncategorizedCount > 0\) this\.categoryButton\(filters, "", "无标签", null, uncategorizedCount\)/u);
+  assert.match(view, /if \(this\.categoryId === "" && !this\.data\.feeds\.some\(\(feed\) => feed\.categoryId === null\)\) \{\s*this\.categoryId = "__all";\s*this\.feedId = "__all";/u);
+});
+
+test("目录刷新当前标签的订阅源，后台定时刷新由插件管理生命周期", async () => {
+  const [view, main, settings, controller, store] = await Promise.all([
+    readFile("src/rss-subscription-view.ts", "utf8"),
+    readFile("src/main.ts", "utf8"),
+    readFile("src/settings.ts", "utf8"),
+    readFile("src/rss-subscription-controller.ts", "utf8"),
+    readFile("src/rss-subscription-store.ts", "utf8")
+  ]);
+  assert.match(view, /actions\.createEl\("button", \{ cls: "lingua-rss-category-refresh lingua-rss-category-refresh-global"/u);
+  assert.match(view, /group\.createEl\("button", \{ cls: "lingua-rss-category-refresh lingua-rss-category-refresh-local"/u);
+  assert.match(view, /selectSubscriptionSources\(this\.data\?\.feeds \?\? \[\], kind, id, selectedFeedId\)/u);
+  assert.match(view, /this\.controller\.refreshFeeds\(feedIds\)/u);
+  assert.doesNotMatch(view, /this\.controller\.refresh\(feed\)/u);
+  assert.match(main, /this\.registerInterval\(window\.setInterval\([\s\S]*?RSS_AUTO_REFRESH_INTERVAL_MS\)/u);
+  assert.match(main, /this\.rssSubscriptionController\?\.dispose\(\)/u);
+  assert.match(settings, /name: "每小时自动刷新订阅"[\s\S]*?key: "autoRefreshRssSubscriptions"/u);
+  assert.match(controller, /if \(this\.refreshing\) return \{ state: "busy"/u);
+  assert.match(store, /data\.feeds\.some\(\(entry\) => entry\.id === feed\.id\)/u);
+  assert.match(view, /已累计 \$\{feed\.items\.length\} 条内容/u);
+  assert.match(view, /本次新增 \$\{result\.newItems\} 条/u);
+});
+
+test("订阅目录固定视频和播客两级结构，并能给各频道选择彩色标签", async () => {
+  const [view, styles] = await Promise.all([
+    readFile("src/rss-subscription-view.ts", "utf8"),
+    readFile("styles.css", "utf8")
+  ]);
+  assert.match(view, /const filters = categories\.createDiv\(\{ cls: "lingua-rss-filter-list"/u);
+  assert.match(view, /for \(const kind of \["youtube", "podcast"\] as const\)/u);
+  assert.match(view, /const label = kind === "youtube" \? "视频" : "播客"/u);
+  assert.match(view, /const row = children\.createDiv\(\{ cls: "lingua-rss-tree-feed-row" \}\)/u);
+  assert.match(view, /this\.createTagSelector\(row, data, feed\)/u);
+  assert.match(view, /actions\.createEl\("button", \{ cls: "lingua-rss-manage-button", text: "管理标签" \}\)/u);
+  assert.match(view, /this\.controller\.setFeedCategory\(feed\.id, selector\.value \|\| null\)/u);
+  assert.match(view, /filters\.scrollLeft = this\.categoryScrollLeft;/u);
+  assert.match(styles, /\.lingua-rss-filter-list,\s*\.lingua-rss-filter-actions \{ display: contents; \}/u);
+  assert.match(styles, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-source-tree\s*\{[^}]*background: var\(--rss-paper-card\);/u);
+  assert.match(styles, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-filter-list\s*\{[^}]*overflow-x: auto;/u);
+  assert.match(styles, /\.lingua-rss-tree-feed-content\s*\{[^}]*min-width: 0;/u);
+});
+
+test("订阅侧栏在常见宽度显示双列卡片，极窄时回退单列", async () => {
+  const styles = await readFile("styles.css", "utf8");
+  assert.match(styles, /\.lingua-rss-card-grid\s*\{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/u);
+  assert.match(styles, /@container \(max-width: 440px\)\s*\{\s*\.lingua-rss-card-grid \{ grid-template-columns: minmax\(0, 1fr\); \}/u);
+  assert.doesNotMatch(styles, /@container \(max-width: 720px\)\s*\{\s*\.lingua-rss-card-grid/u);
+});
+
+test("视频与播客卡片可打开发布者简介，不把空简介伪装成摘要", async () => {
+  const [view, styles] = await Promise.all([
+    readFile("src/rss-subscription-view.ts", "utf8"),
+    readFile("styles.css", "utf8")
+  ]);
+  assert.match(view, /class SubscriptionItemDetailsModal extends Modal/u);
+  assert.match(view, /text: "发布者简介"/u);
+  assert.match(view, /text: "查看简介"/u);
+  assert.match(view, /当前 RSS 未提供这条内容的简介/u);
+  assert.match(styles, /\.lingua-rss-detail-description\s*\{[^}]*overflow-wrap: anywhere;/u);
+});
+
+test("订阅页沿用纸感卡片和弹窗，保留封面并用短日期及导入状态", async () => {
+  const [view, styles] = await Promise.all([
+    readFile("src/rss-subscription-view.ts", "utf8"),
+    readFile("styles.css", "utf8")
+  ]);
+  assert.match(view, /root\.createDiv\(\{ cls: "lingua-rss-page" \}\)/u);
+  assert.match(view, /this\.modalEl\.addClass\("lingua-rss-paper-modal"\)/u);
+  assert.match(view, /youtubeThumbnailUrl\(item\.id\)/u);
+  assert.match(view, /displayDate\(item\.publishedAt\)/u);
+  assert.match(view, /state\.label === "已导入" \? "is-imported" : "is-incomplete"/u);
+  assert.match(view, /state\.action === "打开学习笔记" \? "打开笔记" : state\.action/u);
+  assert.match(view, /cls: "lingua-rss-primary-action"/u);
+  assert.match(styles, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-page\s*\{[^}]*border: 1px solid var\(--rss-paper-line\)/u);
+  assert.match(styles, /\.lingua-rss-card-actions\s*\{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/u);
+  assert.match(styles, /body\.theme-dark\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-home/u);
+  assert.match(styles, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-category-refresh-local \{ display: none; \}/u);
+  assert.match(styles, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-kind-row :is\(\.lingua-rss-kind-toggle, \.lingua-rss-kind-button\)\s*\{[^}]*background: transparent;/u);
+  assert.match(styles, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-tree-feed\s*\{[^}]*background: var\(--rss-paper-bg\);/u);
+  assert.match(styles, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-card-actions button\s*\{[^}]*white-space: nowrap;/u);
+});
+
+test("订阅源设置置顶，文件夹逐级展开并在频道内显示剧集和加载更多", async () => {
+  const [view, styles] = await Promise.all([
+    readFile("src/rss-subscription-view.ts", "utf8"),
+    readFile("styles.css", "utf8")
+  ]);
+  assert.match(view, /const sources = page\.createEl\("details", \{ cls: "lingua-rss-sources" \}\);[\s\S]*?this\.renderSourceTree\(page, data\);/u);
+  assert.match(view, /const content = children\.createDiv\(\{ cls: "lingua-rss-tree-feed-content" \}\)/u);
+  assert.match(view, /for \(const item of items\.slice\(0, this\.limit\)\) this\.renderCard\(grid, data, feed, item, false\)/u);
+  assert.match(view, /if \(items\.length > this\.limit\) content\.createEl\("button", \{ cls: "lingua-rss-load-more"/u);
+  assert.doesNotMatch(view, /renderOverview|lingua-rss-toolbar/u);
+  assert.match(styles, /\.lingua-rss-tree-feed-content \.lingua-rss-card-grid \{ gap: 8px; \}/u);
+});
+
 test("文稿行操作重绘后保留列表与弹窗滚动位置", async () => {
   const source = await readFile("src/document-transcript-import.ts", "utf8");
   assert.match(source, /const listScrollTop = previousList\?\.scrollTop \?\? this\.previewListScrollTop/u);
@@ -121,11 +243,11 @@ test("字幕导入会话保留草稿并避免同一视频重复启动", async ()
 test("设置首页固定使用卡片布局并提供可选界面主题", async () => {
   const source = await readFile("src/settings.ts", "utf8");
   const pageDefinitions = source.match(/type: "page"/gu) ?? [];
-  assert.equal(pageDefinitions.length, 7);
+  assert.equal(pageDefinitions.length, 8);
   assert.match(source, /setting\.settingEl\.addClass\("lingua-study-settings-profile"\)/u);
   assert.match(source, /text: "LS"/u);
   assert.match(source, /已收录生词/u);
-  assert.match(source, /heading: "学习与数据"[\s\S]*?items: \[this\.learningPage\(\), this\.translationPage\(\), this\.generalPage\(\)\]/u);
+  assert.match(source, /heading: "学习与数据"[\s\S]*?items: \[this\.learningPage\(\), this\.translationPage\(\), this\.chatPage\(\), this\.generalPage\(\)\]/u);
   assert.match(source, /heading: "内容导入"[\s\S]*?items: \[this\.youtubePage\(\), this\.bilibiliPage\(\), this\.documentAlignmentPage\(\)\]/u);
   assert.match(source, /heading: "外观"[\s\S]*?items: \[this\.appearancePage\(\)\]/u);
   assert.ok(source.indexOf('heading: "外观"') > source.indexOf('heading: "内容导入"'));
@@ -153,6 +275,7 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
     "学习与词典",
     "文稿导入与对齐",
     "翻译服务",
+    "学习聊天",
     "通用选项",
     "外观"
   ]) {
@@ -180,10 +303,20 @@ test("设置首页固定使用卡片布局并提供可选界面主题", async ()
     assert.match(source, new RegExp(`key: "${settingKey}"`, "u"));
   }
 
-  assert.match(source, /visible: \(\) => this\.plugin\.settings\.translationProvider === "deepseek"/u);
-  assert.match(source, /visible: \(\) => this\.plugin\.settings\.translationProvider === "baidu"/u);
-  assert.match(source, /visible: \(\) => this\.plugin\.settings\.translationProvider === "kimi"/u);
-  assert.match(source, /visible: \(\) => this\.plugin\.settings\.translationProvider === "openai-compatible"/u);
+  const translationPage = source.slice(
+    source.indexOf("private translationPage()"), source.indexOf("private chatPage()")
+  );
+  const chatPage = source.slice(
+    source.indexOf("private chatPage()"), source.indexOf("private apiCredentialGroups(")
+  );
+  assert.match(translationPage, /\.\.\.this\.apiCredentialGroups\("translation"\)/u);
+  assert.doesNotMatch(translationPage, /key: "chatProvider"|apiCredentialGroups\("chat"\)/u);
+  assert.match(chatPage, /name: "学习聊天"[\s\S]*key: "chatProvider"[\s\S]*\.\.\.this\.apiCredentialGroups\("chat"\)/u);
+  assert.doesNotMatch(chatPage, /key: "translationProvider"|apiCredentialGroups\("translation"\)/u);
+  assert.match(source, /purpose === "translation"[\s\S]*this\.plugin\.settings\.translationProvider[\s\S]*this\.plugin\.settings\.chatProvider/u);
+  for (const provider of ["baidu", "deepseek", "kimi", "openai-compatible"]) {
+    assert.match(source, new RegExp(`visible: \\(\\) => selectedProvider\\(\\) === "${provider}"`, "u"));
+  }
   assert.match(source, /kimi: "Kimi 官方（国内）"/u);
   assert.match(source, /baidu: "百度翻译 API"/u);
   assert.match(source, /this\.plugin\.settings\.baiduSecretId/u);

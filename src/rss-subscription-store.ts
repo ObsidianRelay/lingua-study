@@ -1,15 +1,23 @@
 import { App, normalizePath, TFile, TFolder } from "obsidian";
 import {
+  addNewSubscriptionData,
+  addSubscriptionCategory,
+  assignSubscriptionCategory,
   emptySubscriptionData,
   parseSubscriptionData,
   removeSubscriptionData,
+  removeSubscriptionCategory,
   renameImportedNote,
+  updateSubscriptionCategory,
   upsertSubscriptionData,
+  type SubscriptionColor,
+  type CategoryChoice,
   type RssSubscription,
   type RssSubscriptionData
 } from "./rss-subscription-core";
 
 export const SUBSCRIPTIONS_PATH = "Lingua Study/Subscriptions/subscriptions.json";
+export type { CategoryChoice } from "./rss-subscription-core";
 
 export class RssSubscriptionStore {
   private hasSeenFile = false;
@@ -37,8 +45,30 @@ export class RssSubscriptionStore {
     }
   }
 
-  async upsertFeed(feed: RssSubscription): Promise<RssSubscriptionData> {
-    return this.update((data) => upsertSubscriptionData(data, feed));
+  async refreshExistingFeed(feed: RssSubscription): Promise<RssSubscriptionData> {
+    // A feed may be unsubscribed while its network request is in flight; never re-create it.
+    return this.update((data) => data.feeds.some((entry) => entry.id === feed.id)
+      ? upsertSubscriptionData(data, feed) : data);
+  }
+
+  async addFeed(feed: RssSubscription, category: CategoryChoice): Promise<RssSubscriptionData> {
+    return this.update((data) => addNewSubscriptionData(data, feed, category));
+  }
+
+  createCategory(name: string, color: SubscriptionColor): Promise<RssSubscriptionData> {
+    return this.update((data) => addSubscriptionCategory(data, name, color));
+  }
+
+  editCategory(id: string, name: string, color: SubscriptionColor): Promise<RssSubscriptionData> {
+    return this.update((data) => updateSubscriptionCategory(data, id, name, color));
+  }
+
+  deleteCategory(id: string): Promise<RssSubscriptionData> {
+    return this.update((data) => removeSubscriptionCategory(data, id));
+  }
+
+  setFeedCategory(feedId: string, categoryId: string | null): Promise<RssSubscriptionData> {
+    return this.update((data) => assignSubscriptionCategory(data, feedId, categoryId));
   }
 
   async removeFeed(id: string): Promise<RssSubscriptionData> {
@@ -63,7 +93,15 @@ export class RssSubscriptionStore {
       await this.ensureFolder();
       const node = this.app.vault.getAbstractFileByPath(SUBSCRIPTIONS_PATH);
       const text = `${JSON.stringify(next, null, 2)}\n`;
-      if (node instanceof TFile) await this.app.vault.modify(node, text);
+      if (node instanceof TFile) {
+        const original = await this.app.vault.read(node);
+        const parsed = JSON.parse(original) as unknown;
+        parseSubscriptionData(parsed);
+        if (original !== text) {
+          if ((parsed as { version?: unknown }).version === 1) await this.backupLegacyData(original);
+          await this.app.vault.modify(node, text);
+        }
+      }
       else if (node === null) await this.app.vault.create(SUBSCRIPTIONS_PATH, text);
       else throw new Error("订阅数据路径已被文件夹占用，未写入任何内容。");
       this.hasSeenFile = true;
@@ -72,6 +110,17 @@ export class RssSubscriptionStore {
     const result = this.pending.then(run, run);
     this.pending = result.then(() => undefined, () => undefined);
     return result;
+  }
+
+  private async backupLegacyData(original: string): Promise<void> {
+    const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
+    for (let suffix = 0; suffix < 100; suffix++) {
+      const path = `Lingua Study/Subscriptions/subscriptions.v1.backup-${stamp}${suffix ? `-${suffix}` : ""}.json`;
+      if (this.app.vault.getAbstractFileByPath(path) !== null) continue;
+      await this.app.vault.create(path, original);
+      return;
+    }
+    throw new Error("无法为旧订阅数据创建唯一备份，已取消写入。");
   }
 
   private async ensureFolder(): Promise<void> {

@@ -14,6 +14,8 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal(settings.transcriptFolder, "Study/Transcripts");
   assert.equal(settings.ytDlpPath, "/opt/homebrew/bin/yt-dlp");
   assert.equal(settings.autoImportPastedVideoLinks, false);
+  assert.equal(settings.autoOpenRssSidebar, false);
+  assert.equal(settings.autoRefreshRssSubscriptions, true);
   assert.equal(settings.translateWholeTranscript, false);
   assert.equal(settings.cacheTranslations, false);
   assert.equal(settings.studyProfile, "cet4");
@@ -26,6 +28,18 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal("speechCloudBaseUrl" in settings, false);
   assert.equal("speechCloudModel" in settings, false);
   assert.equal("speechCloudSecretId" in settings, false);
+});
+
+test("订阅侧栏自动显示默认关闭，仅保留明确的布尔设置", () => {
+  assert.equal(sanitizeSettings({}).autoOpenRssSidebar, false);
+  assert.equal(sanitizeSettings({ autoOpenRssSidebar: true }).autoOpenRssSidebar, true);
+  assert.equal(sanitizeSettings({ autoOpenRssSidebar: "true" }).autoOpenRssSidebar, false);
+});
+
+test("订阅每小时自动刷新默认开启且可关闭", () => {
+  assert.equal(sanitizeSettings({}).autoRefreshRssSubscriptions, true);
+  assert.equal(sanitizeSettings({ autoRefreshRssSubscriptions: false }).autoRefreshRssSubscriptions, false);
+  assert.equal(sanitizeSettings({ autoRefreshRssSubscriptions: "false" }).autoRefreshRssSubscriptions, true);
 });
 
 test("双击查词开关兼容旧设置", () => {

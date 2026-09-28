@@ -36,6 +36,8 @@ import {
   type StudyAnalysisResult,
   type TranslationResult
 } from "./translation";
+import { StudyChatSessions, type StudyChatContext, type StudyChatMessage } from "./study-chat-core";
+import { STUDY_CHAT_VIEW_TYPE, StudyChatView } from "./study-chat-view";
 import {
   createStudyFingerprint,
   STUDY_ANALYSIS_VERSION,
@@ -295,6 +297,7 @@ const YOUTUBE_PLAYER_ORIGINS = new Set([
 const PLAYER_STATE_PLAYING = 1;
 const PLAYER_STATE_PAUSED = 2;
 const PLAYER_HANDSHAKE_INTERVAL_MS = 250;
+const RSS_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const PLAYER_CONTROLS_FALLBACK_MS = 1_500;
 const PLAYER_COMMAND_TIMEOUT_MS = 3_000;
 const LOCAL_MEDIA_LOAD_TIMEOUT_MS = 8_000;
@@ -677,6 +680,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private segmentTextEls: HTMLElement[] = [];
   private segmentActionDockEl: HTMLElement | null = null;
   private segmentEditButton: HTMLButtonElement | null = null;
+  private segmentChatButton: HTMLButtonElement | null = null;
   private segmentDictationButton: HTMLButtonElement | null = null;
   private segmentShadowingButton: HTMLButtonElement | null = null;
   private segmentActionTargetIndex = -1;
@@ -825,6 +829,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.segmentTextEls = [];
     this.segmentActionDockEl = null;
     this.segmentEditButton = null;
+    this.segmentChatButton = null;
     this.segmentDictationButton = null;
     this.segmentShadowingButton = null;
     this.segmentActionTargetIndex = -1;
@@ -1910,6 +1915,16 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         this.openSegmentEditor(this.segmentActionTargetIndex);
       }
     });
+    const chatButton = actionDock.createEl("button", {
+      cls: "evs-icon-button evs-transcript-icon-button evs-global-chat-action"
+    });
+    chatButton.type = "button";
+    chatButton.disabled = true;
+    this.setTranscriptActionIcon(chatButton, "message-circle", "请先选择字幕后问 AI");
+    chatButton.addEventListener("click", () => {
+      const segment = this.transcript?.segments[this.segmentActionTargetIndex];
+      if (segment) void this.plugin.openStudyChat({ sentence: segment.text });
+    });
     const dictationButton = actionDock.createEl("button", {
       cls: "evs-icon-button evs-transcript-icon-button evs-global-dictation-action"
     });
@@ -1934,6 +1949,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     });
     this.segmentActionDockEl = actionDock;
     this.segmentEditButton = editButton;
+    this.segmentChatButton = chatButton;
     this.segmentDictationButton = dictationButton;
     this.segmentShadowingButton = shadowingButton;
 
@@ -2365,6 +2381,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     const view = this.translationViews[index];
     const dock = this.segmentActionDockEl;
     const editButton = this.segmentEditButton;
+    const chatButton = this.segmentChatButton;
     const dictationButton = this.segmentDictationButton;
     const shadowingButton = this.segmentShadowingButton;
     if (
@@ -2372,6 +2389,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       !view ||
       !dock ||
       !editButton ||
+      !chatButton ||
       !dictationButton ||
       !shadowingButton ||
       this.destroyed
@@ -2395,7 +2413,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     dock.setAttribute("aria-label", `第 ${index + 1} 句字幕操作`);
     editButton.disabled = this.dictationSession !== null || this.shadowingSession !== null;
     this.setTranscriptActionLabel(editButton, `编辑第 ${index + 1} 句字幕`);
+    chatButton.disabled = false;
+    this.setTranscriptActionLabel(chatButton, `询问第 ${index + 1} 句字幕`);
     dock.appendChild(view.primaryButton);
+    dock.appendChild(chatButton);
     dock.appendChild(dictationButton);
     dock.appendChild(shadowingButton);
     this.updateDictationActionAvailability();
@@ -4327,7 +4348,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     view.outputEl.appendChild(view.retranslateButton);
     view.retranslateButton.show();
     const translationSection = view.outputEl.createDiv({ cls: "evs-study-section" });
-    translationSection.createDiv({ cls: "evs-study-heading", text: "中文译文" });
+    const translationHeading = translationSection.createDiv({ cls: "evs-study-heading lingua-study-chat-point-heading" });
+    translationHeading.createSpan({ text: "中文译文" });
+    const sentence = studyEntry?.sourceText ?? view.entry?.sourceText;
+    if (sentence) this.appendStudyChatButton(translationHeading, sentence);
     translationSection.createDiv({ cls: "evs-translation-copy", text: translation });
     if (!studyEntry) {
       const legacyRow = view.outputEl.createDiv({ cls: "evs-study-legacy-row" });
@@ -4360,7 +4384,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         const item = list.createEl("li");
         item.createEl("strong", { text: point.expression });
         item.createSpan({ text: `：${point.meaning}` });
-        item.createDiv({ cls: "evs-study-note", text: point.note });
+        const note = item.createDiv({ cls: "evs-study-note", text: point.note });
+        this.appendStudyChatButton(note, studyEntry.sourceText,
+          `${point.expression}：${point.meaning}。${point.note}`);
       }
     }
     if (studyEntry.analysis.grammar.length > 0) {
@@ -4370,7 +4396,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       for (const grammar of studyEntry.analysis.grammar) {
         const item = list.createEl("li");
         item.createEl("strong", { text: grammar.pattern });
-        item.createDiv({ cls: "evs-study-note", text: grammar.explanation });
+        const note = item.createDiv({ cls: "evs-study-note", text: grammar.explanation });
+        this.appendStudyChatButton(note, studyEntry.sourceText,
+          `${grammar.pattern}：${grammar.explanation}`);
       }
     }
     const tip = view.outputEl.createDiv({ cls: "evs-study-section evs-study-exam-tip" });
@@ -4397,6 +4425,21 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         example.createDiv({ text: extension.exampleTranslation, attr: { lang: "zh-CN" } });
       }
     }
+  }
+
+  private appendStudyChatButton(parent: HTMLElement, sentence: string, focus?: string): void {
+    const button = parent.createEl("button", {
+      cls: "lingua-study-chat-point-button"
+    });
+    button.type = "button";
+    setIcon(button, "message-circle");
+    const label = focus ? "就此知识点问 AI" : "就这句话问 AI";
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", label);
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void this.plugin.openStudyChat({ sentence, focus });
+    });
   }
 
   private async requestTranslation(
@@ -5651,6 +5694,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
 export default class LinguaStudyPlugin extends Plugin {
   settings: LinguaStudySettings = { ...DEFAULT_SETTINGS };
+  readonly chatSessions = new StudyChatSessions();
   readonly capabilities: PlatformCapabilities = getPlatformCapabilities();
   private translationService: TranslationService | null = null;
   private translationCacheStore: TranslationCacheStore | null = null;
@@ -5771,6 +5815,7 @@ export default class LinguaStudyPlugin extends Plugin {
       DICTIONARY_VIEW_TYPE,
       (leaf) => new LinguaDictionaryView(leaf, this)
     );
+    this.registerView(STUDY_CHAT_VIEW_TYPE, (leaf) => new StudyChatView(leaf, this));
     this.youtubeImporter = new YouTubeImportController(
       this.app,
       () => this.settings,
@@ -5779,7 +5824,7 @@ export default class LinguaStudyPlugin extends Plugin {
     if (this.capabilities.desktop && this.podcastImporter && this.podcastCacheService) {
       const [
         { RssSubscriptionController },
-        { RSS_SUBSCRIPTION_VIEW_TYPE, RssSubscriptionView }
+        { RSS_SUBSCRIPTION_VIEW_TYPE, RSS_SUBSCRIPTION_HOME_VIEW_TYPE, RssSubscriptionView, RssSubscriptionHomeView }
       ] = await Promise.all([
         import("./rss-subscription-controller"),
         import("./rss-subscription-view")
@@ -5792,7 +5837,11 @@ export default class LinguaStudyPlugin extends Plugin {
       );
       this.rssSubscriptionViewType = RSS_SUBSCRIPTION_VIEW_TYPE;
       const controller = this.rssSubscriptionController;
-      this.registerView(RSS_SUBSCRIPTION_VIEW_TYPE, (leaf) => new RssSubscriptionView(leaf, controller));
+      this.registerView(RSS_SUBSCRIPTION_VIEW_TYPE, (leaf) => new RssSubscriptionView(leaf, controller, () => this.openRssSubscriptions()));
+      this.registerView(RSS_SUBSCRIPTION_HOME_VIEW_TYPE, (leaf) => new RssSubscriptionHomeView(leaf, controller));
+      this.registerInterval(window.setInterval(() => {
+        if (this.settings.autoRefreshRssSubscriptions) void this.refreshRssSubscriptionsAutomatically();
+      }, RSS_AUTO_REFRESH_INTERVAL_MS));
       this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
         void controller.store.noteRenamed(oldPath, file.path).catch((error) => {
           console.warn("Lingua Study: 订阅笔记路径更新失败", error);
@@ -5829,7 +5878,7 @@ export default class LinguaStudyPlugin extends Plugin {
         menu.addItem((item) => item.setTitle("处理当前笔记中的视频链接")
           .setIcon("video")
           .onClick(() => { void this.importVideoFromActiveNote(); }));
-        menu.addItem((item) => item.setTitle("打开 podcast / YouTube 订阅")
+        menu.addItem((item) => item.setTitle("在右侧打开 podcast / YouTube 订阅")
           .setIcon("rss")
           .onClick(() => { void this.openRssSubscriptions(); }));
         menu.showAtMouseEvent(event);
@@ -5841,14 +5890,37 @@ export default class LinguaStudyPlugin extends Plugin {
     });
     this.manualImportRibbonEl.setAttribute("aria-label", "Lingua Study");
     this.addSettingTab(new LinguaStudySettingTab(this.app, this));
+    this.app.workspace.onLayoutReady(() => {
+      void (async () => {
+        if (this.settings.autoOpenRssSidebar && this.rssSubscriptionController) {
+          await this.openRssSidebar();
+        }
+        await this.app.workspace.ensureSideLeaf(STUDY_CHAT_VIEW_TYPE, "right", {
+          active: false, split: false, reveal: false
+        });
+      })().catch((error) => {
+        console.warn("Lingua Study: 学习聊天标签页创建失败", error);
+      });
+    });
 
     if (this.capabilities.desktop) {
       this.addCommand({
         id: "open-rss-subscriptions",
-        name: "打开 podcast / YouTube 订阅",
+        name: "在右侧打开 podcast / YouTube 订阅",
         callback: () => { void this.openRssSubscriptions(); }
       });
+      this.addCommand({
+        id: "open-rss-sidebar",
+        name: "在右侧打开 podcast / YouTube 订阅（旧命令兼容）",
+        callback: () => { void this.openRssSidebar(); }
+      });
     }
+
+    this.addCommand({
+      id: "open-study-chat",
+      name: "打开学习聊天",
+      callback: () => { void this.openStudyChat(); }
+    });
 
     this.addCommand({
       id: "open-offline-dictionary",
@@ -6048,6 +6120,7 @@ export default class LinguaStudyPlugin extends Plugin {
     this.bilibiliImporter = null;
     this.podcastCacheService = null;
     this.podcastImporter = null;
+    this.rssSubscriptionController?.dispose();
     this.rssSubscriptionController = null;
     this.rssSubscriptionViewType = null;
     this.manualImportRibbonEl = null;
@@ -6250,14 +6323,24 @@ export default class LinguaStudyPlugin extends Plugin {
 
   async updateSettings(changes: Partial<LinguaStudySettings>): Promise<void> {
     const previousProfile = this.settings.studyProfile;
+    const previousChatProvider = this.settings.chatProvider;
     const previousDailyNewWordLimit = this.settings.dailyNewWordLimit;
     const previousFsrsRequestRetention = this.settings.fsrsRequestRetention;
     const previousDesktopPlayerWidth = this.settings.desktopPlayerWidth;
     const previousInterfaceTheme = this.settings.interfaceTheme;
     const previousDoubleClickLookup = this.settings.enableDoubleClickLookup;
     const previousSelectionTranslation = this.settings.enableSelectionTranslation;
+    const previousAutoOpenRssSidebar = this.settings.autoOpenRssSidebar;
     this.settings = sanitizeSettings({ ...this.settings, ...changes });
     await this.saveData(this.settings);
+    if (this.settings.chatProvider !== previousChatProvider) {
+      for (const leaf of this.app.workspace.getLeavesOfType(STUDY_CHAT_VIEW_TYPE)) {
+        if (leaf.view instanceof StudyChatView) leaf.view.refresh();
+      }
+    }
+    if (this.settings.autoOpenRssSidebar && !previousAutoOpenRssSidebar) {
+      await this.openRssSidebar();
+    }
     if (this.settings.interfaceTheme !== previousInterfaceTheme) {
       this.applyInterfaceTheme();
       for (const renderer of this.studyRenderers) {
@@ -6536,21 +6619,71 @@ export default class LinguaStudyPlugin extends Plugin {
     }
   }
 
-  private async openRssSubscriptions(): Promise<void> {
+  async openRssSubscriptions(): Promise<void> {
     const type = this.rssSubscriptionViewType;
     if (!type) {
       new Notice("订阅面板仅支持 Obsidian 电脑端。", 5_000);
       return;
     }
     try {
-      const leaf = await this.app.workspace.ensureSideLeaf(
-        type,
-        "right",
-        { active: true, split: false, reveal: true }
-      );
+      const { RSS_SUBSCRIPTION_HOME_VIEW_TYPE } = await import("./rss-subscription-view");
+      const leaf = await this.app.workspace.ensureSideLeaf(RSS_SUBSCRIPTION_HOME_VIEW_TYPE, "right", {
+        active: true, split: false, reveal: true
+      });
       await this.app.workspace.revealLeaf(leaf);
+      // Older builds placed the full page in a main tab and left a compact entry in the sidebar.
+      // Remove only those obsolete views after the full right-side view is ready.
+      for (const oldLeaf of this.app.workspace.getLeavesOfType(RSS_SUBSCRIPTION_HOME_VIEW_TYPE)) {
+        if (oldLeaf !== leaf) oldLeaf.detach();
+      }
+      for (const oldLeaf of this.app.workspace.getLeavesOfType(type)) oldLeaf.detach();
     } catch (error) {
       new Notice(error instanceof Error ? error.message : "订阅面板打开失败。", 7_000);
+    }
+  }
+
+  async openStudyChat(context?: StudyChatContext): Promise<void> {
+    try {
+      const leaf = await this.app.workspace.ensureSideLeaf(STUDY_CHAT_VIEW_TYPE, "right", {
+        active: true, split: false, reveal: true
+      });
+      if (!(leaf.view instanceof StudyChatView)) throw new Error("聊天页面尚未准备好，请重新加载插件。");
+      if (context) leaf.view.openWithContext(context);
+      await this.app.workspace.revealLeaf(leaf);
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : "聊天页面打开失败。", 6_000);
+    }
+  }
+
+  async chat(
+    profile: StudyProfile,
+    context: StudyChatContext | null,
+    history: readonly StudyChatMessage[],
+    question: string,
+    onDelta: (text: string) => void,
+    signal?: AbortSignal
+  ): Promise<string> {
+    return this.getTranslationService().chat(profile, context, history, question, onDelta, signal);
+  }
+
+  async openRssSidebar(): Promise<void> {
+    await this.openRssSubscriptions();
+  }
+
+  private async refreshRssSubscriptionsAutomatically(): Promise<void> {
+    const controller = this.rssSubscriptionController;
+    if (!controller) return;
+    try {
+      const result = await controller.refreshFeeds();
+      if (result.state !== "done") return;
+      if (this.rssSubscriptionController !== controller) return;
+      if (result.failed.length) console.warn("Lingua Study: 自动刷新部分订阅源失败", result.failed);
+      const { RSS_SUBSCRIPTION_HOME_VIEW_TYPE, RssSubscriptionHomeView } = await import("./rss-subscription-view");
+      for (const leaf of this.app.workspace.getLeavesOfType(RSS_SUBSCRIPTION_HOME_VIEW_TYPE)) {
+        if (leaf.view instanceof RssSubscriptionHomeView) await leaf.view.refreshData();
+      }
+    } catch (error) {
+      console.warn("Lingua Study: 自动刷新订阅失败", error);
     }
   }
 

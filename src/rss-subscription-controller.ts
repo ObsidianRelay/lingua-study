@@ -4,7 +4,9 @@ import type { PodcastCacheService } from "./podcast-cache";
 import type { PodcastImportController } from "./podcast-import";
 import {
   canonicalFeedUrl,
+  countNewSubscriptionItems,
   escapeSubscriptionNoteTitle,
+  pendingYouTubeSubscription,
   parseSubscriptionFeed,
   subscriptionItemKey,
   subscriptionNotePath,
@@ -12,13 +14,33 @@ import {
   type RssSubscriptionData,
   type SubscriptionItem
 } from "./rss-subscription-core";
-import { RssSubscriptionStore } from "./rss-subscription-store";
+import { buildApplePodcastLookupUrl, parseApplePodcastFeedUrl, parsePodcastSourceInput } from "./podcast-source-core";
+import { parseYouTubeChannelLink, parseYouTubeChannelPage, youtubeFeedUrl } from "./rss-subscription-source-core";
+import { RssSubscriptionStore, type CategoryChoice } from "./rss-subscription-store";
 import { validateTranscript } from "./transcript-core";
 import type { YouTubeImportController } from "./youtube-import";
 
 const MAX_FEED_BYTES = 10 * 1024 * 1024;
+const MAX_CHANNEL_PAGE_BYTES = 5 * 1024 * 1024;
+
+class FeedRequestError extends Error {}
+
+export interface SubscriptionPreview {
+  feed: RssSubscription;
+  warning: string | null;
+}
+
+export interface SubscriptionRefreshResult {
+  state: "done" | "busy" | "disposed";
+  refreshed: number;
+  newItems: number;
+  failed: { title: string; message: string }[];
+}
+
 export class RssSubscriptionController {
   readonly store: RssSubscriptionStore;
+  private refreshing = false;
+  private disposed = false;
 
   constructor(
     private readonly app: App,
@@ -31,13 +53,86 @@ export class RssSubscriptionController {
 
   read(): Promise<RssSubscriptionData> { return this.store.read(); }
 
-  async add(urlInput: string): Promise<RssSubscriptionData> {
-    const feed = await this.fetch(canonicalFeedUrl(urlInput));
-    return this.store.upsertFeed(feed);
+  async preview(urlInput: string): Promise<SubscriptionPreview> {
+    const channel = parseYouTubeChannelLink(urlInput);
+    if (channel) {
+      let feedUrl = channel.channelId ? youtubeFeedUrl(channel.channelId) : null;
+      let title = channel.channelId ?? "YouTube 频道";
+      try {
+        const response = await requestUrl({ url: channel.pageUrl, method: "GET", throw: false });
+        if (response.status >= 200 && response.status < 300) {
+          if (response.arrayBuffer.byteLength > MAX_CHANNEL_PAGE_BYTES) {
+            if (!channel.channelId) throw new Error("频道页面超过 5 MB，已停止解析。");
+          } else {
+            const page = parseYouTubeChannelPage(response.text);
+            feedUrl = page.feedUrl;
+            title = page.title;
+          }
+        } else if (!channel.channelId) {
+          throw new Error(`频道页面请求失败（HTTP ${response.status}）。`);
+        }
+      } catch (error) {
+        if (!channel.channelId) throw error;
+      }
+      if (!feedUrl) throw new Error("无法从频道页面找到 RSS 地址。");
+      try {
+        return { feed: await this.fetch(feedUrl), warning: null };
+      } catch (error) {
+        if (!(error instanceof FeedRequestError)) throw error;
+        return { feed: pendingYouTubeSubscription(feedUrl, title), warning: `${error.message} 已识别频道，可先保存并稍后刷新。` };
+      }
+    }
+    const canonical = canonicalFeedUrl(urlInput);
+    const parsed = new URL(canonical);
+    if (["youtube.com", "www.youtube.com", "m.youtube.com"].includes(parsed.hostname) &&
+      parsed.pathname !== "/feeds/videos.xml") throw new Error("请粘贴 YouTube 频道链接，而不是视频或播放列表链接。");
+    const source = parsePodcastSourceInput(canonical);
+    let feedUrl = source.kind === "feed" ? source.feedUrl : "";
+    if (source.kind === "apple") {
+      const response = await requestUrl({ url: buildApplePodcastLookupUrl(source.collectionId), method: "GET", throw: false });
+      if (response.status < 200 || response.status >= 300) throw new Error(`Apple Podcasts 查询失败（HTTP ${response.status}）。`);
+      feedUrl = parseApplePodcastFeedUrl(response.text);
+    }
+    return { feed: await this.fetch(feedUrl), warning: null };
   }
 
-  async refresh(feed: RssSubscription): Promise<RssSubscriptionData> {
-    return this.store.upsertFeed(await this.fetch(feed.url));
+  addPreview(preview: SubscriptionPreview, category: CategoryChoice): Promise<RssSubscriptionData> {
+    return this.store.addFeed(preview.feed, category);
+  }
+
+  setFeedCategory(feedId: string, categoryId: string | null): Promise<RssSubscriptionData> {
+    return this.store.setFeedCategory(feedId, categoryId);
+  }
+
+  dispose(): void { this.disposed = true; }
+
+  async refreshFeeds(feedIds?: readonly string[]): Promise<SubscriptionRefreshResult> {
+    if (this.disposed) return { state: "disposed", refreshed: 0, newItems: 0, failed: [] };
+    if (this.refreshing) return { state: "busy", refreshed: 0, newItems: 0, failed: [] };
+    this.refreshing = true;
+    const result: SubscriptionRefreshResult = { state: "done", refreshed: 0, newItems: 0, failed: [] };
+    try {
+      const selected = feedIds ? new Set(feedIds) : null;
+      const data = await this.store.read();
+      for (const feed of data.feeds) {
+        if (this.disposed) break;
+        if (selected && !selected.has(feed.id)) continue;
+        try {
+          const updated = await this.fetch(feed.url);
+          if (this.disposed) break;
+          const stored = await this.store.refreshExistingFeed(updated);
+          const current = stored.feeds.find((entry) => entry.id === feed.id);
+          if (!current) continue; // User unsubscribed while the request was in flight.
+          result.refreshed += 1;
+          result.newItems += countNewSubscriptionItems(feed, current);
+        } catch (error) {
+          result.failed.push({ title: feed.title, message: error instanceof Error ? error.message : "刷新失败" });
+        }
+      }
+      return result;
+    } finally {
+      this.refreshing = false;
+    }
   }
 
   remove(id: string): Promise<RssSubscriptionData> { return this.store.removeFeed(id); }
@@ -112,9 +207,14 @@ export class RssSubscriptionController {
   }
 
   private async fetch(url: string): Promise<RssSubscription> {
-    const response = await requestUrl({ url, method: "GET", throw: false });
+    let response;
+    try {
+      response = await requestUrl({ url, method: "GET", throw: false });
+    } catch (error) {
+      throw new FeedRequestError(error instanceof Error ? `RSS 请求失败：${error.message}` : "RSS 网络请求失败。");
+    }
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`RSS 请求失败（HTTP ${response.status}）。`);
+      throw new FeedRequestError(`RSS 请求失败（HTTP ${response.status}）。`);
     }
     if (response.arrayBuffer.byteLength > MAX_FEED_BYTES) {
       throw new Error("RSS 超过 10 MB，已停止读取。");
