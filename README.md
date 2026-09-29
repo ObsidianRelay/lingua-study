@@ -2,10 +2,10 @@
 
 [简体中文](./README.md) | [English](./README.en.md)
 
-在 Obsidian 中把 YouTube、哔哩哔哩英文视频和公开 Podcast 节目变成可跟读、可听写、可查词、可复习的学习材料。支持带时间戳字幕、本地缓存播放、逐句翻译、离线词典和生词本。
+在 Obsidian 中把 YouTube、哔哩哔哩英文视频和公开 Podcast 节目变成可跟读、可听写、可查词、可复习的学习材料。支持 RSS 订阅、学习聊天、高亮笔记、带时间戳字幕、本地缓存播放、逐句翻译、离线词典和生词本。
 
 > [!IMPORTANT]
-> Lingua Study 1.5.4 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
+> Lingua Study 2.0.0 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
 
 ## 加入 QQ 交流群
 
@@ -14,7 +14,11 @@
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ 群二维码，群号 124526985" width="320"></p>
 <p align="center"><strong>QQ群号：124526985</strong></p>
 
-## 近期更新（1.3.0–1.5.4）
+## 近期更新（1.3.0–2.0.0）
+
+- **学习聊天**：右侧栏按学习目标分别管理当前会话，可带入选中的字幕或知识卡内容；需单独配置 AI 聊天服务
+- **RSS 订阅**：在右侧栏管理 Podcast 和 YouTube 频道，按标签浏览、刷新并创建可重复打开的学习笔记
+- **高亮笔记**：选中学习文字后保存彩色高亮和个人笔记，在高亮笔记库中回看
 
 - **Whisper 模型下载来源**：默认使用 Hugging Face，官方站点无法连接时可填写可信且兼容的 HTTPS 备用来源
 - **B站本地英文字幕识别**：可缓存且实际为英语语音的视频没有可用英文字幕时，桌面端可在确认下载模型后使用本地 Whisper Base English 生成字幕；识别中断后可从已有播放器重试
@@ -42,7 +46,7 @@
 
 - 使用隐私增强域名 `youtube-nocookie.com` 嵌入 YouTube 播放器
 - 本地缓存并播放哔哩哔哩视频；桌面端可选择仓库外的缓存目录，缓存不可用时回退到哔哩哔哩官方外部播放器
-- 在 Obsidian 左侧功能区提供 Lingua Study 专属图标，可选择处理当前笔记的视频链接或打开右侧 RSS 订阅面板
+- 在 Obsidian 左侧功能区提供 Lingua Study 专属图标，点击后处理当前笔记的视频链接；RSS 订阅从右侧栏标签或命令面板打开
 - 可选“粘贴单个独立视频链接后自动导入”，默认关闭
 - 打开 Lingua Study 设置页时检查 GitHub 最新正式 Release，只在有新版时提供 Obsidian 应用内插件页面入口
 - 直接导入哔哩哔哩英文字幕；仅在平台要求时使用与浏览器隔离的 Obsidian 内登录窗口
@@ -80,7 +84,7 @@
 - Obsidian 1.13.0 或更高版本
 - Obsidian 桌面版；目前不支持手机和平板
 - 当前网络环境可以访问所选 YouTube 或公开哔哩哔哩视频
-- 只有使用 AI 翻译时才需要对应服务的 API Key
+- 只有使用 AI 翻译或学习聊天时才需要对应服务的 API Key
 - 可选：安装较新版本的 `yt-dlp`，提高 YouTube 字幕后备获取的成功率
 
 ## 安装方法
@@ -114,7 +118,7 @@ Lingua Study 的项目页面可能会先出现在 Obsidian 社区网站，而插
 ### 导入 YouTube 视频
 
 1. 在 Markdown 笔记中粘贴一个 YouTube 视频链接。
-2. 点击 Obsidian 左侧功能区的 Lingua Study 图标（电脑端再选择“处理当前笔记中的视频链接”）。
+2. 点击 Obsidian 左侧功能区的 Lingua Study 图标。
 3. 等待字幕保存完成，插件会将笔记切换到阅读视图。
 
 导入成功后，Lingua Study 会：
@@ -148,7 +152,7 @@ YouTube 字幕会按照以下顺序自动尝试：
 ### 导入哔哩哔哩视频
 
 1. 在 Markdown 笔记中粘贴一个公开哔哩哔哩视频链接。
-2. 点击 Obsidian 左侧功能区的 Lingua Study 图标（电脑端再选择“处理当前笔记中的视频链接”）。
+2. 点击 Obsidian 左侧功能区的 Lingua Study 图标。
 3. 等待字幕保存完成，插件会将笔记切换到阅读视图。
 
 Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的合并版 MP4 下载到操作系统缓存目录。如果平台提示字幕需要登录，用户可以在 Obsidian 内的隔离窗口中登录，插件随后自动重试。该登录会话与 Chrome 分开。
@@ -178,11 +182,16 @@ Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的�
 
 ### 在右侧栏订阅播客和 YouTube 频道
 
-1. 点击左侧 Lingua Study 图标，选择“打开 podcast / YouTube 订阅”；也可以从命令面板运行同名命令。右侧会出现与词典并列的“订阅”标签。
-2. 粘贴公开 Podcast RSS/Atom 地址，或 YouTube 官方频道 RSS 地址（`https://www.youtube.com/feeds/videos.xml?channel_id=频道ID`）。选择订阅源后可浏览最近条目，点击“刷新”时才读取最新 RSS。
+1. 点击右侧栏的 **Lingua Study 订阅** 标签，或从命令面板运行“在右侧打开 podcast / YouTube 订阅”。
+2. 粘贴公开 Podcast RSS/Atom 地址，或 YouTube 官方频道 RSS 地址（`https://www.youtube.com/feeds/videos.xml?channel_id=频道ID`）。选择订阅源后可浏览最近条目，并手动刷新；也可在设置中开启每小时自动刷新。
 3. 点击“开始学习”，插件会为该集或视频创建独立笔记并沿用现有导入流程；以后点击“打开学习笔记”会复用原笔记。导入中途失败或取消时，保留笔记草稿以便重试。
 
-订阅与条目清单保存在库内的 `Lingua Study/Subscriptions/subscriptions.json`，学习笔记保存在 `Lingua Study/Subscriptions/Notes`；取消订阅不会删除已创建的学习笔记、字幕或音频缓存。首版仅在电脑端提供此面板，只接受 YouTube 频道 RSS 地址，不支持频道主页、频道搜索、自动后台刷新或在侧栏内播放。
+订阅与条目清单保存在库内的 `Lingua Study/Subscriptions/subscriptions.json`，学习笔记保存在 `Lingua Study/Subscriptions/Notes`；取消订阅不会删除已创建的学习笔记、字幕或音频缓存。此面板仅支持电脑端，只接受 YouTube 频道 RSS 地址，不支持频道主页、频道搜索或在侧栏内播放。自动刷新默认关闭。
+
+### 学习聊天与高亮笔记
+
+- 在 **设置 → 第三方插件 → Lingua Study → 学习聊天** 中选择并配置聊天服务，然后点击右侧栏的学习聊天标签，或运行“打开学习聊天”命令。也可从字幕或知识卡将选中的内容带入对话。对话按学习目标分开，仅保存在本次插件运行期间；发送消息可能产生第三方 API 费用。
+- 在设置中的 **高亮笔记** 页面启用功能并调整颜色类别。选中字幕或学习内容后保存高亮与个人笔记，运行“打开高亮笔记”命令即可在右侧词典视图中回看。高亮数据单独保存在库内，不会覆盖字幕文件。
 
 ### 导入 Podcast
 
@@ -195,7 +204,7 @@ Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的�
 ### 导入本地视频与字幕
 
 1. 打开要放置学习内容的 Markdown 笔记。
-2. 点击左侧原有的 **Lingua Study** 图标并选择“处理当前笔记中的视频链接”。当前笔记有 B站或 YouTube 链接时会继续处理该链接；没有可用链接时会自动打开本地视频导入页面。也可运行命令“从本地视频和字幕创建学习内容”。
+2. 点击左侧的 **Lingua Study** 图标。当前笔记有 B站或 YouTube 链接时会处理该链接；没有可用链接时会打开本地视频导入页面。也可运行命令“从本地视频和字幕创建学习内容”。
 3. 选择一个 MP4 或整个文件夹。插件会优先匹配同目录下名称相同或带 `.en`、`.eng`、`.english` 标记的 SRT/VTT；单个视频模式也可以手动选择其他字幕。
 4. 确认后，插件会把字幕转换为学习用 JSON，并在当前笔记中插入本地播放器。
 
@@ -319,6 +328,7 @@ example.zh-CN.study.json
 - PDF、DOCX、TXT、Markdown 和粘贴文稿都在本地解析；只有图片而没有可选文字的 PDF 需要先进行 OCR
 - 本地 Whisper 对齐或英语音轨识别只会在用户确认后下载固定版本的 Whisper Base English 模型和运行环境；视频、音频和文稿不会离开设备
 - 翻译请求只连接用户配置的百度翻译、DeepSeek、Kimi 或 OpenAI 兼容 HTTPS 服务
+- 学习聊天只在用户发送消息时连接单独配置的 DeepSeek、Kimi 或 OpenAI 兼容 HTTPS 服务，并发送用户问题、当前学习目标、选中的学习材料及本次会话中的有限历史
 - 学习卡请求只发送用户明确选择的字幕句、当前学习目标和本地匹配的词典标签
 - 离线词典查询和系统发音不会发起网络请求
 - 连接测试只发送固定句子 `Thank you for using Lingua Study.`

@@ -69,12 +69,12 @@ test("Podcast RSS 命令创建桌面本地播放器与字幕学习块", async ()
   assert.match(importer, /extractPodcastSourceIdsFromStudyBlocks/u);
 });
 
-test("订阅入口可手动打开，自动侧栏只在启用且布局就绪后显示", async () => {
+test("启动时始终创建订阅侧栏图标，仅在启用设置后自动切换", async () => {
   const [main, settings] = await Promise.all([
     readFile("src/main.ts", "utf8"),
     readFile("src/settings.ts", "utf8")
   ]);
-  assert.match(main, /this\.app\.workspace\.onLayoutReady\(\(\) => \{[\s\S]*?this\.settings\.autoOpenRssSidebar/u);
+  assert.match(main, /this\.app\.workspace\.onLayoutReady\(\(\) => \{[\s\S]*?if \(this\.rssSubscriptionController\) \{[\s\S]*?ensureSideLeaf\(RSS_SUBSCRIPTION_HOME_VIEW_TYPE, "right", \{\s*active: false, split: false, reveal: false\s*\}\);[\s\S]*?if \(this\.settings\.autoOpenRssSidebar\) await this\.openRssSidebar\(\)/u);
   assert.match(main, /this\.app\.workspace\.ensureSideLeaf\(RSS_SUBSCRIPTION_HOME_VIEW_TYPE, "right"/u);
   assert.match(main, /if \(oldLeaf !== leaf\) oldLeaf\.detach\(\)/u);
   assert.match(main, /id: "open-rss-sidebar"/u);
@@ -378,6 +378,9 @@ test("左侧 Logo 提供手动视频创建入口并保留可选自动化", async
   assert.match(source, /addIcon\(LINGUA_STUDY_RIBBON_ICON_ID, LINGUA_STUDY_RIBBON_ICON_SVG\)/u);
   assert.match(source, /this\.addRibbonIcon\(/u);
   assert.match(source, /LINGUA_STUDY_RIBBON_ICON_ID,\s*"Lingua Study"/u);
+  assert.match(source, /LINGUA_STUDY_RIBBON_ICON_ID,\s*"Lingua Study",\s*\(\) => \{ void this\.importVideoFromActiveNote\(\); \}/u);
+  assert.doesNotMatch(source, /menu\.showAtMouseEvent\(event\)/u);
+  assert.match(source, /id: "open-rss-subscriptions"[\s\S]*?this\.openRssSubscriptions\(\)/u);
   assert.match(source, /ribbonLogoMaskUrl/u);
   assert.match(source, /--lingua-study-logo-mask/u);
   assert.match(source, /findSupportedVideoLinksByPriority/u);

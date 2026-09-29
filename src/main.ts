@@ -4,7 +4,6 @@ import {
   MarkdownView,
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
-  Menu,
   Modal,
   normalizePath,
   Notice,
@@ -6940,20 +6939,7 @@ export default class LinguaStudyPlugin extends Plugin {
     this.manualImportRibbonEl = this.addRibbonIcon(
       LINGUA_STUDY_RIBBON_ICON_ID,
       "Lingua Study",
-      (event) => {
-        if (!this.capabilities.desktop) {
-          void this.importVideoFromActiveNote();
-          return;
-        }
-        const menu = new Menu();
-        menu.addItem((item) => item.setTitle("处理当前笔记中的视频链接")
-          .setIcon("video")
-          .onClick(() => { void this.importVideoFromActiveNote(); }));
-        menu.addItem((item) => item.setTitle("在右侧打开 podcast / YouTube 订阅")
-          .setIcon("rss")
-          .onClick(() => { void this.openRssSubscriptions(); }));
-        menu.showAtMouseEvent(event);
-      }
+      () => { void this.importVideoFromActiveNote(); }
     );
     this.manualImportRibbonEl.addClass("lingua-study-ribbon-action");
     this.manualImportRibbonEl.setCssProps({
@@ -6963,14 +6949,18 @@ export default class LinguaStudyPlugin extends Plugin {
     this.addSettingTab(new LinguaStudySettingTab(this.app, this));
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
-        if (this.settings.autoOpenRssSidebar && this.rssSubscriptionController) {
-          await this.openRssSidebar();
+        if (this.rssSubscriptionController) {
+          const { RSS_SUBSCRIPTION_HOME_VIEW_TYPE } = await import("./rss-subscription-view");
+          await this.app.workspace.ensureSideLeaf(RSS_SUBSCRIPTION_HOME_VIEW_TYPE, "right", {
+            active: false, split: false, reveal: false
+          });
+          if (this.settings.autoOpenRssSidebar) await this.openRssSidebar();
         }
         await this.app.workspace.ensureSideLeaf(STUDY_CHAT_VIEW_TYPE, "right", {
           active: false, split: false, reveal: false
         });
       })().catch((error) => {
-        console.warn("Lingua Study: 学习聊天标签页创建失败", error);
+        console.warn("Lingua Study: 右侧栏标签页创建失败", error);
       });
     });
 

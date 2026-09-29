@@ -1594,7 +1594,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "启动时显示订阅侧栏",
-              desc: "开启后立即在右侧显示完整订阅页，以后启动时也会主动打开。关闭后若标签仍在，可手动关闭该标签。",
+              desc: "订阅图标始终显示在右侧。开启后启动时自动切换到订阅页；关闭后只保留图标，不自动切换。",
               visible: () => this.plugin.capabilities.desktop,
               control: {
                 type: "toggle",
