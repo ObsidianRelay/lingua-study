@@ -15,6 +15,8 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal(settings.ytDlpPath, "/opt/homebrew/bin/yt-dlp");
   assert.equal(settings.whisperModelSource, "");
   assert.equal(settings.autoImportPastedVideoLinks, false);
+  assert.equal(settings.autoOpenRssSidebar, false);
+  assert.equal(settings.autoRefreshRssSubscriptions, true);
   assert.equal(settings.translateWholeTranscript, false);
   assert.equal(settings.cacheTranslations, false);
   assert.equal(settings.studyProfile, "cet4");
@@ -24,9 +26,27 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal(settings.interfaceTheme, "classic");
   assert.equal(settings.enableDoubleClickLookup, true);
   assert.equal(settings.enableSelectionTranslation, true);
+  assert.equal(settings.enableHighlights, true);
+  assert.deepEqual(settings.highlightCategories.map(({ name, color }) => ({ name, color })), [
+    { name: "重点表达", color: "#F2C94C" },
+    { name: "句型语法", color: "#56A3FF" },
+    { name: "易错难点", color: "#EB6F92" }
+  ]);
   assert.equal("speechCloudBaseUrl" in settings, false);
   assert.equal("speechCloudModel" in settings, false);
   assert.equal("speechCloudSecretId" in settings, false);
+});
+
+test("订阅侧栏自动显示默认关闭，仅保留明确的布尔设置", () => {
+  assert.equal(sanitizeSettings({}).autoOpenRssSidebar, false);
+  assert.equal(sanitizeSettings({ autoOpenRssSidebar: true }).autoOpenRssSidebar, true);
+  assert.equal(sanitizeSettings({ autoOpenRssSidebar: "true" }).autoOpenRssSidebar, false);
+});
+
+test("订阅每小时自动刷新默认开启且可关闭", () => {
+  assert.equal(sanitizeSettings({}).autoRefreshRssSubscriptions, true);
+  assert.equal(sanitizeSettings({ autoRefreshRssSubscriptions: false }).autoRefreshRssSubscriptions, false);
+  assert.equal(sanitizeSettings({ autoRefreshRssSubscriptions: "false" }).autoRefreshRssSubscriptions, true);
 });
 
 test("备用 Whisper 模型来源只接受 HTTPS 根地址", () => {
@@ -59,6 +79,18 @@ test("划词翻译开关默认开启并保留用户选择", () => {
     sanitizeSettings({ enableSelectionTranslation: "false" }).enableSelectionTranslation,
     true
   );
+});
+
+test("高亮开关和自定义类别兼容旧设置", () => {
+  assert.equal(sanitizeSettings({}).enableHighlights, true);
+  const settings = sanitizeSettings({
+    enableHighlights: false,
+    highlightCategories: [{ id: "writing", name: "写作素材", color: "#123abc" }]
+  });
+  assert.equal(settings.enableHighlights, false);
+  assert.deepEqual(settings.highlightCategories, [
+    { id: "writing", name: "写作素材", color: "#123ABC" }
+  ]);
 });
 
 test("界面主题默认保留经典样式并只接受受支持的选项", () => {

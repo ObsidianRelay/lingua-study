@@ -30,6 +30,11 @@ import {
   MIN_FSRS_REQUEST_RETENTION,
   getDailyReviewSummary
 } from "./vocabulary-core";
+import {
+  MAX_HIGHLIGHT_CATEGORIES,
+  sanitizeHighlightCategories,
+  type HighlightCategory
+} from "./highlight-core";
 
 export {
   DEFAULT_DESKTOP_PLAYER_WIDTH,
@@ -148,6 +153,58 @@ class ClearCustomDictionaryModal extends Modal {
   }
 }
 
+class DeleteHighlightCategoryModal extends Modal {
+  constructor(
+    app: App,
+    private readonly category: HighlightCategory,
+    private readonly alternatives: readonly HighlightCategory[],
+    private readonly usageCount: number,
+    private readonly onConfirm: (replacementId: string | null) => Promise<void>
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText("删除高亮类别");
+    this.contentEl.createEl("p", {
+      text: this.usageCount > 0
+        ? `“${this.category.name}”正在用于 ${this.usageCount.toLocaleString()} 条高亮。请选择替代类别，已有高亮不会被删除。`
+        : `确定删除“${this.category.name}”吗？`
+    });
+    let replacementId: string | null = this.alternatives[0]?.id ?? null;
+    if (this.usageCount > 0) {
+      const label = this.contentEl.createEl("label", { cls: "lingua-highlight-delete-field" });
+      label.createSpan({ text: "迁移到" });
+      const select = label.createEl("select", { attr: { "aria-label": "选择替代高亮类别" } });
+      for (const alternative of this.alternatives) {
+        select.createEl("option", { value: alternative.id, text: alternative.name });
+      }
+      select.addEventListener("change", () => {
+        replacementId = select.value;
+      });
+    }
+    const error = this.contentEl.createDiv({ cls: "lingua-vocabulary-modal-error" });
+    const actions = this.contentEl.createDiv({ cls: "lingua-vocabulary-modal-actions" });
+    actions.createEl("button", { text: "取消" }).addEventListener("click", () => this.close());
+    const remove = actions.createEl("button", { text: "确认删除", cls: "mod-warning" });
+    remove.addEventListener("click", () => {
+      if (this.usageCount > 0 && replacementId === null) {
+        error.setText("请先选择替代类别。");
+        return;
+      }
+      remove.disabled = true;
+      void this.onConfirm(replacementId).then(() => this.close()).catch((caught) => {
+        remove.disabled = false;
+        error.setText(caught instanceof Error ? caught.message : "删除失败，请重试。");
+      });
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
 export class LinguaStudySettingTab extends PluginSettingTab {
   private readonly bilibiliStatusEls = new Set<HTMLElement>();
   private dictionaryUpdatePromptHandled = false;
@@ -159,7 +216,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     this.containerEl.addClass("lingua-study-settings");
   }
 
-  /** 顶层按学习与导入分组；六个原生子页面仍参与 Obsidian 设置搜索。 */
+  /** 顶层按学习与导入分组；各原生子页面仍参与 Obsidian 设置搜索。 */
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [
       {
@@ -225,7 +282,13 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         type: "group",
         heading: "学习与数据",
         cls: "lingua-study-settings-home-group",
-        items: [this.learningPage(), this.translationPage(), this.generalPage()]
+        items: [
+          this.learningPage(),
+          ...(this.plugin.capabilities.desktop ? [this.highlightPage()] : []),
+          this.translationPage(),
+          this.chatPage(),
+          this.generalPage()
+        ]
       },
       {
         type: "group",
@@ -240,6 +303,158 @@ export class LinguaStudySettingTab extends PluginSettingTab {
         items: [this.appearancePage()]
       }
     ];
+  }
+
+  private highlightPage(): SettingDefinitionPage {
+    return {
+      type: "page",
+      name: "高亮笔记",
+      desc: "自定义字幕高亮颜色和含义。",
+      displayValue: () => this.plugin.settings.enableHighlights
+        ? `${this.plugin.settings.highlightCategories.length} 个类别`
+        : "已关闭",
+      items: [
+        {
+          type: "group",
+          heading: "字幕高亮",
+          cls: "lingua-study-settings-section lingua-study-settings-page-highlights",
+          items: [
+            {
+              name: "启用高亮笔记",
+              desc: "在电脑端选择字幕文字后，可添加高亮和个人笔记。",
+              control: {
+                type: "toggle",
+                key: "enableHighlights",
+                defaultValue: DEFAULT_SETTINGS.enableHighlights
+              }
+            },
+            {
+              name: "高亮类别",
+              desc: "类别在整个笔记库中通用；名称就是颜色代表的意义。越靠上，重叠显示优先级越高。",
+              visible: () => this.plugin.settings.enableHighlights,
+              render: (setting) => this.renderHighlightCategories(setting)
+            }
+          ]
+        }
+      ]
+    };
+  }
+
+  private renderHighlightCategories(setting: Setting): void {
+    setting.settingEl.addClass("lingua-highlight-category-setting");
+    setting.controlEl.empty();
+    const list = setting.controlEl.createDiv({ cls: "lingua-highlight-category-list" });
+    const categories = this.plugin.settings.highlightCategories;
+
+    const saveCategories = async (next: HighlightCategory[]): Promise<void> => {
+      const sanitized = sanitizeHighlightCategories(next);
+      if (sanitized.length !== next.length) {
+        throw new Error("类别名称不能重复，颜色必须有效，且名称不能为空。");
+      }
+      await this.plugin.updateSettings({ highlightCategories: sanitized });
+    };
+
+    categories.forEach((category, index) => {
+      const row = list.createDiv({ cls: "lingua-highlight-category-row" });
+      const preview = row.createSpan({ cls: "lingua-highlight-category-preview" });
+      preview.style.setProperty("--lingua-highlight-color", category.color);
+      preview.setAttribute("aria-label", `${category.name}颜色预览`);
+      const color = row.createEl("input", {
+        type: "color",
+        value: category.color,
+        attr: { "aria-label": `修改${category.name}的颜色` }
+      });
+      const name = row.createEl("input", {
+        type: "text",
+        value: category.name,
+        attr: {
+          maxlength: "24",
+          "aria-label": `修改${category.name}的类别名称`
+        }
+      });
+      const saveOne = async (): Promise<void> => {
+        const next = categories.map((item) => item.id === category.id
+          ? { ...item, name: name.value.trim(), color: color.value.toUpperCase() }
+          : { ...item });
+        await saveCategories(next);
+        preview.style.setProperty("--lingua-highlight-color", color.value);
+      };
+      color.addEventListener("input", () => {
+        preview.style.setProperty("--lingua-highlight-color", color.value);
+      });
+      color.addEventListener("change", () => {
+        void saveOne().catch((caught) => {
+          new Notice(caught instanceof Error ? caught.message : "高亮颜色保存失败。", 5_000);
+          this.update();
+        });
+      });
+      name.addEventListener("change", () => {
+        void saveOne().then(() => this.update()).catch((caught) => {
+          new Notice(caught instanceof Error ? caught.message : "高亮类别保存失败。", 5_000);
+          this.update();
+        });
+      });
+
+      const move = (offset: number): void => {
+        const target = index + offset;
+        if (target < 0 || target >= categories.length) return;
+        const next = categories.map((item) => ({ ...item }));
+        [next[index], next[target]] = [next[target], next[index]];
+        void saveCategories(next).then(() => this.update()).catch(() => {
+          new Notice("高亮类别排序保存失败。", 5_000);
+        });
+      };
+      const up = row.createEl("button", { attr: { type: "button", "aria-label": "上移类别" } });
+      up.setText("↑");
+      up.disabled = index === 0;
+      up.addEventListener("click", () => move(-1));
+      const down = row.createEl("button", { attr: { type: "button", "aria-label": "下移类别" } });
+      down.setText("↓");
+      down.disabled = index === categories.length - 1;
+      down.addEventListener("click", () => move(1));
+      const remove = row.createEl("button", {
+        text: "删除",
+        attr: { type: "button", "aria-label": `删除${category.name}` }
+      });
+      remove.disabled = categories.length <= 1;
+      remove.addEventListener("click", () => {
+        const alternatives = categories.filter((item) => item.id !== category.id);
+        void this.plugin.countHighlightsByCategory(category.id).then((usageCount) => {
+          new DeleteHighlightCategoryModal(
+            this.app,
+            category,
+            alternatives,
+            usageCount,
+            async (replacementId) => {
+              // 弹窗打开后可能又有新高亮使用该类别；始终执行迁移可避免竞争造成悬空类别。
+              if (replacementId) {
+                await this.plugin.migrateHighlightCategory(category.id, replacementId);
+              }
+              await saveCategories(alternatives);
+              this.update();
+            }
+          ).open();
+        }).catch((caught) => {
+          new Notice(caught instanceof Error ? caught.message : "无法读取高亮笔记。", 5_000);
+        });
+      });
+    });
+
+    const add = setting.controlEl.createEl("button", {
+      text: "添加类别",
+      cls: "lingua-highlight-category-add",
+      attr: { type: "button" }
+    });
+    add.disabled = categories.length >= MAX_HIGHLIGHT_CATEGORIES;
+    add.addEventListener("click", () => {
+      const id = `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      void saveCategories([
+        ...categories.map((item) => ({ ...item })),
+        { id, name: `自定义类别 ${categories.length + 1}`, color: "#A78BFA" }
+      ]).then(() => this.update()).catch((caught) => {
+        new Notice(caught instanceof Error ? caught.message : "无法添加高亮类别。", 5_000);
+      });
+    });
   }
 
   private appearancePage(): SettingDefinitionPage {
@@ -1072,7 +1287,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
       items: [
         {
           type: "group",
-          heading: "服务选择",
+          heading: "翻译设置",
           cls: "lingua-study-settings-section lingua-study-settings-page-translation",
           items: [
             {
@@ -1111,166 +1326,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
             }
           ]
         },
-        {
-          type: "group",
-          heading: "百度翻译 API",
-          cls: "lingua-study-settings-section",
-          visible: () => this.plugin.settings.translationProvider === "baidu",
-          items: [
-            {
-              name: "API 地址",
-              desc: "固定的百度官方地址。",
-              render: (setting) => {
-                setting.addText((text) => {
-                  text.setValue("https://fanyi-api.baidu.com").setDisabled(true);
-                });
-              }
-            },
-            {
-              name: "百度翻译 AppID",
-              desc: "在百度翻译开放平台获取。",
-              control: {
-                type: "text",
-                key: "baiduAppId",
-                defaultValue: DEFAULT_SETTINGS.baiduAppId,
-                placeholder: "填写 AppID"
-              }
-            },
-            {
-              name: "百度翻译密钥",
-              desc: "保存在 Obsidian 安全凭据库中。",
-              render: (setting) => {
-                new SecretComponent(this.app, setting.controlEl)
-                  .setValue(this.plugin.settings.baiduSecretId)
-                  .onChange(async (value) => {
-                    await this.plugin.updateSettings({ baiduSecretId: value });
-                  });
-              }
-            },
-            {
-              name: "功能范围",
-              desc: "支持句子、整篇字幕和 Markdown 选区；不生成知识卡。"
-            }
-          ]
-        },
-        {
-          type: "group",
-          heading: "Kimi 官方（国内）",
-          cls: "lingua-study-settings-section",
-          visible: () => this.plugin.settings.translationProvider === "kimi",
-          items: [
-            {
-              name: "API 地址",
-              desc: "固定的 Moonshot 国内官方地址。",
-              render: (setting) => {
-                setting.addText((text) => {
-                  text.setValue("https://api.moonshot.cn/v1").setDisabled(true);
-                });
-              }
-            },
-            {
-              name: "模型",
-              desc: "使用 Kimi K2.6。",
-              control: {
-                type: "dropdown",
-                key: "kimiModel",
-                defaultValue: DEFAULT_SETTINGS.kimiModel,
-                options: {
-                  "kimi-k2.6": "Kimi K2.6"
-                }
-              }
-            },
-            {
-              name: "Kimi API Key",
-              desc: "保存在 Obsidian 安全凭据库中。",
-              render: (setting) => {
-                new SecretComponent(this.app, setting.controlEl)
-                  .setValue(this.plugin.settings.kimiSecretId)
-                  .onChange(async (value) => {
-                    await this.plugin.updateSettings({ kimiSecretId: value });
-                  });
-              }
-            }
-          ]
-        },
-        {
-          type: "group",
-          heading: "DeepSeek 官方",
-          cls: "lingua-study-settings-section",
-          visible: () => this.plugin.settings.translationProvider === "deepseek",
-          items: [
-            {
-              name: "API 地址",
-              desc: "固定的 DeepSeek 官方地址。",
-              render: (setting) => {
-                setting.addText((text) => {
-                  text.setValue("https://api.deepseek.com").setDisabled(true);
-                });
-              }
-            },
-            {
-              name: "模型",
-              desc: "Flash 速度更快、成本更低；Pro 能力更强。",
-              control: {
-                type: "dropdown",
-                key: "deepSeekModel",
-                defaultValue: DEFAULT_SETTINGS.deepSeekModel,
-                options: {
-                  "deepseek-v4-flash": "DeepSeek V4 Flash",
-                  "deepseek-v4-pro": "DeepSeek V4 Pro"
-                }
-              }
-            },
-            {
-              name: "DeepSeek API Key",
-              desc: "保存在 Obsidian 安全凭据库中。",
-              render: (setting) => {
-                new SecretComponent(this.app, setting.controlEl)
-                  .setValue(this.plugin.settings.deepSeekSecretId)
-                  .onChange(async (value) => {
-                    await this.plugin.updateSettings({ deepSeekSecretId: value });
-                  });
-              }
-            }
-          ]
-        },
-        {
-          type: "group",
-          heading: "OpenAI 兼容中转站",
-          cls: "lingua-study-settings-section",
-          visible: () => this.plugin.settings.translationProvider === "openai-compatible",
-          items: [
-            {
-              name: "API 地址",
-              desc: "填写 /v1 或完整的 /chat/completions 地址。",
-              control: {
-                type: "text",
-                key: "customBaseUrl",
-                placeholder: "https://example.com/v1"
-              }
-            },
-            {
-              name: "模型名称",
-              desc: "填写中转站提供的模型 ID。",
-              control: {
-                type: "text",
-                key: "customModel",
-                placeholder: "例如 deepseek-v4-flash"
-              }
-            },
-            {
-              name: "中转站 API Key",
-              desc: "单独保存在 Obsidian 安全凭据库中。",
-              render: (setting) => {
-                new SecretComponent(this.app, setting.controlEl)
-                  .setValue(this.plugin.settings.customSecretId)
-                  .onChange(async (value) => {
-                    await this.plugin.updateSettings({ customSecretId: value });
-                  });
-              }
-            }
-          ]
-        },
+        ...this.apiCredentialGroups("translation"),
         {
           type: "group",
           heading: "连接与隐私",
@@ -1307,13 +1363,267 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     };
   }
 
+  private chatPage(): SettingDefinitionPage {
+    return {
+      type: "page",
+      name: "学习聊天",
+      desc: "选择聊天服务并配置 API；模型档位和思考深度在聊天页选择。",
+      displayValue: () => this.chatProviderLabel(),
+      items: [
+        {
+          type: "group",
+          heading: "聊天服务",
+          cls: "lingua-study-settings-section lingua-study-settings-page-chat",
+          items: [
+            {
+              name: "聊天服务",
+              desc: "独立于翻译服务；同一提供商的 API 地址和 Key 共用。发送问题时才会调用 API 并产生费用。",
+              control: {
+                type: "dropdown",
+                key: "chatProvider",
+                defaultValue: DEFAULT_SETTINGS.chatProvider,
+                options: {
+                  disabled: "关闭聊天",
+                  deepseek: "DeepSeek 官方",
+                  kimi: "Kimi 官方（国内）",
+                  "openai-compatible": "OpenAI 兼容中转站"
+                }
+              }
+            }
+          ]
+        },
+        ...this.apiCredentialGroups("chat"),
+        {
+          type: "group",
+          heading: "使用提醒",
+          cls: "lingua-study-settings-section",
+          items: [
+            {
+              name: "隐私与费用",
+              desc: "仅发送当前问题和聊天页显示的学习材料；凭据保存在 Obsidian 安全库中。"
+            }
+          ]
+        }
+      ]
+    };
+  }
+
+  private apiCredentialGroups(purpose: "translation" | "chat"): SettingDefinitionItem[] {
+    const selectedProvider = () => purpose === "translation"
+      ? this.plugin.settings.translationProvider
+      : this.plugin.settings.chatProvider;
+    return [
+      {
+        type: "group",
+        heading: "百度翻译 API",
+        cls: "lingua-study-settings-section",
+        visible: () => selectedProvider() === "baidu",
+        items: [
+          {
+            name: "API 地址",
+            desc: "固定的百度官方地址。",
+            render: (setting) => {
+              setting.addText((text) => {
+                text.setValue("https://fanyi-api.baidu.com").setDisabled(true);
+              });
+            }
+          },
+          {
+            name: "百度翻译 AppID",
+            desc: "在百度翻译开放平台获取。",
+            control: {
+              type: "text",
+              key: "baiduAppId",
+              defaultValue: DEFAULT_SETTINGS.baiduAppId,
+              placeholder: "填写 AppID"
+            }
+          },
+          {
+            name: "百度翻译密钥",
+            desc: "保存在 Obsidian 安全凭据库中。",
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(this.plugin.settings.baiduSecretId)
+                .onChange(async (value) => {
+                  await this.plugin.updateSettings({ baiduSecretId: value });
+                });
+            }
+          },
+          {
+            name: "功能范围",
+            desc: "支持句子、整篇字幕和 Markdown 选区；不生成知识卡。"
+          }
+        ]
+      },
+      {
+        type: "group",
+        heading: "Kimi 官方（国内）",
+        cls: "lingua-study-settings-section",
+        visible: () => selectedProvider() === "kimi",
+        items: [
+          {
+            name: "API 地址",
+            desc: "固定的 Moonshot 国内官方地址。",
+            render: (setting) => {
+              setting.addText((text) => {
+                text.setValue("https://api.moonshot.cn/v1").setDisabled(true);
+              });
+            }
+          },
+          {
+            name: "模型",
+            desc: "使用 Kimi K2.6。",
+            visible: () => purpose === "translation",
+            control: {
+              type: "dropdown",
+              key: "kimiModel",
+              defaultValue: DEFAULT_SETTINGS.kimiModel,
+              options: {
+                "kimi-k2.6": "Kimi K2.6"
+              }
+            }
+          },
+          {
+            name: "Kimi API Key",
+            desc: "保存在 Obsidian 安全凭据库中。",
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(this.plugin.settings.kimiSecretId)
+                .onChange(async (value) => {
+                  await this.plugin.updateSettings({ kimiSecretId: value });
+                });
+            }
+          }
+        ]
+      },
+      {
+        type: "group",
+        heading: "DeepSeek 官方",
+        cls: "lingua-study-settings-section",
+        visible: () => selectedProvider() === "deepseek",
+        items: [
+          {
+            name: "API 地址",
+            desc: "固定的 DeepSeek 官方地址。",
+            render: (setting) => {
+              setting.addText((text) => {
+                text.setValue("https://api.deepseek.com").setDisabled(true);
+              });
+            }
+          },
+          {
+            name: "模型",
+            desc: "Flash 速度更快、成本更低；Pro 能力更强。",
+            visible: () => purpose === "translation",
+            control: {
+              type: "dropdown",
+              key: "deepSeekModel",
+              defaultValue: DEFAULT_SETTINGS.deepSeekModel,
+              options: {
+                "deepseek-v4-flash": "DeepSeek V4 Flash",
+                "deepseek-v4-pro": "DeepSeek V4 Pro"
+              }
+            }
+          },
+          {
+            name: "DeepSeek API Key",
+            desc: "保存在 Obsidian 安全凭据库中。",
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(this.plugin.settings.deepSeekSecretId)
+                .onChange(async (value) => {
+                  await this.plugin.updateSettings({ deepSeekSecretId: value });
+                });
+            }
+          }
+        ]
+      },
+      {
+        type: "group",
+        heading: "OpenAI 兼容中转站",
+        cls: "lingua-study-settings-section",
+        visible: () => selectedProvider() === "openai-compatible",
+        items: [
+          {
+            name: "API 地址",
+            desc: "填写 /v1 或完整的 /chat/completions 地址。",
+            control: {
+              type: "text",
+              key: "customBaseUrl",
+              placeholder: "https://example.com/v1"
+            }
+          },
+          {
+            name: "模型名称",
+            desc: purpose === "chat"
+              ? "填写中转站提供的模型 ID；同一接口用于翻译时也会使用它。"
+              : "填写中转站提供的模型 ID。",
+            control: {
+              type: "text",
+              key: "customModel",
+              placeholder: "例如 deepseek-v4-flash"
+            }
+          },
+          {
+            name: "中转站 API Key",
+            desc: "单独保存在 Obsidian 安全凭据库中。",
+            render: (setting) => {
+              new SecretComponent(this.app, setting.controlEl)
+                .setValue(this.plugin.settings.customSecretId)
+                .onChange(async (value) => {
+                  await this.plugin.updateSettings({ customSecretId: value });
+                });
+            }
+          }
+        ]
+      }
+    ]
+  }
+
   private generalPage(): SettingDefinitionPage {
     return {
       type: "page",
       name: "通用选项",
-      desc: "设置导入方式和翻译缓存。",
-      displayValue: "手动创建与缓存",
+      desc: "设置订阅入口、导入方式和翻译缓存。",
+      displayValue: "订阅与缓存",
       items: [
+        {
+          type: "group",
+          heading: "播客与频道订阅",
+          cls: "lingua-study-settings-section lingua-study-settings-page-general",
+          items: [
+            {
+              name: "启动时显示订阅侧栏",
+              desc: "订阅图标始终显示在右侧。开启后启动时自动切换到订阅页；关闭后只保留图标，不自动切换。",
+              visible: () => this.plugin.capabilities.desktop,
+              control: {
+                type: "toggle",
+                key: "autoOpenRssSidebar",
+                defaultValue: DEFAULT_SETTINGS.autoOpenRssSidebar
+              }
+            },
+            {
+              name: "每小时自动刷新订阅",
+              desc: "插件启动后每隔一小时依次刷新订阅源；启动瞬间不请求网络，失败时保留原内容。",
+              visible: () => this.plugin.capabilities.desktop,
+              control: {
+                type: "toggle",
+                key: "autoRefreshRssSubscriptions",
+                defaultValue: DEFAULT_SETTINGS.autoRefreshRssSubscriptions
+              }
+            },
+            {
+              name: "右侧订阅页",
+              desc: "在右侧查看频道、分类和视频封面，不占用中间的笔记区域。",
+              visible: () => this.plugin.capabilities.desktop,
+              render: (setting) => {
+                setting.addButton((button) => button.setButtonText("立即打开").onClick(() => {
+                  void this.plugin.openRssSubscriptions();
+                }));
+              }
+            }
+          ]
+        },
         {
           type: "group",
           heading: "自动化",
@@ -1412,6 +1722,13 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     return "已关闭";
   }
 
+  private chatProviderLabel(): string {
+    if (this.plugin.settings.chatProvider === "deepseek") return "DeepSeek 官方";
+    if (this.plugin.settings.chatProvider === "kimi") return "Kimi 官方（国内）";
+    if (this.plugin.settings.chatProvider === "openai-compatible") return "OpenAI 兼容中转站";
+    return "已关闭";
+  }
+
   /** 明确读取插件自己的设置，避免把值误写到 Obsidian 的全局配置。 */
   getControlValue(key: string): unknown {
     if (key in this.plugin.settings) {
@@ -1423,89 +1740,98 @@ export class LinguaStudySettingTab extends PluginSettingTab {
   /** 对声明式控件的值做类型校验、清理并保存。 */
   async setControlValue(key: string, value: unknown): Promise<void> {
     if (key === "transcriptFolder" && typeof value === "string") {
-      await this.plugin.updateSettings({ transcriptFolder: sanitizeTranscriptFolder(value) });
-      return;
+      return this.plugin.updateSettings({ transcriptFolder: sanitizeTranscriptFolder(value) });
     }
 
     if (key === "ytDlpPath" && typeof value === "string") {
-      await this.plugin.updateSettings({ ytDlpPath: value.trim() });
-      return;
+      return this.plugin.updateSettings({ ytDlpPath: value.trim() });
     }
 
     if (key === "studyProfile" && isStudyProfile(value)) {
-      await this.plugin.updateSettings({ studyProfile: value });
-      return;
+      return this.plugin.updateSettings({ studyProfile: value });
     }
 
     if (key === "dailyNewWordLimit" && typeof value === "number") {
-      await this.plugin.updateSettings({ dailyNewWordLimit: value });
-      return;
+      return this.plugin.updateSettings({ dailyNewWordLimit: value });
     }
 
     if (key === "fsrsRequestRetention" && typeof value === "number") {
-      await this.plugin.updateSettings({ fsrsRequestRetention: value });
-      return;
+      return this.plugin.updateSettings({ fsrsRequestRetention: value });
     }
 
     if (
       key === "translationProvider" &&
       (value === "disabled" || value === "baidu" || value === "deepseek" || value === "kimi" || value === "openai-compatible")
     ) {
-      await this.plugin.updateSettings({ translationProvider: value });
+      return this.plugin.updateSettings({ translationProvider: value }).then(() => {
+        this.refreshDomState();
+      });
+    }
+
+    if (
+      key === "chatProvider" &&
+      (value === "disabled" || value === "deepseek" || value === "kimi" || value === "openai-compatible")
+    ) {
+      await this.plugin.updateSettings({ chatProvider: value });
       this.refreshDomState();
       return;
     }
 
     if (key === "translateWholeTranscript" && typeof value === "boolean") {
-      await this.plugin.updateSettings({ translateWholeTranscript: value });
-      return;
+      return this.plugin.updateSettings({ translateWholeTranscript: value });
     }
 
     if (key === "enableSelectionTranslation" && typeof value === "boolean") {
-      await this.plugin.updateSettings({ enableSelectionTranslation: value });
-      return;
+      return this.plugin.updateSettings({ enableSelectionTranslation: value });
+    }
+
+    if (key === "enableHighlights" && typeof value === "boolean") {
+      return this.plugin.updateSettings({ enableHighlights: value });
     }
 
     if (key === "baiduAppId" && typeof value === "string") {
-      await this.plugin.updateSettings({ baiduAppId: value.trim() });
-      return;
+      return this.plugin.updateSettings({ baiduAppId: value.trim() });
     }
 
     if (
       key === "deepSeekModel" &&
       (value === "deepseek-v4-flash" || value === "deepseek-v4-pro")
     ) {
-      await this.plugin.updateSettings({ deepSeekModel: value });
-      return;
+      return this.plugin.updateSettings({ deepSeekModel: value });
     }
 
     if (key === "kimiModel" && value === "kimi-k2.6") {
-      await this.plugin.updateSettings({ kimiModel: value });
-      return;
+      return this.plugin.updateSettings({ kimiModel: value });
     }
 
     if (key === "customBaseUrl" && typeof value === "string") {
-      await this.plugin.updateSettings({ customBaseUrl: value.trim() });
-      return;
+      return this.plugin.updateSettings({ customBaseUrl: value.trim() });
     }
 
     if (key === "customModel" && typeof value === "string") {
-      await this.plugin.updateSettings({ customModel: value.trim() });
-      return;
+      return this.plugin.updateSettings({ customModel: value.trim() });
     }
 
     if (key === "autoImportPastedVideoLinks" && typeof value === "boolean") {
-      await this.plugin.updateSettings({ autoImportPastedVideoLinks: value });
+      return this.plugin.updateSettings({ autoImportPastedVideoLinks: value });
+    }
+
+    if (key === "autoOpenRssSidebar" && typeof value === "boolean") {
+      await this.plugin.updateSettings({ autoOpenRssSidebar: value });
+      return;
+    }
+
+    if (key === "autoRefreshRssSubscriptions" && typeof value === "boolean") {
+      await this.plugin.updateSettings({ autoRefreshRssSubscriptions: value });
       return;
     }
 
     if (key === "enableDoubleClickLookup" && typeof value === "boolean") {
-      await this.plugin.updateSettings({ enableDoubleClickLookup: value });
-      return;
+      return this.plugin.updateSettings({ enableDoubleClickLookup: value });
     }
 
     if (key === "cacheTranslations" && typeof value === "boolean") {
-      await this.plugin.updateSettings({ cacheTranslations: value });
+      return this.plugin.updateSettings({ cacheTranslations: value });
     }
   }
 }

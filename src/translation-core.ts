@@ -39,14 +39,15 @@ export interface ValidatedTranslationConfiguration {
 export interface TranslationRequestBody {
   model: string;
   messages: Array<{
-    role: "system" | "user";
+    role: "system" | "user" | "assistant";
     content: string;
   }>;
   stream: false;
   max_tokens: number;
   thinking?: {
-    type: "disabled";
+    type: "enabled" | "disabled";
   };
+  reasoning_effort?: "low" | "high" | "max";
 }
 
 const TRANSLATION_SYSTEM_PROMPT = [
@@ -414,6 +415,10 @@ export function parseTranslationResponse(value: unknown): string {
     "翻译服务没有返回翻译结果。",
     "翻译服务返回了空内容，请稍后重试。"
   );
+}
+
+export function parseChatResponse(value: unknown): string {
+  return parseResponseText(value, "聊天服务没有返回回答。", "聊天服务返回了空内容，请稍后重试。");
 }
 
 /** 读取 OpenAI Chat Completions 的结束原因，用于区分正常结束和输出截断。 */

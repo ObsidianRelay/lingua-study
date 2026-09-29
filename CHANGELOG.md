@@ -2,6 +2,20 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 2.0.0 - 2026-09-29
+
+### Added
+
+- Added a right-sidebar study chat with streaming answers, separate conversations for each learning goal, and optional context from a selected subtitle or knowledge card; chat uses a separately configured AI provider and is off by default
+- Added a desktop RSS subscription panel for public podcasts and official YouTube channel feeds, with colored categories, manual refresh, optional hourly refresh, and dedicated study notes that can be reopened from the feed
+- Added podcast episode import from Apple Podcasts links or public RSS/Atom feeds, using publisher-provided English VTT/SRT transcripts when available and local Whisper Base English otherwise; episode audio is cached outside the vault
+- Added a desktop highlight notebook for selected study text, with configurable color categories, personal notes, and a library for reviewing saved highlights
+
+### Changed
+
+- The left Lingua Study icon now processes the active note directly; the RSS panel remains available from its right-sidebar tab and the command palette
+- The RSS sidebar tab is created on startup, while the existing setting controls whether the panel opens automatically
+
 ## 1.5.4 - 2026-09-24
 
 ### Added

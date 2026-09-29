@@ -515,14 +515,22 @@
   padding: 6px 0;
 }
 
-.evs-segment-action-dock {
+.evs-segment-tool-stack {
   position: sticky;
-  top: calc(50vh - 71px);
+  top: var(--evs-segment-action-top, calc(50vh - 100px));
   z-index: 8;
+  display: grid;
+  width: 38px;
+  margin: 0 8px 0 auto;
+  gap: 7px;
+}
+
+.evs-segment-action-dock {
+  position: static;
   display: flex;
   width: 38px;
   min-height: 142px;
-  margin: 0 8px 0 auto;
+  margin: 0;
   padding: 3px;
   flex-direction: column;
   align-items: center;
@@ -534,12 +542,96 @@
   backdrop-filter: blur(8px);
 }
 
+.evs-highlight-pen-palette {
+  display: grid;
+  width: 38px;
+  grid-template-columns: repeat(3, 9px);
+  justify-content: center;
+  gap: 3px 1px;
+  padding: 4px 3px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--background-primary) 94%, transparent);
+  box-shadow: var(--shadow-s);
+  backdrop-filter: blur(8px);
+}
+
+.evs-highlight-pen-palette[hidden] {
+  display: none !important;
+}
+
+.evs-highlight-pen-color {
+  position: relative;
+  display: grid !important;
+  width: 9px !important;
+  min-width: 9px !important;
+  max-width: 9px !important;
+  height: 9px !important;
+  min-height: 9px !important;
+  max-height: 9px !important;
+  place-items: center;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  border: 1px solid color-mix(in srgb, var(--evs-highlight-pen-color) 72%, #211e1a) !important;
+  border-radius: 50% !important;
+  background: var(--evs-highlight-pen-color) !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+
+.evs-highlight-pen-color:is(:hover, :focus-visible) {
+  transform: scale(1.22);
+  outline: 1px solid var(--text-normal);
+  outline-offset: 1px;
+}
+
+/*
+ * 通用按钮悬停规则会把按钮改成主题强调色；颜色球需要始终显示其类别颜色，
+ * 否则用户在选择前无法确认即将使用的高亮笔。
+ */
+.evs-root .evs-highlight-pen-palette .evs-highlight-pen-color:is(:hover, :focus, :focus-visible, :active) {
+  border-color: color-mix(in srgb, var(--evs-highlight-pen-color) 72%, #211e1a) !important;
+  background: var(--evs-highlight-pen-color) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.evs-highlight-pen-color.is-selected {
+  outline: 1px solid var(--text-normal);
+  outline-offset: 1px;
+}
+
+.evs-highlight-pen-check {
+  display: none;
+  color: #ffffff;
+  font-family: var(--font-interface);
+  font-size: 7px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.evs-highlight-pen-color.is-selected .evs-highlight-pen-check {
+  display: block;
+}
+
+.evs-highlight-pen-palette.is-saving {
+  opacity: 0.66;
+}
+
+.evs-root.is-highlight-pen-active .evs-segment-text,
+.evs-root.is-highlight-pen-active .evs-study-annotatable,
+.evs-root.is-highlight-pen-active .evs-study-annotatable mark,
+.evs-root.is-highlight-pen-active .evs-segment-text :is(.evs-dictionary-word, mark.lingua-transcript-highlight) {
+  cursor: var(--evs-highlight-pen-cursor, crosshair) !important;
+}
+
 /*
  * 操作栏在文档流中保留真实高度，确保 sticky 到达字幕底部时不会越界。
  * 第一条字幕再向上抵消这段占位，因此页面顶部布局和正文空间保持不变。
  */
-.evs-segment-action-dock + .evs-segment {
-  margin-top: -140px;
+.evs-segment-tool-stack + .evs-segment {
+  margin-top: calc(2px - var(--evs-segment-tools-height, 191px));
 }
 
 .evs-transcript-end-spacer {
@@ -1461,7 +1553,7 @@
 
 .lingua-dictionary-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   margin-bottom: 12px;
   padding: 3px;
@@ -1800,6 +1892,12 @@
   line-height: 1.35;
   text-align: left;
   white-space: normal;
+  transform: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .lingua-vocabulary-list-item:hover {
@@ -2632,7 +2730,11 @@ body.theme-dark:not(.is-mobile) :is(
 }
 
 /* 经典主题只借用设置页的卡片排版，颜色和字体仍使用 Obsidian 当前主题。 */
-body:not(.is-mobile) :is(.lingua-study-settings, .setting-page:has(.lingua-study-settings-section)) {
+body:not(.is-mobile) :is(
+  .lingua-study-settings,
+  .setting-page:has(.lingua-study-settings-section),
+  .lingua-study-selection-translation-popover
+) {
   --lingua-paper-bg: var(--background-primary);
   --lingua-paper-card: var(--background-primary);
   --lingua-paper-muted: var(--background-secondary);
@@ -2647,7 +2749,13 @@ body:not(.is-mobile) :is(.lingua-study-settings, .setting-page:has(.lingua-study
   --lingua-paper-serif: var(--font-interface);
 }
 
-body.lingua-study-theme-paper:not(.is-mobile) :is(.evs-root:not(.evs-mobile), .lingua-dictionary-view, .lingua-study-settings, .setting-page:has(.lingua-study-settings-section)) {
+body.lingua-study-theme-paper:not(.is-mobile) :is(
+  .evs-root:not(.evs-mobile),
+  .lingua-dictionary-view,
+  .lingua-study-settings,
+  .setting-page:has(.lingua-study-settings-section),
+  .lingua-study-selection-translation-popover
+) {
   --lingua-paper-bg: color-mix(in srgb, #f3eee4 88%, var(--background-primary) 12%);
   --lingua-paper-card: color-mix(in srgb, #faf7f0 92%, var(--background-primary) 8%);
   --lingua-paper-muted: color-mix(in srgb, #e9e3d7 88%, var(--background-secondary) 12%);
@@ -2667,7 +2775,13 @@ body.lingua-study-theme-paper:not(.is-mobile) :is(.evs-root:not(.evs-mobile), .l
   --text-on-accent: var(--lingua-paper-on-accent);
 }
 
-body.theme-dark.lingua-study-theme-paper:not(.is-mobile) :is(.evs-root:not(.evs-mobile), .lingua-dictionary-view, .lingua-study-settings, .setting-page:has(.lingua-study-settings-section)) {
+body.theme-dark.lingua-study-theme-paper:not(.is-mobile) :is(
+  .evs-root:not(.evs-mobile),
+  .lingua-dictionary-view,
+  .lingua-study-settings,
+  .setting-page:has(.lingua-study-settings-section),
+  .lingua-study-selection-translation-popover
+) {
   --lingua-paper-bg: var(--background-primary);
   --lingua-paper-card: color-mix(in srgb, var(--background-secondary) 76%, var(--background-primary) 24%);
   --lingua-paper-muted: var(--background-secondary);
@@ -2872,14 +2986,20 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-se
   line-height: 1.62;
 }
 
-body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock {
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-tool-stack {
   position: sticky;
-  top: var(--evs-segment-action-top, calc(50vh - 71px));
+  top: var(--evs-segment-action-top, calc(50vh - 100px));
   z-index: 8;
+  width: 38px;
+  margin: 0 8px 0 auto;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock {
+  position: static;
   display: flex;
   width: 38px;
   min-height: 142px;
-  margin: 0 8px 0 auto;
+  margin: 0;
   padding: 3px;
   flex-direction: column;
   align-items: center;
@@ -2891,8 +3011,13 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-se
   backdrop-filter: blur(8px);
 }
 
-body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock + .evs-segment {
-  margin-top: -154px;
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-highlight-pen-palette {
+  border-color: var(--lingua-paper-rule);
+  background: color-mix(in srgb, var(--lingua-paper-card) 94%, transparent);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-tool-stack + .evs-segment {
+  margin-top: calc(2px - var(--evs-segment-tools-height, 191px));
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-transcript-icon-button {
@@ -3064,6 +3189,19 @@ body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-controls {
   grid-template-columns: minmax(0, 1fr) 92px;
   align-items: center;
   gap: 12px;
+}
+
+/* 高亮类别比生词筛选文字更长：单独留出箭头区域，避免“全部类别”和箭头相叠。 */
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-highlight-controls {
+  grid-template-columns: minmax(0, 1fr) 104px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile)
+  .lingua-vocabulary-controls.lingua-highlight-controls .lingua-centered-select,
+body.lingua-study-theme-paper:not(.is-mobile)
+  .lingua-vocabulary-controls.lingua-highlight-controls select {
+  width: 104px;
+  min-width: 104px;
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .lingua-vocabulary-controls input {
@@ -3912,6 +4050,10 @@ body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-translation):
   content: "TRANSLATION";
 }
 
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-chat)::before {
+  content: "STUDY CHAT";
+}
+
 body:not(.is-mobile) .setting-page:has(.lingua-study-settings-page-learning)::before {
   content: "LEARNING & DICTIONARY";
 }
@@ -4097,7 +4239,7 @@ body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox
  */
 body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
   margin-bottom: 18px;
   padding: 0;
@@ -4611,18 +4753,33 @@ body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox
   border: 0;
   border-radius: 999px;
   background-color: var(--lingua-paper-muted);
-  background-image: radial-gradient(circle 15px at center, var(--lingua-paper-accent) 0 100%, transparent 100%);
-  background-repeat: no-repeat;
-  background-position: left center;
-  background-size: 30px 30px;
+  background-image: none;
   box-shadow: inset 0 0 0 1px var(--lingua-paper-accent);
   cursor: pointer;
-  transition: background-position 140ms ease-out;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
 }
 
 body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container::after {
-  content: none;
-  display: none;
+  content: "";
+  position: absolute;
+  top: 0;
+  right: auto;
+  bottom: auto;
+  left: 0;
+  display: block;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--lingua-paper-accent);
+  box-shadow: none;
+  opacity: 1;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transform-origin: center;
+  transition: transform 160ms cubic-bezier(0.2, 0, 0, 1), background-color 160ms ease;
+  will-change: transform;
 }
 
 body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container:hover {
@@ -4631,8 +4788,12 @@ body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox
 
 body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container.is-enabled {
   background-color: var(--lingua-paper-accent);
-  background-image: radial-gradient(circle 15px at center, var(--lingua-paper-card) 0 100%, transparent 100%);
-  background-position: right center;
+  background-image: none;
+}
+
+body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container.is-enabled::after {
+  background-color: var(--lingua-paper-card);
+  transform: translate3d(24px, 0, 0);
 }
 
 body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox-container.is-enabled:hover {
@@ -4755,12 +4916,13 @@ body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-vo
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) {
-  border-color: var(--lingua-paper-line) !important;
+  border-color: var(--lingua-paper-accent, var(--text-normal)) !important;
   background: var(--lingua-paper-muted) !important;
-  background: color-mix(in srgb, var(--lingua-paper-card) 90%, var(--text-normal) 10%) !important;
+  background: color-mix(in srgb, var(--lingua-paper-card) 94%, var(--text-normal) 6%) !important;
   color: var(--text-normal) !important;
-  box-shadow: none;
-  transform: none;
+  outline: none;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-2px);
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) .lingua-vocabulary-list-heading span {
@@ -4811,11 +4973,12 @@ body:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view :is(
 }
 
 body:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) {
-  border-color: var(--background-modifier-border) !important;
-  background: color-mix(in srgb, var(--background-primary) 90%, var(--text-normal) 10%) !important;
+  border-color: var(--text-normal) !important;
+  background: color-mix(in srgb, var(--background-primary) 94%, var(--text-normal) 6%) !important;
   color: var(--text-normal) !important;
-  box-shadow: none !important;
-  transform: none;
+  outline: none;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-2px);
 }
 
 body:not(.is-mobile):not(.lingua-study-theme-paper) .lingua-dictionary-view .lingua-vocabulary-list-item:is(:hover, :focus, :focus-visible) .lingua-vocabulary-list-heading span,
@@ -4928,6 +5091,11 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-centered-select-text {
   pointer-events: none;
 }
 
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-view
+  .lingua-highlight-controls .lingua-centered-select-text {
+  padding-right: 24px;
+}
+
 body:not(.is-mobile) .lingua-dictionary-view .lingua-dictionary-profile .lingua-centered-select-text,
 body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-controls .lingua-centered-select:has(select:hover) .lingua-centered-select-text {
   color: var(--lingua-paper-on-accent) !important;
@@ -4950,16 +5118,16 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-controls .lingua
   max-height: 180px;
   overflow: auto;
   padding: 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  background: var(--background-secondary);
+  border: 1px solid var(--lingua-paper-rule, var(--background-modifier-border));
+  border-radius: 10px;
+  background: var(--lingua-paper-muted, var(--background-secondary));
   line-height: 1.6;
   white-space: pre-wrap;
   user-select: text;
 }
 
 .lingua-study-selection-translation-text.is-result {
-  background: var(--background-primary-alt);
+  background: var(--lingua-paper-muted, var(--background-primary-alt));
 }
 
 .lingua-study-selection-translation-popover {
@@ -4968,10 +5136,10 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-controls .lingua
   max-width: calc(100vw - 16px);
   max-height: min(420px, calc(100vh - 16px));
   overflow: hidden;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 12px;
-  background: var(--background-primary);
-  box-shadow: var(--shadow-l);
+  border: 1px solid var(--lingua-paper-line, var(--background-modifier-border));
+  border-radius: 18px;
+  background: var(--lingua-paper-card, var(--background-primary));
+  box-shadow: 0 14px 36px rgb(0 0 0 / 18%);
   color: var(--text-normal);
 }
 
@@ -4981,32 +5149,2016 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-controls .lingua
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 8px 6px 14px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding: 12px 12px 4px 18px;
+  border-bottom: 0;
   cursor: move;
   touch-action: none;
   user-select: none;
 }
 
 .lingua-study-selection-translation-popover-title {
-  font-size: var(--font-ui-medium);
-  font-weight: var(--font-semibold);
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
 .lingua-study-selection-translation-popover-close {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   flex: 0 0 auto;
+  border: 1px solid var(--lingua-paper-line, var(--background-modifier-border));
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-normal);
 }
 
 .lingua-study-selection-translation-popover-content {
   display: grid;
   max-height: 376px;
-  gap: 8px;
+  gap: 10px;
   overflow-y: auto;
-  padding: 10px 14px 14px;
+  padding: 8px 18px 18px;
 }
 
 .lingua-study-selection-translation-popover-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-start;
   padding-top: 4px;
+}
+
+.lingua-rss-view {
+  padding: 18px;
+  color: var(--text-normal);
+}
+
+.lingua-rss-view h2 {
+  margin: 0 0 8px;
+}
+
+.lingua-rss-intro,
+.lingua-rss-empty,
+.lingua-rss-item-date {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.lingua-rss-add-form {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 22px;
+}
+
+.lingua-rss-add-form input {
+  min-width: 0;
+  flex: 1;
+}
+
+.lingua-rss-section-heading,
+.lingua-rss-source-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lingua-rss-section-heading h3 {
+  min-width: 0;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+
+.lingua-rss-source-actions button {
+  flex: 0 0 auto;
+}
+
+.lingua-rss-feed-list,
+.lingua-rss-item-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.lingua-rss-feed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.lingua-rss-feed.is-selected {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+.lingua-rss-feed-kind {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.lingua-rss-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}
+
+.lingua-rss-item-title {
+  font-weight: var(--font-semibold);
+  overflow-wrap: anywhere;
+}
+
+.lingua-rss-item-status {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
+.lingua-rss-item button {
+  justify-self: start;
+}
+
+.lingua-rss-home {
+  container-type: inline-size;
+  padding: 20px clamp(12px, 2vw, 24px) 36px;
+  color: var(--text-normal);
+  overflow-y: auto;
+}
+
+.lingua-rss-home-header,
+.lingua-rss-toolbar,
+.lingua-rss-source-row,
+.lingua-rss-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lingua-rss-home-header h2 { margin: 0; }
+.lingua-rss-home-header p { margin: 6px 0 0; color: var(--text-muted); }
+.lingua-rss-home-header button { flex: 0 0 auto; }
+
+.lingua-rss-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 22px 0 18px;
+}
+
+/* 经典主题保持原本的分类换行布局。 */
+.lingua-rss-filter-list,
+.lingua-rss-filter-actions { display: contents; }
+
+.lingua-rss-source-tree {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+.lingua-rss-tree-top,
+.lingua-rss-kind-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lingua-rss-tree-top { justify-content: space-between; }
+.lingua-rss-source-tree .lingua-rss-filter-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.lingua-rss-source-tree .lingua-rss-category-refresh-global {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-primary);
+}
+.lingua-rss-tree-all,
+.lingua-rss-kind-button,
+.lingua-rss-tree-feed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  text-align: left;
+}
+.lingua-rss-tree-all { flex: 1 1 auto; }
+.lingua-rss-kind-button { flex: 1 1 auto; font-weight: var(--font-semibold); }
+.lingua-rss-tree-all:hover,
+.lingua-rss-kind-button:hover,
+.lingua-rss-tree-feed:hover,
+.lingua-rss-source-tree .is-active { background: var(--background-modifier-hover); }
+.lingua-rss-kind-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  min-width: 26px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.lingua-rss-kind-toggle .svg-icon { width: 15px; height: 15px; }
+.lingua-rss-kind-children {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  margin: 2px 0 8px 13px;
+  padding-left: 15px;
+  border-left: 1px solid var(--background-modifier-border);
+}
+.lingua-rss-tree-feed-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lingua-rss-tree-feed { flex: 1 1 auto; width: 0; }
+.lingua-rss-tree-feed .svg-icon { flex: 0 0 auto; width: 14px; height: 14px; }
+.lingua-rss-tree-feed-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lingua-rss-tree-count { margin-left: auto; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.lingua-rss-tree-empty { padding: 5px 9px; color: var(--text-muted); font-size: var(--font-ui-small); }
+.lingua-rss-tree-feed .lingua-rss-card-tag { flex: 0 0 auto; font-size: var(--font-ui-smaller); }
+.lingua-rss-tree-feed-content { min-width: 0; padding: 8px 0 12px; }
+.lingua-rss-tree-feed-content .lingua-rss-card-grid { gap: 8px; }
+.lingua-rss-tree-feed-content .lingua-rss-load-more { width: 100%; margin-top: 10px; }
+.lingua-rss-tag-filters { margin: 0 0 10px; color: var(--text-muted); }
+.lingua-rss-tag-filters summary { cursor: pointer; font-size: var(--font-ui-small); }
+.lingua-rss-tag-filters .lingua-rss-categories { margin: 10px 0 0; }
+
+.lingua-rss-category-chip,
+.lingua-rss-card-tag,
+.lingua-rss-sidebar-category {
+  --rss-tag-color: var(--text-muted);
+  color: var(--rss-tag-color);
+  border-color: var(--rss-tag-color);
+}
+
+.lingua-rss-color-red { --rss-tag-color: #c64d58; }
+.lingua-rss-color-orange { --rss-tag-color: #b96729; }
+.lingua-rss-color-yellow { --rss-tag-color: #9d7818; }
+.lingua-rss-color-green { --rss-tag-color: #3c8968; }
+.lingua-rss-color-blue { --rss-tag-color: #4675be; }
+.lingua-rss-color-purple { --rss-tag-color: #9364ac; }
+.lingua-rss-color-gray { --rss-tag-color: var(--text-muted); }
+
+.lingua-rss-category-chip {
+  border: 1px solid var(--rss-tag-color);
+  border-radius: 999px 0 0 999px;
+  background: var(--background-primary);
+  padding: 5px 12px;
+}
+
+.lingua-rss-category-group { display: inline-flex; align-items: stretch; }
+.lingua-rss-category-group .lingua-rss-category-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  background: var(--background-primary);
+}
+.lingua-rss-category-refresh-global { display: none; }
+.lingua-rss-category-refresh .svg-icon { width: 14px; height: 14px; }
+
+.lingua-rss-category-chip.is-active {
+  background: var(--background-modifier-hover);
+  box-shadow: inset 0 0 0 1px var(--rss-tag-color);
+  font-weight: var(--font-semibold);
+}
+
+.lingua-rss-sources {
+  margin-bottom: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 12px 16px;
+}
+
+.lingua-rss-sources summary { cursor: pointer; font-weight: var(--font-semibold); }
+.lingua-rss-source-row { border-top: 1px solid var(--background-modifier-border); padding: 12px 0; flex-wrap: wrap; }
+.lingua-rss-source-info { display: grid; flex: 1 1 200px; min-width: 0; gap: 4px; }
+.lingua-rss-source-info strong { overflow-wrap: anywhere; }
+.lingua-rss-source-info small { color: var(--text-muted); }
+.lingua-rss-source-row select { max-width: 180px; }
+.lingua-rss-toolbar { margin: 4px 0 14px; }
+.lingua-rss-toolbar h3 { margin: 0; }
+.lingua-rss-toolbar select { max-width: 220px; }
+
+.lingua-rss-channel-overview { display: grid; gap: 26px; }
+.lingua-rss-channel-section { min-width: 0; }
+.lingua-rss-channel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.lingua-rss-channel-info { min-width: 0; }
+.lingua-rss-channel-info h4 { margin: 0 0 5px; overflow-wrap: anywhere; }
+.lingua-rss-channel-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-muted); font-size: var(--font-ui-small); }
+.lingua-rss-channel-heading > button { flex-shrink: 0; }
+
+.lingua-rss-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lingua-rss-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}
+
+.lingua-rss-cover {
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.lingua-rss-cover img { width: 100%; height: 100%; object-fit: cover; }
+.lingua-rss-cover[role="button"] { cursor: pointer; }
+.lingua-rss-cover[role="button"]:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+.lingua-rss-card-body { display: grid; gap: 8px; padding: 10px; }
+.lingua-rss-card-title { line-height: 1.4; overflow-wrap: anywhere; }
+.lingua-rss-card-body button.lingua-rss-detail-trigger {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+  text-align: left;
+  white-space: normal;
+  height: auto;
+}
+.lingua-rss-card-body button.lingua-rss-detail-trigger:hover { color: var(--text-accent); }
+.lingua-rss-card-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-muted); font-size: var(--font-ui-small); }
+.lingua-rss-card-tag { border: 1px solid var(--rss-tag-color); border-radius: 999px; padding: 2px 8px; }
+.lingua-rss-paper-only,
+.lingua-rss-card-tag-overview { display: none; }
+.lingua-rss-card-details { display: grid; gap: 8px; }
+.lingua-rss-card-body small { color: var(--text-muted); overflow-wrap: anywhere; }
+.lingua-rss-card-body button { justify-self: start; }
+.lingua-rss-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.lingua-rss-load-more { display: block; margin: 22px auto 0; }
+
+.lingua-rss-detail { max-height: 70vh; overflow-y: auto; }
+.lingua-rss-detail-source { color: var(--text-muted); overflow-wrap: anywhere; }
+.lingua-rss-detail-description { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+
+.lingua-rss-modal { display: grid; gap: 12px; }
+.lingua-rss-modal-form { display: flex; gap: 8px; }
+.lingua-rss-modal-form input { flex: 1; min-width: 0; }
+.lingua-rss-preview { padding: 12px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); overflow-wrap: anywhere; }
+.lingua-rss-preview p { margin: 6px 0; }
+.lingua-rss-preview small { color: var(--text-muted); }
+.lingua-rss-warning { color: var(--text-warning); }
+.lingua-rss-error { color: var(--text-error); }
+.lingua-rss-colors { display: flex; gap: 8px; }
+.lingua-rss-modal button.lingua-rss-color-choice {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--rss-tag-color) !important;
+  box-shadow: none;
+}
+.lingua-rss-modal button.lingua-rss-color-choice:hover {
+  background: var(--rss-tag-color) !important;
+  filter: brightness(1.1);
+}
+.lingua-rss-color-choice.is-selected { outline: 2px solid var(--text-normal); outline-offset: 2px; }
+.lingua-rss-modal-actions { justify-content: flex-end; margin-top: 6px; }
+.lingua-rss-category-manage-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.lingua-rss-category-manage-row > span:nth-child(2) { flex: 1; color: var(--text-muted); }
+.lingua-rss-sidebar { padding: 18px; }
+.lingua-rss-sidebar p { color: var(--text-muted); }
+.lingua-rss-sidebar-category { margin-top: 12px; padding: 6px 10px; border-left: 3px solid var(--rss-tag-color); background: var(--background-secondary); }
+
+@container (max-width: 720px) {
+  .lingua-rss-home-header,
+  .lingua-rss-toolbar { align-items: flex-start; flex-wrap: wrap; }
+}
+
+@container (max-width: 440px) {
+  .lingua-rss-card-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 订阅页：纸感编辑风仅作用于 RSS 视图及其弹窗。 */
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal {
+  --rss-paper-bg: #f8f4ec;
+  --rss-paper-card: #fffcf6;
+  --rss-paper-cover: #f2ecdf;
+  --rss-paper-ink: #25221e;
+  --rss-paper-muted: #7b756b;
+  --rss-paper-line: #b9b2a7;
+  --rss-paper-rule: #ddd5c8;
+  --rss-paper-accent: #25221e;
+  --rss-paper-on-accent: #fffaf1;
+  --rss-paper-serif: "Iowan Old Style", "Baskerville", "Songti SC", "STSong", Georgia, serif;
+  color: var(--rss-paper-ink);
+}
+
+body.theme-dark.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home,
+body.theme-dark.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal {
+  --rss-paper-bg: #25231f;
+  --rss-paper-card: #2d2a25;
+  --rss-paper-cover: #353129;
+  --rss-paper-ink: #eee9de;
+  --rss-paper-muted: #b8b0a3;
+  --rss-paper-line: #706a60;
+  --rss-paper-rule: #4b463e;
+  --rss-paper-accent: #eee9de;
+  --rss-paper-on-accent: #25221e;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home {
+  padding: 12px 14px 30px;
+  background: var(--rss-paper-bg);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-page {
+  min-width: 0;
+  padding: clamp(14px, 2.5vw, 26px);
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 18px;
+  background: var(--rss-paper-bg);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home :is(h2, h3, h4),
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .modal-title,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal h3 {
+  color: var(--rss-paper-ink);
+  font-family: var(--rss-paper-serif);
+  font-weight: 700;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home-header { align-items: flex-start; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home-header h2 { font-size: 1.7em; letter-spacing: .02em; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home-header p {
+  max-width: 44ch;
+  color: var(--rss-paper-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.55;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home button,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal button {
+  box-shadow: none;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home-header .mod-cta,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-actions .lingua-rss-primary-action,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal button.mod-cta,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal-form button,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal-actions button.mod-cta {
+  border: 1px solid var(--rss-paper-accent);
+  border-radius: 999px;
+  background: var(--rss-paper-accent);
+  color: var(--rss-paper-on-accent);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home-header .mod-cta:hover,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-actions .lingua-rss-primary-action:hover,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal button.mod-cta:hover,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal-form button:hover {
+  background: var(--rss-paper-ink);
+  color: var(--rss-paper-on-accent);
+  opacity: .88;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-categories {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: 0;
+  margin: 18px 0 16px;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-source-tree {
+  margin-top: 0;
+  padding: 12px 14px;
+  border-color: var(--rss-paper-line);
+  border-radius: 13px;
+  background: var(--rss-paper-card);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-source-tree .is-active {
+  background: var(--rss-paper-cover);
+  color: var(--rss-paper-ink);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tree-all { background: var(--rss-paper-bg); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-kind-row {
+  border-radius: 8px;
+  background: var(--rss-paper-cover);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-kind-row :is(.lingua-rss-kind-toggle, .lingua-rss-kind-button) {
+  background: transparent;
+  color: var(--rss-paper-ink);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tree-feed {
+  border: 1px solid var(--rss-paper-rule);
+  background: var(--rss-paper-bg);
+  color: var(--rss-paper-ink);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tree-feed:is(:hover, .is-active) {
+  background: var(--rss-paper-cover);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tree-all,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-kind-button { font-family: var(--rss-paper-serif); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-kind-children { border-left-color: var(--rss-paper-rule); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tree-feed-content { border-bottom: 1px solid var(--rss-paper-rule); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tree-count,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tree-empty,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tag-filters { color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-tag-filters .lingua-rss-categories { margin: 10px 0 0; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-filter-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0 4px;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-filter-list .lingua-rss-category-group { flex: 0 0 auto; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-filter-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-chip,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-manage-button,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-refresh {
+  min-height: 34px;
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 999px;
+  background: var(--rss-paper-card);
+  color: var(--rss-paper-ink);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-chip.has-color-dot::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--rss-tag-color);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-count { color: var(--rss-paper-muted); font-size: .88em; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-chip.is-active {
+  border-color: var(--rss-paper-accent);
+  background: var(--rss-paper-accent);
+  box-shadow: none;
+  color: var(--rss-paper-on-accent);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-chip.is-active .lingua-rss-category-count { color: var(--rss-paper-on-accent); opacity: .8; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-refresh-local { display: none; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-refresh-global {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  padding: 5px;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-category-refresh .svg-icon { width: 15px; height: 15px; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-manage-button { margin-left: 0; padding: 5px 13px; white-space: nowrap; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home :is(.lingua-rss-category-chip, .lingua-rss-category-refresh, .lingua-rss-manage-button):hover {
+  border-color: var(--rss-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-sources {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-color: var(--rss-paper-line);
+  border-radius: 13px;
+  background: var(--rss-paper-card);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-sources summary { font-family: var(--rss-paper-serif); font-size: 1.05em; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-source-row { border-top-color: var(--rss-paper-rule); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-source-info small { color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-source-row select,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-toolbar select {
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 999px;
+  background: var(--rss-paper-card);
+  color: var(--rss-paper-ink);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-source-row > button {
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 999px;
+  background: var(--rss-paper-card);
+  color: var(--text-error);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-toolbar { margin: 18px 0 14px; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-toolbar-overview { display: none; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-toolbar h3 { font-size: 1.25em; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-channel-overview { gap: 24px; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-channel-heading { align-items: baseline; margin-bottom: 12px; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-channel-info h4 { display: inline; margin-right: 8px; font-size: 1.25em; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-channel-meta { display: inline-flex; color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-channel-heading .lingua-rss-see-all {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--rss-paper-muted);
+  white-space: nowrap;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-channel-heading .lingua-rss-see-all:hover { color: var(--rss-paper-ink); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-classic-only { display: none; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-only { display: inline; }
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-grid { gap: 12px; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card {
+  display: flex;
+  flex-direction: column;
+  border-color: var(--rss-paper-line);
+  border-radius: 14px;
+  background: var(--rss-paper-card);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-cover { background: var(--rss-paper-cover); color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-cover.is-placeholder::before {
+  content: "▶";
+  margin-right: 6px;
+  font-size: 1.2em;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-body { display: flex; flex: 1; flex-direction: column; gap: 8px; padding: 12px; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-body button.lingua-rss-detail-trigger {
+  color: var(--rss-paper-ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-body button.lingua-rss-detail-trigger:hover { color: var(--rss-tag-color, var(--rss-paper-muted)); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-meta { gap: 6px; color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-color: var(--rss-paper-line);
+  color: var(--rss-paper-ink);
+  white-space: nowrap;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-tag-overview { display: inline-flex; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-tag::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rss-tag-color);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-details {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-height: 18px;
+  margin-bottom: 2px;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-body .lingua-rss-card-date {
+  color: var(--rss-paper-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .82em;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-body .lingua-rss-item-status { color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-body .lingua-rss-item-status.is-imported { color: #46805d; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-body .lingua-rss-item-status.is-incomplete { color: #b34b43; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; width: 100%; margin-top: auto; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-actions button {
+  min-width: 0;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 4px;
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 999px;
+  background: var(--rss-paper-card);
+  color: var(--rss-paper-ink);
+  font-size: 13px;
+  white-space: nowrap;
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-card-actions button:hover { border-color: var(--rss-paper-ink); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home .lingua-rss-load-more {
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 999px;
+  background: var(--rss-paper-card);
+  color: var(--rss-paper-ink);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-empty { color: var(--rss-paper-muted); }
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal {
+  max-width: min(560px, calc(100vw - 32px));
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 18px;
+  background: var(--rss-paper-card);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .modal-title { font-size: 1.35em; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .modal-close-button { color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal :is(.lingua-rss-modal-intro, .lingua-rss-modal-hint, .lingua-rss-detail-source) { color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal-hint { margin: 0; font-size: var(--font-ui-small); line-height: 1.5; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal-form input,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal > input,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal > select {
+  min-height: 36px;
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 999px;
+  background: var(--rss-paper-bg);
+  color: var(--rss-paper-ink);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal-form input { padding: 7px 15px; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-preview { border-color: var(--rss-paper-line); border-radius: 13px; background: var(--rss-paper-bg); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-preview small { color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal-actions > button:not(.mod-cta),
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-category-manage-row > button {
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 999px;
+  background: var(--rss-paper-card);
+  color: var(--rss-paper-ink);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-category-manage-row { padding: 10px 0; border-bottom: 1px solid var(--rss-paper-rule); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-category-manage-row > span:nth-child(2) { color: var(--rss-paper-muted); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-category-manage-row > button:last-child { color: var(--text-error); }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-modal > button.mod-cta { width: 100%; margin-top: 8px; }
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rss-detail-description { color: var(--rss-paper-ink); }
+
+@container (max-width: 440px) {
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-page { padding: 14px; }
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-home-header { align-items: flex-start; flex-wrap: wrap; }
+}
+
+/* Study chat shares the right sidebar with subscriptions and the dictionary. */
+.lingua-study-chat-view {
+  display: flex;
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--text-normal);
+  container-type: inline-size;
+}
+.lingua-study-chat-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  background: var(--background-primary);
+}
+.lingua-study-chat-header {
+  display: flex;
+  min-height: 54px;
+  padding: 8px 14px;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.lingua-study-chat-point-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lingua-study-chat-header h2 { margin: 0; font-size: var(--font-ui-medium); white-space: nowrap; }
+.lingua-study-chat-header .lingua-study-chat-icon-button:nth-of-type(2) { margin-left: auto; }
+.lingua-study-chat-goal {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+.lingua-study-chat-icon-button {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+.lingua-study-chat-icon-button:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.lingua-study-chat-icon-button .svg-icon { width: 18px; height: 18px; }
+.lingua-study-chat-history-drawer {
+  display: flex;
+  position: absolute;
+  z-index: 3;
+  inset: 0 auto 0 0;
+  width: min(300px, 82%);
+  min-width: 0;
+  padding: 12px;
+  flex-direction: column;
+  gap: 10px;
+  border-right: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  box-shadow: var(--shadow-l);
+}
+.lingua-study-chat-history-header { display: flex; align-items: center; justify-content: space-between; }
+.lingua-study-chat-history-new { width: 100%; text-align: left; }
+.lingua-study-chat-history-search { width: 100%; }
+.lingua-study-chat-history-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+.lingua-study-chat-history-scrim {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  background: rgb(0 0 0 / 12%);
+}
+.lingua-study-chat-history-item {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  text-align: left;
+  white-space: normal;
+  background: transparent;
+  box-shadow: none;
+}
+.lingua-study-chat-history-item:hover { background: var(--background-modifier-hover); }
+.lingua-study-chat-history-item.is-current { background: var(--background-modifier-hover); }
+.lingua-study-chat-history-empty { padding: 12px 8px; color: var(--text-muted); font-size: var(--font-ui-small); }
+.lingua-study-chat-history-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lingua-study-chat-history-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+@container (min-width: 800px) {
+  .lingua-study-chat-history-drawer {
+    position: relative;
+    inset: auto;
+    width: 270px;
+    flex: 0 0 270px;
+    box-shadow: none;
+  }
+  .lingua-study-chat-history-scrim { display: none; }
+}
+.evs-root .lingua-study-chat-point-button {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+.evs-root .lingua-study-chat-point-button .svg-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.7;
+}
+.evs-root .lingua-study-chat-point-button:not(:disabled):hover {
+  border-color: transparent !important;
+  background: var(--background-modifier-hover) !important;
+  box-shadow: none;
+  color: var(--text-normal) !important;
+}
+.lingua-study-chat-point-heading .lingua-study-chat-point-button { flex: 0 0 auto; }
+.lingua-study-chat-messages {
+  min-height: 0;
+  padding: 18px max(18px, calc((100% - 760px) / 2));
+  flex: 1;
+  overflow-y: auto;
+}
+.lingua-study-chat-empty {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.lingua-study-chat-empty h3 { margin: 0; color: var(--text-normal); font-size: var(--h2-size); }
+.lingua-study-chat-message {
+  margin: 8px 0;
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+}
+.lingua-study-chat-message.is-user {
+  width: fit-content;
+  max-width: 88%;
+  margin-left: auto;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--background-secondary);
+}
+.lingua-study-chat-speaker { margin-bottom: 4px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.lingua-study-chat-text { white-space: pre-wrap; line-height: 1.55; }
+.lingua-study-chat-message.is-assistant:not(.is-pending) .lingua-study-chat-text {
+  overflow-x: auto;
+  white-space: normal;
+}
+.lingua-study-chat-text.markdown-rendered > :first-child { margin-top: 0; }
+.lingua-study-chat-text.markdown-rendered > :last-child { margin-bottom: 0; }
+.lingua-study-chat-text.markdown-rendered pre { overflow-x: auto; }
+.lingua-study-chat-hint { color: var(--text-muted); font-size: var(--font-ui-small); }
+.lingua-study-chat-error { color: var(--text-error); font-size: var(--font-ui-small); }
+.lingua-study-chat-setup { padding: 8px; border-radius: 8px; background: var(--background-secondary); font-size: var(--font-ui-small); }
+.lingua-study-chat-bottom {
+  width: 100%;
+  padding: 10px max(18px, calc((100% - 760px) / 2)) 12px;
+}
+.lingua-study-chat-form {
+  display: flex;
+  width: 100%;
+  padding: 10px;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-primary);
+}
+.lingua-study-chat-form:focus-within { border-color: var(--interactive-accent); }
+.lingua-study-chat-composer { display: contents; }
+.lingua-study-chat-form textarea {
+  width: 100%;
+  min-height: 70px;
+  max-height: 220px;
+  padding: 4px;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.lingua-study-chat-form textarea:focus { border: 0; box-shadow: none; }
+.lingua-study-chat-form-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.lingua-study-chat-provider { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.lingua-study-chat-model-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.lingua-study-chat-model-select { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; }
+.lingua-study-chat-model-select select { width: auto; min-width: 0; max-width: 125px; padding: 3px 6px; font-size: inherit; text-align: center; text-align-last: center; }
+.lingua-study-chat-form-footer > .lingua-study-chat-icon-button { margin-left: auto; flex-shrink: 0; }
+.lingua-study-chat-form-footer .lingua-study-chat-icon-button:not(:disabled) {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.lingua-study-chat-attachment { display: flex; min-width: 0; align-items: center; gap: 4px; }
+.lingua-study-chat-context-chip {
+  max-width: calc(100% - 36px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-ui-smaller);
+}
+.lingua-study-chat-attachment .lingua-study-chat-icon-button { width: 26px; height: 26px; min-width: 26px; }
+.lingua-study-chat-context-preview {
+  max-height: 110px;
+  padding: 8px;
+  overflow-y: auto;
+  border-radius: 7px;
+  background: var(--background-secondary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--font-ui-small);
+}
+.lingua-study-chat-hint { margin-top: 6px; line-height: 1.4; font-size: var(--font-ui-smaller); }
+@container (max-width: 500px) {
+  .lingua-study-chat-header .lingua-study-chat-goal { display: none; }
+}
+
+/* Learning chat paper layout. Keep the classic theme and mobile view unchanged. */
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-view {
+  --chat-paper-bg: #f7f3e9;
+  --chat-paper-surface: #fdfbf6;
+  --chat-paper-muted: #e8e2d4;
+  --chat-paper-rule: #d9d0bd;
+  --chat-paper-ink: #211e1a;
+  --chat-paper-subtle: #827e75;
+  --chat-paper-highlight: #f0dfa6;
+  --chat-paper-serif: "Iowan Old Style", "Baskerville", "Songti SC", "STSong", Georgia, serif;
+  border: 1px solid var(--chat-paper-rule);
+  border-radius: 14px;
+  background: var(--chat-paper-bg);
+  color: var(--chat-paper-ink);
+}
+
+body.theme-dark.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-view {
+  --chat-paper-bg: var(--background-primary);
+  --chat-paper-surface: color-mix(in srgb, var(--background-secondary) 65%, var(--background-primary));
+  --chat-paper-muted: var(--background-secondary);
+  --chat-paper-rule: var(--background-modifier-border);
+  --chat-paper-ink: var(--text-normal);
+  --chat-paper-subtle: var(--text-muted);
+  --chat-paper-highlight: color-mix(in srgb, #a38232 28%, var(--background-secondary));
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-main {
+  background: var(--chat-paper-bg);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-header {
+  min-height: 62px;
+  padding: 12px 18px;
+  border-bottom-color: var(--chat-paper-rule);
+  gap: 10px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-header h2,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-header strong,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-empty h3 {
+  color: var(--chat-paper-ink);
+  font-family: var(--chat-paper-serif);
+  font-weight: 700;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-header h2 {
+  font-size: clamp(18px, 1.5em, 23px);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-goal {
+  display: block;
+  max-width: 46%;
+  padding: 6px 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--chat-paper-muted);
+  color: var(--chat-paper-ink);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-icon-button {
+  color: var(--chat-paper-subtle);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-icon-button:hover {
+  background: var(--chat-paper-muted);
+  color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) :is(.lingua-study-chat-header, .lingua-study-chat-history-header) .lingua-study-chat-icon-button,
+body.lingua-study-theme-paper:not(.is-mobile) :is(.lingua-study-chat-header, .lingua-study-chat-history-header) .lingua-study-chat-icon-button:hover {
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) :is(.lingua-study-chat-header, .lingua-study-chat-history-header) .lingua-study-chat-icon-button:hover {
+  color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-icon-button:focus-visible,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-item:focus-visible,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-new:focus-visible {
+  outline: 2px solid var(--chat-paper-ink);
+  outline-offset: 2px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-messages {
+  padding: 24px max(18px, calc((100% - 760px) / 2)) 36px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-empty {
+  color: var(--chat-paper-subtle);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-message {
+  margin: 12px 0 22px;
+  padding: 0;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-speaker {
+  margin-bottom: 7px;
+  color: var(--chat-paper-subtle);
+  font-size: var(--font-ui-smaller);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-message.is-user {
+  max-width: min(88%, 650px);
+  border-radius: 0;
+  background: transparent;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-message.is-user .lingua-study-chat-speaker {
+  text-align: right;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-message.is-user .lingua-study-chat-text {
+  padding: 11px 15px;
+  border-radius: 12px;
+  background: var(--chat-paper-muted);
+  color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-message.is-assistant .lingua-study-chat-text {
+  padding: 18px 20px;
+  border: 1px solid var(--chat-paper-rule);
+  border-radius: 12px;
+  background: var(--chat-paper-surface);
+  color: var(--chat-paper-ink);
+  line-height: 1.68;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-text.markdown-rendered :is(h1, h2, h3, h4) {
+  color: var(--chat-paper-ink);
+  font-family: var(--chat-paper-serif);
+  line-height: 1.35;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-text.markdown-rendered :is(h1, h2, h3, h4):not(:first-child) {
+  margin-top: 1.25em;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-text.markdown-rendered hr {
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--chat-paper-rule);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-text.markdown-rendered table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-text.markdown-rendered :is(th, td) {
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--chat-paper-rule);
+  background: transparent;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-text.markdown-rendered th {
+  color: var(--chat-paper-ink);
+  font-family: var(--font-monospace);
+  font-size: .9em;
+  font-weight: 700;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-text.markdown-rendered :is(blockquote:last-child, .callout[data-callout="tip"], .callout[data-callout="important"]) {
+  margin: 18px 0 0;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--chat-paper-highlight);
+  color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-bottom {
+  padding: 14px max(18px, calc((100% - 760px) / 2)) 16px;
+  border-top: 1px solid var(--chat-paper-rule);
+  background: var(--chat-paper-bg);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-form,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-form:focus-within {
+  padding: 0;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-attachment {
+  width: 100%;
+  padding: 3px 5px 3px 11px;
+  border-radius: 8px;
+  background: var(--chat-paper-muted);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-context-chip {
+  flex: 1;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--chat-paper-subtle);
+  text-align: left;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-attachment .lingua-study-chat-icon-button {
+  color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-context-preview {
+  border: 1px solid var(--chat-paper-rule);
+  background: var(--chat-paper-surface);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-composer {
+  display: flex;
+  min-width: 0;
+  padding: 10px;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid var(--chat-paper-rule);
+  border-radius: 12px;
+  background: var(--chat-paper-surface);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-composer:focus-within {
+  border-color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-form textarea {
+  min-height: 52px;
+  padding: 3px 5px;
+  color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-composer textarea,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-composer textarea:is(:hover, :focus, :focus-visible) {
+  border-color: transparent !important;
+  outline: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-form textarea::placeholder {
+  color: var(--chat-paper-subtle);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-provider {
+  max-width: 100%;
+  padding: 5px 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--chat-paper-muted);
+  color: var(--chat-paper-subtle);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-model-select {
+  color: var(--chat-paper-subtle);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-model-select select,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-model-select select:is(:hover, :focus) {
+  border: 1px solid var(--chat-paper-rule);
+  border-radius: 999px;
+  background-color: var(--chat-paper-muted) !important;
+  color: var(--chat-paper-ink);
+  box-shadow: none !important;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-form-footer .lingua-study-chat-icon-button:not(:disabled) {
+  background: var(--chat-paper-ink);
+  color: var(--chat-paper-surface);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-form-footer .lingua-study-chat-icon-button:disabled {
+  background: var(--chat-paper-muted);
+  color: var(--chat-paper-subtle);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-hint {
+  margin-top: 8px;
+  color: var(--chat-paper-subtle);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-setup {
+  background: var(--chat-paper-muted);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-drawer {
+  position: absolute;
+  z-index: 3;
+  inset: 0 auto 0 0;
+  width: min(300px, 88%);
+  padding: 18px 14px;
+  flex: none;
+  border-right: 1px solid var(--chat-paper-rule);
+  background: var(--chat-paper-bg);
+  box-shadow: 8px 0 24px rgb(33 30 26 / 8%);
+  animation: lingua-chat-history-in 180ms ease-out;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-header strong {
+  font-size: 20px;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-new {
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--chat-paper-muted);
+  box-shadow: none;
+  color: var(--chat-paper-ink);
+  text-align: center;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-search {
+  min-height: 38px;
+  border: 1px solid var(--chat-paper-rule);
+  border-radius: 9px;
+  background: var(--chat-paper-surface);
+  color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-item {
+  padding: 11px 10px;
+  border-radius: 9px;
+  color: var(--chat-paper-ink);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-item:is(:hover, .is-current) {
+  background: var(--chat-paper-muted);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-detail,
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-empty {
+  color: var(--chat-paper-subtle);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-scrim {
+  display: block;
+  background: rgb(33 30 26 / 32%);
+}
+
+@keyframes lingua-chat-history-in {
+  from { transform: translateX(-12px); opacity: .5; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-history-drawer {
+    animation: none;
+  }
+}
+
+@container (max-width: 440px) {
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-header {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-header .lingua-study-chat-goal {
+    max-width: 100%;
+  }
+
+  body.lingua-study-theme-paper:not(.is-mobile) .lingua-study-chat-message.is-assistant .lingua-study-chat-text {
+    padding: 14px;
+  }
+}
+
+/*
+ * 字幕高亮只装饰渲染结果，不改变字幕文件中的原始文字。
+ * 带上播放器容器和 mark 元素，提高优先级，避免 Obsidian 的全局 mark
+ * 规则在非悬停状态下把用户选择的类别颜色覆盖为默认黄色。
+ */
+.evs-root mark.lingua-transcript-highlight {
+  padding: 0;
+  border-radius: 0;
+  background: var(--lingua-highlight-background, linear-gradient(
+      to bottom,
+      transparent 4%,
+      color-mix(in srgb, var(--lingua-highlight-color, #f2c94c) 34%, transparent) 10%,
+      color-mix(in srgb, var(--lingua-highlight-color, #f2c94c) 34%, transparent) 90%,
+      transparent 96%
+    ));
+  color: inherit;
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.evs-root mark.lingua-transcript-highlight:hover,
+.evs-root mark.lingua-transcript-highlight:focus-visible {
+  background: var(--lingua-highlight-background, linear-gradient(
+      to bottom,
+      transparent 4%,
+      color-mix(in srgb, var(--lingua-highlight-color, #f2c94c) 34%, transparent) 10%,
+      color-mix(in srgb, var(--lingua-highlight-color, #f2c94c) 34%, transparent) 90%,
+      transparent 96%
+    ));
+  box-shadow: none;
+}
+
+.evs-root:not(.evs-highlights-enabled) mark.lingua-transcript-highlight,
+.evs-root:not(.evs-highlights-enabled) mark.lingua-transcript-highlight:hover,
+.evs-root:not(.evs-highlights-enabled) mark.lingua-transcript-highlight:focus-visible {
+  background: transparent;
+  box-shadow: none;
+  cursor: text;
+}
+
+.lingua-highlight-editor,
+.lingua-highlight-editor-field {
+  display: grid;
+  gap: 6px;
+}
+
+.lingua-highlight-editor {
+  padding-top: 4px;
+}
+
+.lingua-highlight-editor-field > span {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.lingua-highlight-detail .lingua-highlight-editor-field {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.lingua-highlight-editor-field textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-height: 86px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--lingua-paper-rule, var(--background-modifier-border));
+  border-radius: 10px;
+  background-color: var(--lingua-paper-muted, var(--background-secondary));
+  color: var(--text-normal);
+  resize: vertical;
+}
+
+/* Obsidian 与外观主题会在 hover/focus 时重新设置表单底色；保持笔记框与当前 Lingua 主题一致。 */
+.lingua-study-selection-translation-popover
+  .lingua-highlight-editor-field textarea:is(:hover, :focus, :focus-visible),
+.lingua-dictionary-view
+  .lingua-highlight-detail
+  .lingua-highlight-editor-field textarea:is(:hover, :focus, :focus-visible) {
+  background-color: var(--lingua-paper-muted, var(--background-secondary)) !important;
+  color: var(--text-normal);
+}
+
+/* 焦点提示画在输入框内部，避免滚动容器裁掉左侧外扩阴影。 */
+.lingua-dictionary-view
+  .lingua-highlight-detail
+  .lingua-highlight-editor-field textarea:is(:focus, :focus-visible) {
+  border-color: var(--lingua-paper-line, var(--background-modifier-border)) !important;
+  outline: none !important;
+  box-shadow: inset 0 0 0 1px var(--lingua-paper-rule, var(--background-modifier-border)) !important;
+}
+
+.lingua-study-selection-translation-popover
+  .lingua-highlight-editor > .lingua-highlight-editor-field:last-child {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--lingua-paper-rule, var(--background-modifier-border));
+}
+
+.lingua-highlight-category-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.lingua-highlight-category-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.lingua-highlight-category-option {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--lingua-highlight-color, #f2c94c) 72%, var(--text-normal));
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--lingua-paper-card, var(--background-primary)) 92%,
+    var(--lingua-highlight-color, #f2c94c) 8%
+  );
+  color: var(--text-normal);
+}
+
+.lingua-highlight-category-option:hover,
+.lingua-highlight-category-option:focus-visible,
+.lingua-highlight-category-option.is-selected {
+  border-color: color-mix(in srgb, var(--lingua-highlight-color, #f2c94c) 82%, var(--text-normal));
+  background: color-mix(
+    in srgb,
+    var(--lingua-paper-card, var(--background-primary)) 78%,
+    var(--lingua-highlight-color, #f2c94c) 22%
+  );
+  color: var(--text-normal);
+}
+
+.lingua-highlight-category-option.is-selected {
+  box-shadow: 0 0 0 1px var(--lingua-highlight-color, #f2c94c);
+}
+
+.lingua-highlight-category-option-swatch {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1px solid color-mix(in srgb, var(--lingua-highlight-color, #f2c94c) 76%, black);
+  border-radius: 5px;
+  background: var(--lingua-highlight-color, #f2c94c);
+}
+
+.lingua-highlight-category-option-name {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+}
+
+body.lingua-study-theme-paper:not(.is-mobile)
+  .lingua-study-selection-translation-popover-title {
+  font-family: var(--lingua-paper-serif);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile)
+  .lingua-study-selection-translation-popover .lingua-highlight-category-option {
+  flex: 1 1 104px;
+  justify-content: center;
+}
+
+.lingua-highlight-category-setting > .setting-item-control {
+  display: grid;
+  width: min(100%, 520px);
+  gap: 10px;
+}
+
+.lingua-highlight-category-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lingua-highlight-category-row {
+  display: grid;
+  grid-template-columns: 22px 38px minmax(110px, 1fr) 34px 34px auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.lingua-highlight-category-row input[type="color"] {
+  width: 38px;
+  height: 32px;
+  padding: 2px;
+}
+
+.lingua-highlight-category-preview,
+.lingua-highlight-swatch {
+  display: inline-block;
+  border: 1px solid color-mix(in srgb, var(--lingua-highlight-color, #f2c94c) 76%, black);
+  background: var(--lingua-highlight-color, #f2c94c);
+}
+
+.lingua-highlight-category-preview {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+
+.lingua-highlight-category-add {
+  justify-self: start;
+}
+
+.lingua-highlight-delete-field {
+  display: grid;
+  gap: 6px;
+  margin-block: 12px;
+}
+
+.lingua-highlight-results {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.lingua-highlight-card {
+  display: grid;
+  width: 100%;
+  height: auto !important;
+  max-height: none;
+  gap: 6px;
+  padding: 11px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  overflow: hidden;
+  text-align: left;
+  white-space: normal;
+}
+
+.lingua-highlight-library-summary {
+  display: flex;
+  min-height: 28px;
+  margin-top: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.lingua-highlight-sort {
+  min-height: 28px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+  font: inherit;
+}
+
+.lingua-highlight-card:hover {
+  border-color: var(--interactive-accent);
+  background: var(--background-secondary);
+}
+
+.lingua-highlight-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.lingua-highlight-card-categories,
+.lingua-highlight-card-category {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.lingua-highlight-card-categories {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+}
+
+.lingua-highlight-source-kind {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.lingua-highlight-card-category {
+  gap: 5px;
+}
+
+.lingua-highlight-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+
+.lingua-highlight-category-name {
+  font-weight: var(--font-semibold);
+}
+
+.lingua-highlight-time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.lingua-highlight-quote {
+  font-weight: var(--font-semibold);
+  line-height: 1.5;
+}
+
+.lingua-highlight-note,
+.lingua-highlight-sentence {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lingua-highlight-note {
+  display: flex;
+  padding: 9px 10px;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 9px;
+  background: var(--lingua-paper-muted, var(--background-secondary));
+  color: var(--text-muted);
+  -webkit-line-clamp: initial;
+}
+
+.lingua-highlight-note-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--text-faint);
+}
+
+.lingua-highlight-note-icon .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.lingua-highlight-note-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lingua-highlight-source,
+.lingua-highlight-status {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lingua-highlight-status.is-warning {
+  color: var(--text-warning);
+}
+
+.lingua-highlight-detail {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.lingua-highlight-card-actions {
+  display: flex;
+  margin-top: 4px;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.lingua-highlight-stack-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lingua-highlight-stack-item {
+  display: grid;
+  width: 100%;
+  height: auto;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--lingua-paper-rule, var(--background-modifier-border));
+  border-radius: 10px;
+  background: var(--lingua-paper-muted, var(--background-secondary));
+  color: var(--text-normal);
+  text-align: left;
+  white-space: normal;
+}
+
+.lingua-highlight-stack-item:is(:hover, :focus-visible) {
+  border-color: var(--lingua-paper-accent, var(--interactive-accent));
+  background: var(--lingua-paper-muted, var(--background-secondary));
+  color: var(--text-normal);
+  box-shadow: 0 0 0 1px var(--lingua-paper-accent, var(--interactive-accent));
+  transform: none;
+}
+
+.lingua-highlight-stack-categories,
+.lingua-highlight-stack-category {
+  display: flex;
+  align-items: center;
+}
+
+.lingua-highlight-stack-categories {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lingua-highlight-stack-category {
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+}
+
+.lingua-highlight-stack-category .lingua-highlight-category-option-swatch {
+  width: 13px;
+  height: 13px;
+  flex-basis: 13px;
+  border-radius: 4px;
+}
+
+.lingua-highlight-stack-quote {
+  font-weight: var(--font-semibold);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lingua-highlight-stack-note {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* 标注库复用查词、生词本与今日复习的页面骨架，仅定义列表内部样式。 */
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-library-summary {
+  color: var(--lingua-paper-secondary-text, var(--text-muted));
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-sort,
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-sort:is(:hover, :focus-visible) {
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  box-shadow: none !important;
+  transform: none;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card {
+  gap: 9px;
+  padding: 14px;
+  border-color: var(--lingua-paper-line, var(--background-modifier-border)) !important;
+  border-radius: 12px;
+  background: var(--lingua-paper-card, var(--background-primary)) !important;
+  color: var(--text-normal) !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  transform: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card:is(:hover, :focus-visible) {
+  border-color: var(--lingua-paper-accent, var(--text-normal)) !important;
+  background: var(--lingua-paper-muted, var(--background-secondary)) !important;
+  background: color-mix(
+    in srgb,
+    var(--lingua-paper-card, var(--background-primary)) 94%,
+    var(--text-normal) 6%
+  ) !important;
+  color: var(--text-normal) !important;
+  outline: none;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-2px);
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card.is-selected {
+  border-color: var(--lingua-paper-accent, var(--text-normal)) !important;
+  background: var(--lingua-paper-card, var(--background-primary)) !important;
+  color: var(--text-normal) !important;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--lingua-paper-rule, var(--background-modifier-border)) !important;
+  transform: none;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card-heading {
+  color: var(--text-muted) !important;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card-category {
+  gap: 6px;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-swatch {
+  width: 9px;
+  height: 9px;
+  border-width: 1px;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-category-name {
+  font-weight: 500;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-quote {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-family: var(--lingua-paper-serif, var(--font-text));
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-note {
+  background: var(--lingua-paper-muted, var(--background-secondary));
+  color: var(--text-muted) !important;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-source {
+  color: var(--lingua-paper-secondary-text, var(--text-faint)) !important;
+  font-size: var(--font-ui-smaller);
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card-actions button,
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-detail-back {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--lingua-paper-line, var(--background-modifier-border)) !important;
+  border-radius: 999px;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  box-shadow: none !important;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card-actions button:is(:hover, :focus-visible),
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-detail-back:is(:hover, :focus-visible) {
+  border-color: var(--lingua-paper-accent, var(--text-normal)) !important;
+  background: var(--lingua-paper-muted, var(--background-secondary)) !important;
+  color: var(--text-normal) !important;
+  transform: none;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card-actions button.mod-warning {
+  border-color: var(--lingua-paper-danger, var(--text-error)) !important;
+  color: var(--lingua-paper-danger, var(--text-error)) !important;
+}
+
+/* 可点击标注卡片需要隔离 Obsidian 主题对普通交互项的强调色。 */
+body:not(.is-mobile) .lingua-dictionary-view .lingua-highlight-card {
+  --button-bg-color: var(--background-primary) !important;
+  --button-text-color: var(--text-normal) !important;
+  background: var(--background-primary) !important;
+  color: var(--text-normal) !important;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view .lingua-highlight-card:is(:hover, :focus, :focus-visible) {
+  border-color: var(--background-modifier-border) !important;
+  background: color-mix(in srgb, var(--background-primary) 90%, var(--text-normal) 10%) !important;
+  color: var(--text-normal) !important;
+  box-shadow: none !important;
+  transform: none;
+}
+
+body:not(.is-mobile) .lingua-dictionary-view .lingua-highlight-card:is(:hover, :focus, :focus-visible) :is(
+  .lingua-highlight-card-heading,
+  .lingua-highlight-sentence,
+  .lingua-highlight-source
+) {
+  color: var(--text-muted) !important;
+}
+
+@media (max-width: 700px) {
+  .lingua-highlight-category-row {
+    grid-template-columns: 22px 38px minmax(90px, 1fr);
+  }
+
+  .lingua-highlight-category-row button {
+    grid-row: 2;
+  }
 }

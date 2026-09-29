@@ -2,10 +2,10 @@
 
 [简体中文](./README.md) | [English](./README.en.md)
 
-Turn English YouTube and Bilibili videos into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
+Turn English YouTube and Bilibili videos, plus public podcast episodes, into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 1.5.4 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 2.0.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
 ## Join the QQ Group
 
@@ -14,7 +14,11 @@ Scan the QR code below to join the Lingua Study QQ group:
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 124526985" width="320"></p>
 <p align="center"><strong>QQ group number: 124526985</strong></p>
 
-## Recent updates (1.3.0–1.5.4)
+## Recent updates (1.3.0–2.0.0)
+
+- **Study chat**: discuss selected transcript or study-card text in a right-sidebar chat with separate in-session conversations for each study profile; configure a chat provider separately
+- **RSS subscriptions**: browse podcasts and YouTube channels by category, refresh feeds, and create study notes that can be reopened from the right sidebar
+- **Highlight notebook**: save colored highlights and personal notes from study text and review them in the highlight library
 
 - **Whisper model download source**: keep Hugging Face as the default or enter a trusted compatible HTTPS source when the official host is unreachable
 - **Local Bilibili transcription**: on desktop, generate English subtitles with Whisper Base English for a cacheable English-language video without usable English captions after confirming the model download; retry from the existing player if transcription is interrupted
@@ -42,7 +46,7 @@ Scan the QR code below to join the Lingua Study QQ group:
 
 - Embedded YouTube player using the privacy-enhanced `youtube-nocookie.com` domain
 - Local cached Bilibili playback with an optional cache folder outside the vault and Bilibili's official external player as a fallback
-- A dedicated left-ribbon Lingua Study logo for manually importing a YouTube or Bilibili link from the active note
+- A dedicated left-ribbon Lingua Study logo that imports a video link from the active note; open RSS subscriptions from the right-sidebar tab or command palette
 - Optional automatic import after pasting one standalone video link, disabled by default
 - A settings-page update check against the latest official GitHub Release, opening the plugin page inside Obsidian only when a newer version is available
 - Direct Bilibili English subtitle import, with an isolated in-Obsidian login only when Bilibili requires it
@@ -53,6 +57,7 @@ Scan the QR code below to join the Lingua Study QQ group:
 - Local SRT/VTT import when public captions cannot be fetched
 - Desktop import for one local MP4 or a folder of MP4 files, with automatic same-name SRT/VTT matching
 - A follow-up **Add transcript** entry on player-only Bilibili blocks
+- Paste an Apple Podcasts show link to import a public podcast; RSS and Atom remain supported for advanced use, with publisher-provided English VTT/SRT preferred over desktop-local Whisper Base English
 - Editable PDF, DOCX, TXT, Markdown, and pasted bilingual transcript import
 - Optional local Whisper Base English alignment that keeps media and transcripts on the device
 - Play, pause, seek backward or forward by five seconds
@@ -79,7 +84,7 @@ The version check requests only the latest official Release `manifest.json` from
 - Obsidian 1.13.0 or later
 - Obsidian desktop app
 - A YouTube or public Bilibili video available in your current network environment
-- An API key only if you want to use translation
+- An API key only if you want to use AI translation or study chat
 - Optional: a current `yt-dlp` installation for the more reliable desktop fallback
 
 ## Installation
@@ -142,6 +147,23 @@ If Hugging Face is unreachable, enter a trusted HTTPS model-host root URL in **S
 After a player-only block is created, the original visible Bilibili link is removed while surrounding note text is retained. A compact caption icon remains next to the source-video button so that SRT/VTT or a creator-provided PDF, DOCX, TXT, Markdown, or pasted transcript can be added later. Imported Chinese is stored as the corresponding local translation without calling the translation API.
 
 The video cache directory can be opened from **Settings → Community plugins → Lingua Study → 哔哩哔哩视频与登录 → 打开缓存文件夹**. Cached video is outside the Obsidian vault and is not managed by Obsidian Sync. The generated transcript JSON remains in the configured transcript folder inside the vault. The Bilibili login cookie remains in Electron's isolated persistent session and is not written into notes, transcript files, plugin settings, or Obsidian Sync. It can be cleared from the same settings section.
+
+### Podcast and YouTube subscriptions
+
+Open the **Lingua Study subscriptions** tab in the right sidebar, or run **在右侧打开 podcast / YouTube 订阅** from the command palette. Add a public podcast RSS/Atom URL or an official YouTube channel feed, then browse its entries and create a separate study note for any item. Refresh feeds manually, or enable optional hourly refresh in settings. Unsubscribing does not delete existing study notes, transcripts, or cached media.
+
+### Study chat and highlight notebook
+
+- In **Settings → Community plugins → Lingua Study → 学习聊天**, configure a separate chat provider. Open the chat from its right-sidebar tab or the **打开学习聊天** command. Selected transcript or study-card text can be attached as context. Conversations are separated by study profile and stay only in memory until the plugin stops; sending a message may incur third-party API charges.
+- Enable highlights and adjust color categories under **高亮笔记** in settings. Select study text to save a highlight and personal note, then run **打开高亮笔记** to review them in the dictionary sidebar. Highlights are stored separately from transcript files.
+
+### Import a podcast
+
+1. Open the Markdown note where the study block should be inserted.
+2. Run **从 podcast RSS 创建学习内容** from the command palette.
+3. Paste an Apple Podcasts show share link and choose an episode.
+
+Lingua Study resolves the RSS from the Apple Podcasts directory automatically. You can also paste a public RSS or Atom feed URL directly. Episode audio is cached outside the vault (`~/Library/Caches/Lingua Study/Podcasts` on macOS), so Obsidian Sync never uploads it. Podcasting 2.0 English `.vtt` / `.srt` transcripts are used first. Otherwise, the first import asks before downloading Whisper Base English and generates the English timeline locally. Episodes larger than 512 MB are rejected, and the same episode is not inserted twice in the current note.
 
 ### Local video and subtitle import
 
@@ -269,6 +291,7 @@ example.zh-CN.study.json
 - PDF, DOCX, TXT, Markdown, and pasted creator transcripts are parsed locally. Image-only PDFs require OCR before import.
 - Local transcript alignment and English-audio transcription download a pinned Whisper Base English model and runtime only after confirmation; the video, audio, and transcript remain on the device.
 - Translation requests connect only to the configured Baidu Translate, DeepSeek, Kimi, or OpenAI-compatible HTTPS endpoint.
+- Study chat connects to the separately configured DeepSeek, Kimi, or OpenAI-compatible HTTPS endpoint only when you send a message; it sends the question, active study profile, attached study text, and limited in-session history.
 - A study-card request sends only the segment explicitly selected by the user, the selected study profile, and matching local dictionary tags.
 - Offline dictionary lookups and system pronunciation do not make network requests.
 - The connection test sends the fixed sentence `Thank you for using Lingua Study.`.

@@ -30,7 +30,7 @@ try {
     <div class="evs-segment${index === 4 ? " is-active" : ""}${index === 5 ? " is-dictation-result" : ""}${index === 6 ? " is-shadowing" : ""}">
       <div class="evs-segment-meta"><button class="evs-timestamp">00:${String(index * 2).padStart(2, "0")}</button><span class="evs-segment-state">正在播放</span></div>
       <div class="evs-segment-content">
-        <div class="evs-segment-text"><span class="evs-dictionary-word${index === 0 ? " is-dictionary-active" : ""}">Subtitle</span> <span class="evs-dictionary-word">row</span> ${index + 1}</div>
+        <div class="evs-segment-text">${index === 0 ? '<mark class="lingua-transcript-highlight" style="--lingua-highlight-color:#F2C94C"><span class="evs-dictionary-word is-dictionary-active">Subtitle</span></mark>' : '<span class="evs-dictionary-word">Subtitle</span>'} <span class="evs-dictionary-word">row</span> ${index + 1}</div>
         ${index === 4 ? `<div class="evs-translation-text" id="extension-card">
           <div class="evs-study-section"><div class="evs-study-heading">中文译文</div><div>这是一条用于检查延伸拓展布局的中文译文。</div></div>
           <div class="evs-study-section evs-study-extensions"><div class="evs-study-heading">延伸拓展</div><div class="evs-study-extension-list">
@@ -68,6 +68,8 @@ try {
     body.theme-light button { background: #c26a17; color: #9b321d; }
     body.theme-light button.mod-cta { background-color: var(--button-bg-color); color: var(--button-text-color); }
     ${css}
+    /* 模拟 Obsidian/主题在插件样式之后加载的默认 mark 规则。 */
+    .evs-root mark { background-color: var(--text-highlight-bg); color: var(--text-normal); }
   </style></head>
   <body class="theme-light lingua-study-theme-paper"><div id="app-layout">
     <div id="viewport"><div id="column"><div id="host"><div class="evs-root" id="root">
@@ -105,11 +107,11 @@ try {
         </div>
       </div>
         <div class="evs-status evs-local-status is-collapsed" id="status">本地缓存播放器已就绪</div>
-        <div class="evs-transcript" id="transcript"><div class="evs-segment-action-dock" id="segment-action-dock"><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button></div>${rowMarkup}<div class="evs-transcript-end-spacer" id="spacer"></div></div>
+        <div class="evs-transcript" id="transcript"><div class="evs-segment-tool-stack" id="segment-tool-stack"><div class="evs-segment-action-dock" id="segment-action-dock"><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button><button class="evs-icon-button evs-transcript-icon-button"><svg class="svg-icon"></svg></button></div><div class="evs-highlight-pen-palette" id="highlight-pen-palette" role="group"><button class="evs-highlight-pen-color is-selected" style="--evs-highlight-pen-color:#F2C94C" aria-pressed="true"><span class="evs-highlight-pen-check">✓</span></button><button class="evs-highlight-pen-color" style="--evs-highlight-pen-color:#56A3FF" aria-pressed="false"><span class="evs-highlight-pen-check">✓</span></button><button class="evs-highlight-pen-color" style="--evs-highlight-pen-color:#EB6F92" aria-pressed="false"><span class="evs-highlight-pen-check">✓</span></button></div></div>${rowMarkup}<div class="evs-transcript-end-spacer" id="spacer"></div></div>
     </div></div></div></div>
     <aside id="dictionary" class="lingua-dictionary-view">
       <div class="lingua-dictionary-header"><h3>Lingua Study</h3><span class="lingua-dictionary-source">23,596 词条</span></div>
-      <div class="lingua-dictionary-tabs"><button class="is-active"><span class="lingua-dictionary-tab-label">查词</span></button><button><span class="lingua-dictionary-tab-label">生词本</span></button><button><span class="lingua-dictionary-tab-label">今日复习</span><span class="lingua-dictionary-tab-badge">12</span></button></div>
+      <div class="lingua-dictionary-tabs"><button class="is-active"><span class="lingua-dictionary-tab-label">查词</span></button><button><span class="lingua-dictionary-tab-label">生词本</span></button><button><span class="lingua-dictionary-tab-label">今日复习</span><span class="lingua-dictionary-tab-badge">12</span></button><button><span class="lingua-dictionary-tab-label">高亮</span><span class="lingua-dictionary-tab-badge">3</span></button></div>
       <div class="lingua-dictionary-body" id="dictionary-body">
         <form class="lingua-dictionary-search"><input value="antidepressants"><button class="mod-cta">查询</button></form>
         <div class="lingua-dictionary-profile"><label>学习目标</label><select><option>四级</option></select></div>
@@ -155,6 +157,13 @@ try {
       </div>
     </div>
     <div id="dictionary-empty-fixture" class="lingua-dictionary-empty" style="position:fixed;left:-10000px;top:0">双击英文字幕中的单词，释义会显示在这里。</div>
+    <div id="selection-popover-fixture" class="lingua-study-selection-translation-popover" style="position:fixed;left:-10000px;top:0;width:380px">
+      <div class="lingua-study-selection-translation-popover-header"><div class="lingua-study-selection-translation-popover-title">标记选中文本</div><button class="lingua-study-selection-translation-popover-close"></button></div>
+      <div class="lingua-study-selection-translation-popover-content">
+        <div class="lingua-study-selection-translation-label">英文原文</div><div class="lingua-study-selection-translation-text">How would you grade that?</div>
+        <div class="lingua-highlight-editor"><label class="lingua-highlight-editor-field"><span>个人笔记（可选）</span><textarea></textarea></label><div class="lingua-highlight-editor-field"><span>选择颜色并自动保存</span><div class="lingua-highlight-category-picker"><button class="lingua-highlight-category-option is-selected" style="--lingua-highlight-color:#F2C94C"><span class="lingua-highlight-category-option-swatch"></span><span class="lingua-highlight-category-option-name">重点表达</span></button><button class="lingua-highlight-category-option is-selected" style="--lingua-highlight-color:#56A3FF"><span class="lingua-highlight-category-option-swatch"></span><span class="lingua-highlight-category-option-name">句型语法</span></button></div></div></div>
+      </div>
+    </div>
     <div id="settings-fixture" style="position:fixed;left:-10000px;top:0;width:700px">
       <div class="lingua-study-settings">
         <div class="setting-group lingua-study-settings-home-group" id="settings-home-group">
@@ -201,7 +210,9 @@ try {
           const floatingToggle = document.getElementById("floating-toggle");
           const status = document.getElementById("status");
           const list = document.getElementById("transcript");
+          const segmentToolStack = document.getElementById("segment-tool-stack");
           const segmentActionDock = document.getElementById("segment-action-dock");
+          const highlightPenPalette = document.getElementById("highlight-pen-palette");
           const extensionCard = document.getElementById("extension-card");
           const dictationPanel = document.getElementById("dictation-panel");
           const shadowingPanel = document.getElementById("shadowing-panel");
@@ -221,6 +232,8 @@ try {
           const mobileSourceLink = document.getElementById("mobile-source-link");
           const mobileFloatingToggle = document.getElementById("mobile-floating-toggle");
           const dictionaryEmptyFixture = document.getElementById("dictionary-empty-fixture");
+          const selectionPopoverFixture = document.getElementById("selection-popover-fixture");
+          const selectionPopoverText = selectionPopoverFixture.querySelector(".lingua-study-selection-translation-text");
           const settingsHomeGroup = document.getElementById("settings-home-group");
           const settingsHomeItemsContainer = document.getElementById("settings-home-items");
           const settingsHomeItems = [document.getElementById("settings-home-item-1"), document.getElementById("settings-home-item-2")];
@@ -234,6 +247,11 @@ try {
           const settingsToggleOn = document.getElementById("settings-toggle-on");
           const settingsWarningButton = document.getElementById("settings-warning-button");
           const settingsDisabledButton = document.getElementById("settings-disabled-button");
+
+          list.style.setProperty(
+            "--evs-segment-tools-height",
+            Math.ceil(segmentToolStack.getBoundingClientRect().height) + "px"
+          );
 
           check(!mobileFixture.querySelector(".evs-player-utilities"), "移动端置顶按钮仍覆盖视频画面");
           check(mobileFloatingToggle.closest(".evs-toolbar") === mobileToolbar, "移动端置顶按钮没有进入控制栏");
@@ -302,8 +320,9 @@ try {
           check(getComputedStyle(vocabularyExportButton).backgroundColor === "rgb(231, 229, 225)", "Obsidian 外观主题污染了生词导出按钮底色");
           check(getComputedStyle(reviewRevealButton).backgroundColor === "rgb(33, 30, 26)", "Obsidian 外观主题污染了显示答案按钮底色");
           check(transcriptActionButtons.every((button) => getComputedStyle(button).backgroundColor === "rgb(231, 229, 225)"), "Obsidian 外观主题污染了字幕操作按钮底色");
-          check(dictionaryTabRects.every((rect) => Math.abs(rect.width - dictionaryTabRects[0].width) <= 1), "三个词典页面按钮没有保持等宽");
-          check(dictionaryTabRects.every((rect) => Math.abs(rect.height - dictionaryTabRects[0].height) <= 1), "三个词典页面按钮没有保持等高");
+          check(dictionaryTabs.length === 4, "词典右侧栏没有完整显示四个页签");
+          check(dictionaryTabRects.every((rect) => Math.abs(rect.width - dictionaryTabRects[0].width) <= 1), "四个词典页面按钮没有保持等宽");
+          check(dictionaryTabRects.every((rect) => Math.abs(rect.height - dictionaryTabRects[0].height) <= 1), "四个词典页面按钮没有保持等高");
           check(dictionaryTabs.every((tab) => parseFloat(getComputedStyle(tab).borderRadius) >= 18), "词典页面按钮缺少统一圆角");
           check(activeTabStyle.backgroundColor !== inactiveTabStyle.backgroundColor, "当前词典页面缺少明确的胶囊高亮");
           check(activeTabStyle.color !== inactiveTabStyle.color, "当前词典页面的文字颜色没有形成对比");
@@ -345,17 +364,24 @@ try {
           check(settingsToggleOff.getBoundingClientRect().width === 54 && settingsToggleOff.getBoundingClientRect().height === 30, "设置开关轨道尺寸不统一");
           check(getComputedStyle(settingsToggleOff).overflow === "hidden", "设置开关没有裁切为一体式胶囊轮廓");
           check(getComputedStyle(settingsToggleOff).borderTopWidth === "0px", "设置开关仍使用会与圆面产生夹缝的独立边框");
-          check(getComputedStyle(settingsToggleOff).backgroundSize === "30px 30px", "设置开关圆面没有完整覆盖轨道高度");
-          check(getComputedStyle(settingsToggleOff).backgroundImage.includes("radial-gradient"), "设置开关圆面没有与轨道合并绘制");
-          check(getComputedStyle(settingsToggleOff, "::after").content === "none", "设置开关仍保留会抽动的独立伪元素滑块");
-          check(getComputedStyle(settingsToggleOff).backgroundPosition === "0% 50%", "关闭状态圆面没有贴齐轨道左侧");
-          check(getComputedStyle(settingsToggleOn).backgroundPosition === "100% 50%", "开启状态圆面没有贴齐轨道右侧");
-          check(getComputedStyle(settingsToggleOff).transitionProperty === "background-position", "设置开关仍在动画独立滑块");
+          const settingsToggleOffThumb = getComputedStyle(settingsToggleOff, "::after");
+          const settingsToggleOnThumb = getComputedStyle(settingsToggleOn, "::after");
+          check(settingsToggleOffThumb.content !== "none" && settingsToggleOffThumb.display === "block", "设置开关缺少独立圆点");
+          check(settingsToggleOffThumb.width === "30px" && settingsToggleOffThumb.height === "30px", "设置开关圆点没有完整覆盖轨道高度");
+          check(settingsToggleOffThumb.transform !== settingsToggleOnThumb.transform, "设置开关圆点没有在开闭状态间移动");
+          check(settingsToggleOffThumb.transitionProperty.includes("transform"), "设置开关圆点没有使用流畅的位移动画");
+          check(!getComputedStyle(settingsToggleOff).transitionProperty.includes("background-position"), "设置开关仍在重绘渐变背景位置");
           check(getComputedStyle(settingsToggleOff).backgroundColor !== getComputedStyle(settingsToggleOn).backgroundColor, "设置开关开闭状态缺少颜色区分");
           const highlightedWord = rows[0].querySelector(".evs-dictionary-word.is-dictionary-active");
           const inactiveWord = rows[1].querySelector(".evs-dictionary-word");
+          const transcriptHighlight = rows[0].querySelector(".lingua-transcript-highlight");
           check(highlightedWord && inactiveWord, "字幕单词没有渲染为独立查词节点");
+          check(transcriptHighlight, "字幕高亮没有渲染为独立节点");
           check(rows[0].querySelector(".evs-segment-text").textContent === "Subtitle row 1", "查词节点改变了字幕原文");
+          check(getComputedStyle(transcriptHighlight).borderBottomWidth === "0px", "字幕高亮仍在使用下边框");
+          check(getComputedStyle(transcriptHighlight).backgroundImage.includes("linear-gradient"), "字幕高亮没有使用连续的荧光笔渐变背景");
+          check(getComputedStyle(transcriptHighlight).paddingLeft === "0px" && getComputedStyle(transcriptHighlight).paddingRight === "0px", "字幕高亮仍使用会切成标签块的水平内边距");
+          check(getComputedStyle(transcriptHighlight).borderRadius === "0px", "字幕高亮仍使用标签式圆角");
           check(getComputedStyle(highlightedWord).boxShadow !== "none", "双击查词高亮缺少下边线");
           const inactiveRect = inactiveWord.getBoundingClientRect();
           inactiveWord.classList.add("is-dictionary-active");
@@ -418,6 +444,27 @@ try {
           check(exportedCard.scrollWidth <= exportedCard.clientWidth + 1, "导出生词卡片的长内容产生横向溢出");
           check(parseFloat(getComputedStyle(exportedCard).borderRadius) >= 10, "导出生词没有显示为圆角卡片");
           check(getComputedStyle(exportedCard).backgroundColor !== "rgba(0, 0, 0, 0)", "导出生词卡片缺少独立背景");
+          dictionaryBody.innerHTML = '<div class="lingua-vocabulary-controls lingua-highlight-controls"><input type="search" placeholder="搜索高亮、笔记或原句"><div class="lingua-centered-select"><select><option>全部类别</option></select><span class="lingua-centered-select-text">全部类别</span></div></div><div class="lingua-highlight-results">' + [0, 1].map((index) => '<button class="lingua-highlight-card"><div class="lingua-highlight-card-heading"><span class="lingua-highlight-card-categories"><span class="lingua-highlight-card-category"><span class="lingua-highlight-swatch" style="--lingua-highlight-color:' + (index === 0 ? '#F2C94C' : '#56A3FF') + '"></span><span class="lingua-highlight-category-name">' + (index === 0 ? '重点表达' : '句型语法') + '</span></span>' + (index === 0 ? '<span class="lingua-highlight-card-category"><span class="lingua-highlight-swatch" style="--lingua-highlight-color:#EB6F92"></span><span class="lingua-highlight-category-name">易错难点</span></span>' : '') + '</span><span class="lingua-highlight-time">00:12</span></div><div class="lingua-highlight-quote">a deliberately useful English expression</div><div class="lingua-highlight-note">' + '这是一条用于检查高亮笔记摘要换行和卡片高度的个人笔记。'.repeat(4) + '</div><div class="lingua-highlight-sentence">This is a deliberately long complete subtitle sentence used to verify wrapping.</div><div class="lingua-highlight-source">Videos/A deliberately long source note path.md</div></button>').join('') + '</div>';
+          const highlightCards = Array.from(dictionaryBody.querySelectorAll(".lingua-highlight-card"));
+          const highlightControls = dictionaryBody.querySelector(".lingua-highlight-controls");
+          const highlightSearch = highlightControls.querySelector('input[type="search"]');
+          const highlightFilterWrap = highlightControls.querySelector(".lingua-centered-select");
+          const highlightFilter = highlightFilterWrap.querySelector("select");
+          const highlightFilterText = highlightFilterWrap.querySelector(".lingua-centered-select-text");
+          const highlightFilterTextRange = document.createRange();
+          highlightFilterTextRange.selectNodeContents(highlightFilterText);
+          const highlightFilterTextRect = highlightFilterTextRange.getBoundingClientRect();
+          check(highlightCards.length === 2, "高亮库测试卡片没有完整渲染");
+          check(highlightSearch.getBoundingClientRect().right + 6 <= highlightFilterWrap.getBoundingClientRect().left, "高亮库搜索框与类别筛选发生重叠");
+          check(highlightFilterTextRect.right <= highlightFilter.getBoundingClientRect().right - 20, "高亮类别文字与下拉箭头发生重叠");
+          check(dictionaryBody.scrollWidth <= dictionaryBody.clientWidth + 1, "高亮库的搜索、筛选或长内容产生横向溢出");
+          check(highlightCards.every((card) => card.clientHeight + 1 >= card.scrollHeight), "Obsidian 固定按钮高度仍在裁切高亮卡片");
+          check(highlightCards[1].getBoundingClientRect().top >= highlightCards[0].getBoundingClientRect().bottom + 6, "高亮卡片内容与下一条重叠");
+          check(highlightCards[0].querySelectorAll(".lingua-highlight-card-category").length === 2, "高亮库没有同时展示一条笔记的多个类别");
+          check(highlightCards[0].querySelector(".lingua-highlight-card-categories").scrollWidth <= highlightCards[0].querySelector(".lingua-highlight-card-categories").clientWidth + 1, "高亮库多类别标签产生横向溢出");
+          check(getComputedStyle(highlightCards[0].querySelector(".lingua-highlight-swatch")).backgroundColor !== "rgba(0, 0, 0, 0)", "高亮库缺少类别颜色标识");
+          highlightCards[0].focus();
+          check(getComputedStyle(highlightCards[0]).color === getComputedStyle(highlightCards[1]).color, "高亮卡片获得焦点时正文变为了不可读反色");
           dictionaryBody.innerHTML = '<div class="lingua-review-summary"><strong>今日待复习 12</strong><div>学习中 2 · 到期 6 · 新词 4</div></div><div class="lingua-review-card"><div class="lingua-review-card-label">先回忆这个单词的含义</div><h2>antidepressant</h2><button class="lingua-dictionary-icon-button"></button><div class="lingua-review-answer"><div class="lingua-review-meaning">' + '用于测试窄侧栏长释义自然换行。'.repeat(30) + '</div><div class="lingua-review-context">' + 'This is a deliberately long subtitle context used to verify that the review card remains fully readable in a narrow Obsidian sidebar. '.repeat(10) + '<div class="lingua-review-context-actions"><button>回到视频原句</button></div></div><div class="lingua-review-ratings"><button><span>忘记</span><small>10 分钟</small></button><button><span>困难</span><small>1 天</small></button><button><span>记得</span><small>3 天</small></button><button><span>熟练</span><small>7 天</small></button></div></div></div>';
           check(dictionaryBody.scrollWidth <= dictionaryBody.clientWidth + 1, "长复习卡产生横向溢出");
           check(dictionaryBody.scrollHeight > dictionaryBody.clientHeight, "长复习卡内容被侧栏裁切");
@@ -434,8 +481,16 @@ try {
           );
           check(list.scrollHeight <= list.clientHeight + 1, "字幕内容仍被内部高度裁切");
           check(list.scrollTop === 0, "展开式字幕列表不应产生内部滚动位置");
-          check(getComputedStyle(segmentActionDock).position === "sticky", "字幕共用操作栏没有固定在右侧");
+          check(getComputedStyle(segmentToolStack).position === "sticky", "字幕工具组没有固定在右侧");
+          check(getComputedStyle(segmentActionDock).position === "static", "四按钮操作栏没有放入统一工具组");
           check(segmentActionDock.querySelectorAll("button").length === 4, "字幕共用操作栏不是四个按钮");
+          const penButtons = Array.from(highlightPenPalette.querySelectorAll(".evs-highlight-pen-color"));
+          check(highlightPenPalette.getBoundingClientRect().width === segmentActionDock.getBoundingClientRect().width, "高亮颜色面板与四按钮栏宽度不一致");
+          check(penButtons.length === 3, "默认三个高亮颜色球没有完整显示");
+          check(penButtons.every((button) => button.getBoundingClientRect().width === 9 && button.getBoundingClientRect().height === 9), "高亮颜色球尺寸不是 9px");
+          check(penButtons[2].getBoundingClientRect().right <= highlightPenPalette.getBoundingClientRect().right - 2, "三个颜色球没有排入同一行");
+          check(highlightPenPalette.getBoundingClientRect().top >= segmentActionDock.getBoundingClientRect().bottom + 6, "颜色面板仍与四按钮栏连在一起");
+          check(getComputedStyle(penButtons[0].querySelector(".evs-highlight-pen-check")).display !== "none", "选中颜色球没有显示勾号");
           check(rows.every((row) => row.querySelectorAll(".evs-transcript-icon-button").length === 0), "字幕行仍在重复显示操作按钮");
           check(extensionCard && extensionCard.offsetParent !== null, "延伸拓展知识卡没有默认展开");
           check(extensionCard.clientHeight + 1 >= extensionCard.scrollHeight, "延伸拓展知识卡内容被裁切");
@@ -587,12 +642,12 @@ try {
             const floating = !dock.classList.contains("is-floating");
             dock.classList.toggle("is-floating", floating);
             if (floating) {
-              segmentActionDock.style.setProperty(
+              segmentToolStack.style.setProperty(
                 "--evs-segment-action-top",
                 (Math.ceil(dock.getBoundingClientRect().height) + 16) + "px"
               );
             } else {
-              segmentActionDock.style.removeProperty("--evs-segment-action-top");
+              segmentToolStack.style.removeProperty("--evs-segment-action-top");
             }
             floatingToggle.setAttribute("aria-label", floating ? "取消视频悬浮" : "让视频保持在当前画面中");
             floatingToggle.setAttribute("aria-pressed", String(floating));
@@ -611,7 +666,7 @@ try {
           check(dock.classList.contains("is-floating"), "悬浮按钮没有开启播放器悬浮");
           check(floatingToggle.getAttribute("aria-pressed") === "true", "悬浮按钮状态没有同步");
           check(
-            segmentActionDock.getBoundingClientRect().top >= dock.getBoundingClientRect().bottom + 7,
+            segmentToolStack.getBoundingClientRect().top >= dock.getBoundingClientRect().bottom + 7,
             "字幕操作栏仍被悬浮播放器或控制栏遮挡"
           );
           check(
@@ -639,7 +694,7 @@ try {
           floatingToggle.click();
           check(!dock.classList.contains("is-floating"), "悬浮按钮没有取消播放器悬浮");
           check(floatingToggle.getAttribute("aria-pressed") === "false", "取消悬浮后按钮状态没有同步");
-          check(segmentActionDock.style.getPropertyValue("--evs-segment-action-top") === "", "取消悬浮后字幕操作栏没有恢复默认位置");
+          check(segmentToolStack.style.getPropertyValue("--evs-segment-action-top") === "", "取消悬浮后字幕操作栏没有恢复默认位置");
 
           dock.style.setProperty("--evs-player-width", "480px");
           const compactToolbarRect = toolbar.getBoundingClientRect();
@@ -695,11 +750,14 @@ try {
             "整页滚动无法看到最后一句字幕"
           );
           check(
-            segmentActionDock.getBoundingClientRect().bottom <= list.getBoundingClientRect().bottom + 1,
+            segmentToolStack.getBoundingClientRect().bottom <= list.getBoundingClientRect().bottom + 1,
             "字幕共用操作栏越过字幕区域漂到页面空白处"
           );
           const paperSettingsBackground = getComputedStyle(document.querySelector(".lingua-study-settings")).backgroundColor;
           const paperSettingsCardBackground = getComputedStyle(settingsHomeItems[0]).backgroundColor;
+          const paperSelectionPopoverBackground = getComputedStyle(selectionPopoverFixture).backgroundColor;
+          check(paperSelectionPopoverBackground === paperSettingsCardBackground, "Lingua Paper 选区弹窗没有使用纸张卡片背景");
+          check(getComputedStyle(selectionPopoverText).backgroundColor !== paperSelectionPopoverBackground, "Lingua Paper 选区弹窗的原文卡片缺少层次");
           const settingsCardRectBeforeThemeChange = settingsHomeItems[0].getBoundingClientRect();
           const playerActionCountBeforeThemeChange = root.querySelectorAll("button, a, input").length;
           [...settingsHomeItems, ...settingsSubitems].forEach((item) => { item.style.transition = "none"; });
@@ -708,6 +766,7 @@ try {
           const classicRootRect = root.getBoundingClientRect();
           const classicSettingsBackground = getComputedStyle(document.querySelector(".lingua-study-settings")).backgroundColor;
           const classicSettingsCardBackground = getComputedStyle(settingsHomeItems[0]).backgroundColor;
+          const classicSelectionPopoverBackground = getComputedStyle(selectionPopoverFixture).backgroundColor;
           check(getComputedStyle(paperHeader).display === "none", "经典主题仍显示 Lingua Paper 专属标题");
           check(
             Math.abs(classicRootRect.left - rootRect.left) <= 1 &&
@@ -716,6 +775,8 @@ try {
           );
           check(classicSettingsBackground === "rgb(255, 255, 255)", "经典主题没有恢复 Obsidian 的设置页背景色：" + classicSettingsBackground);
           check(classicSettingsCardBackground === "rgb(255, 255, 255)", "经典主题的设置卡片仍使用纸张色：" + classicSettingsCardBackground);
+          check(classicSelectionPopoverBackground === "rgb(255, 255, 255)", "经典主题的选区弹窗没有恢复白色：" + classicSelectionPopoverBackground);
+          check(classicSelectionPopoverBackground !== paperSelectionPopoverBackground, "经典主题与 Lingua Paper 的选区弹窗颜色没有区分");
           check(classicSettingsBackground !== paperSettingsBackground, "经典主题与 Lingua Paper 的设置页背景色没有区分");
           check(classicSettingsCardBackground !== paperSettingsCardBackground, "经典主题与 Lingua Paper 的设置卡片颜色没有区分");
           check(getComputedStyle(settingsHomeGroup).borderStyle === "none", "切回经典主题后设置首页布局发生变化");

@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { requestUrl } from "obsidian";
 import type { BilibiliVideoLink } from "./import-core";
+import type { CachedAudioMedia } from "./cached-audio";
 import {
   buildBilibiliCacheBaseName,
   getDefaultBilibiliCacheFolder,
@@ -44,7 +45,7 @@ interface BilibiliDownloadSource {
   duration: number;
 }
 
-export interface CachedBilibiliVideo {
+export interface CachedBilibiliVideo extends CachedAudioMedia {
   manifest: BilibiliCacheManifest;
   fileUrls: string[];
   filePaths: string[];
@@ -522,6 +523,7 @@ export class BilibiliCacheService {
   ): Promise<CachedBilibiliVideo> {
     return {
       manifest,
+      segments: manifest.segments,
       filePaths,
       fileUrls: await this.createMediaUrls(filePaths)
     };
