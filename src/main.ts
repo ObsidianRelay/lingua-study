@@ -2383,7 +2383,12 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.registerSelectionTranslation(textEl, segmentIndex);
   }
 
-  private appendDictionaryText(parent: HTMLElement, text: string, segmentIndex: number): void {
+  private appendDictionaryText(
+    parent: HTMLElement,
+    text: string,
+    segmentIndex: number,
+    isStudyText = false
+  ): void {
     if (!this.plugin.settings.enableDoubleClickLookup) {
       parent.appendText(text);
       return;
@@ -2397,11 +2402,13 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       wordEl.addEventListener("dblclick", (event) => {
         const selectedText = wordEl.ownerDocument.getSelection()?.toString().trim() ?? "";
         if (/\s/u.test(selectedText)) {
-          event.preventDefault();
-          this.showSelectionTranslationPopover(
-            parent.closest<HTMLElement>(".evs-segment-text") ?? parent,
-            segmentIndex
-          );
+          if (!isStudyText) {
+            event.preventDefault();
+            this.showSelectionTranslationPopover(
+              parent.closest<HTMLElement>(".evs-segment-text") ?? parent,
+              segmentIndex
+            );
+          }
           return;
         }
         const segment = this.transcript?.segments[segmentIndex];
@@ -3089,13 +3096,18 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.selectionTranslationPopoverEl = null;
   }
 
-  /** 设置切换后立即刷新现有字幕，不要求用户重新打开笔记。 */
+  /** 设置切换后立即刷新字幕和已显示的知识卡，不要求用户重新打开笔记。 */
   refreshDictionaryLookupSetting(): void {
     const segments = this.transcript?.segments ?? [];
     this.segmentTextEls.forEach((textEl, index) => {
       const segment = segments[index];
       if (segment) {
         this.renderDictionaryText(textEl, segment.text, index);
+      }
+    });
+    this.translationViews.forEach((view, index) => {
+      if (view.visible) {
+        this.renderTranslationOutput(view, view.studyEntries[this.plugin.settings.studyProfile] ?? null, index);
       }
     });
   }
@@ -5126,7 +5138,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     );
     let cursor = 0;
     for (const slice of slices) {
-      element.appendText(text.slice(cursor, slice.startOffset));
+      this.appendDictionaryText(element, text.slice(cursor, slice.startOffset), segmentIndex, true);
       const active = slice.annotationIds
         .map((id) => this.highlightBook.annotations[id] ?? byId.get(id))
         .filter((annotation): annotation is HighlightAnnotation => Boolean(annotation));
@@ -5142,13 +5154,13 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       }).join("\n");
       const mark = element.createEl("mark", {
         cls: "lingua-transcript-highlight",
-        text: text.slice(slice.startOffset, slice.endOffset),
         attr: {
           title: description,
           "aria-label": description,
           "data-highlight-ids": slice.annotationIds.join(",")
         }
       });
+      this.appendDictionaryText(mark, text.slice(slice.startOffset, slice.endOffset), segmentIndex, true);
       mark.style.setProperty("--lingua-highlight-background", buildHighlightMarkerBackground(colors));
       mark.addEventListener("click", (event) => {
         if (!this.plugin.settings.enableHighlights || !element.ownerDocument.getSelection()?.isCollapsed) return;
@@ -5170,7 +5182,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       });
       cursor = slice.endOffset;
     }
-    element.appendText(text.slice(cursor));
+    this.appendDictionaryText(element, text.slice(cursor), segmentIndex, true);
     if (registerSelection) {
       this.registerStudyHighlightPointer(element, text, segmentIndex, field, profile, annotations);
     }
@@ -5280,6 +5292,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     studyEntry: StudyCacheEntry | null,
     segmentIndex = this.translationViews.indexOf(view)
   ): void {
+    if (this.lookupHighlightEl && view.outputEl.contains(this.lookupHighlightEl)) {
+      this.plugin.clearDictionaryHighlight();
+    }
     view.outputEl.empty();
     // 译文缓存独立于知识卡。即使这次知识点格式异常，也优先展示并保留
     // 已经成功解析的新译文，同时继续显示之前有效的知识点。

@@ -744,7 +744,7 @@ test("简洁样式铺开全部字幕并移除内部滚动窗口", async () => {
   assert.match(css, /\.evs-study-heading/u);
 });
 
-test("离线词典使用右侧独立视图且双击只绑定英文字幕正文", async () => {
+test("离线词典使用右侧独立视图且字幕与知识点共用双击查词", async () => {
   const source = await readFile("src/main.ts", "utf8");
   const dictionaryView = await readFile("src/dictionary-view.ts", "utf8");
   assert.match(source, /registerView\([\s\S]*?DICTIONARY_VIEW_TYPE/u);
@@ -754,6 +754,9 @@ test("离线词典使用右侧独立视图且双击只绑定英文字幕正文",
   assert.match(source, /dictionaryTabPlacementPrepared/u);
   assert.match(source, /existingLeaf\.detach\(\)/u);
   assert.match(source, /tokenizeDictionaryText\(text\)/u);
+  assert.match(source, /this\.appendDictionaryText\(element, text\.slice\(cursor, slice\.startOffset\), segmentIndex, true\)/u);
+  assert.match(source, /this\.appendDictionaryText\(mark, text\.slice\(slice\.startOffset, slice\.endOffset\), segmentIndex, true\)/u);
+  assert.match(source, /this\.renderTranslationOutput\(view, view\.studyEntries\[this\.plugin\.settings\.studyProfile\] \?\? null, index\)/u);
   assert.match(source, /wordEl\.addEventListener\("dblclick"/u);
   assert.match(source, /if \(!this\.plugin\.settings\.enableDoubleClickLookup\)/u);
   assert.match(source, /renderer\.refreshDictionaryLookupSetting\(\)/u);

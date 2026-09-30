@@ -2,6 +2,12 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 2.0.1 - 2026-09-30
+
+### Added
+
+- Double-click English words in generated knowledge cards to open the existing right-sidebar dictionary, including words inside saved highlights
+
 ## 2.0.0 - 2026-09-29
 
 ### Added
