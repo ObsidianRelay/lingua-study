@@ -5,7 +5,7 @@
 Turn English YouTube and Bilibili videos, plus public podcast episodes, into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 2.0.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 2.0.1 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
 ## Join the QQ Group
 
@@ -14,8 +14,9 @@ Scan the QR code below to join the Lingua Study QQ group:
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 124526985" width="320"></p>
 <p align="center"><strong>QQ group number: 124526985</strong></p>
 
-## Recent updates (1.3.0–2.0.0)
+## Recent updates (1.3.0–2.0.1)
 
+- **Knowledge-card dictionary lookup (2.0.1)**: double-click an English word in a generated study card to open the right-sidebar dictionary, including words inside saved highlights
 - **Study chat**: discuss selected transcript or study-card text in a right-sidebar chat with separate in-session conversations for each study profile; configure a chat provider separately
 - **RSS subscriptions**: browse podcasts and YouTube channels by category, refresh feeds, and create study notes that can be reopened from the right sidebar
 - **Highlight notebook**: save colored highlights and personal notes from study text and review them in the highlight library
@@ -66,7 +67,7 @@ Scan the QR code below to join the Lingua Study QQ group:
 - Per-segment button translation plus an optional automatic transcript-selection popover
 - Four-part study cards with translation, vocabulary and collocations, grammar patterns, and exam-focused tips
 - Junior-high and senior-high English, CET-4, CET-6, TEM-4, TEM-8, IELTS, and TOEFL study profiles with separate local caches
-- A bundled offline English-Chinese dictionary opened by double-clicking a transcript word
+- A bundled offline English-Chinese dictionary opened by double-clicking an English word in a transcript or study card
 - A dedicated right-sidebar dictionary view with phonetics, definitions, inflections, exam tags, context, and system pronunciation
 - A vocabulary book with personal notes, saved video contexts, filtering, and a daily review queue
 - Per-segment transcript editing and one-click restoration of the original text
