@@ -5,6 +5,8 @@ import {
   calculatePlayerResizeWidth,
   calculateTranscriptEndSpacer,
   calculateViewportAlignedScrollDelta,
+  clampPlayerPosition,
+  rectsOverlap,
   type SubtitleRowGeometry
 } from "../src/ui-layout-core";
 
@@ -61,4 +63,27 @@ test("播放器四角按中心距离平滑缩放并限制可用宽度", () => {
   assert.equal(calculatePlayerResizeWidth(500, 1100, 920, 480, 1200), 920);
   assert.equal(calculatePlayerResizeWidth(500, 490, 1000, 480, 1200), 480);
   assert.equal(calculatePlayerResizeWidth(500, 900, 460, 480, 1200), 460);
+});
+
+test("拖动播放器时限制在窗口内并保留边距", () => {
+  assert.deepEqual(clampPlayerPosition(-100, -50, 500, 340, 1200, 800), {
+    left: 8,
+    top: 8
+  });
+  assert.deepEqual(clampPlayerPosition(900, 700, 500, 340, 1200, 800), {
+    left: 692,
+    top: 452
+  });
+  assert.deepEqual(clampPlayerPosition(250, 180, 500, 340, 1200, 800), {
+    left: 250,
+    top: 180
+  });
+});
+
+test("仅在浮层实际覆盖播放器时判定为相交", () => {
+  const player = { left: 100, top: 100, right: 500, bottom: 400 };
+  assert.equal(rectsOverlap(player, { left: 450, top: 300, right: 600, bottom: 500 }), true);
+  assert.equal(rectsOverlap(player, { left: 500, top: 300, right: 600, bottom: 500 }), false);
+  assert.equal(rectsOverlap(player, { left: 0, top: 0, right: 90, bottom: 90 }), false);
+  assert.equal(rectsOverlap(player, { left: 200, top: 200, right: 200, bottom: 300 }), false);
 });

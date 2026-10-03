@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildStudyChatRequestBody, StudyChatSessions } from "../src/study-chat-core";
+import {
+  buildStudyChatRequestBody,
+  normalizeLocalChatCompletionsUrl,
+  StudyChatSessions,
+  validateLocalChatConfiguration
+} from "../src/study-chat-core";
 import { STUDY_PROFILES, STUDY_PROFILE_LABELS } from "../src/study-core";
 import { sanitizeSettings } from "../src/settings-core";
 
@@ -13,6 +18,32 @@ test("聊天服务独立于翻译服务且默认关闭", () => {
   assert.equal(sanitizeSettings({ translationProvider: "baidu", chatProvider: "deepseek" }).chatProvider, "deepseek");
   assert.equal(sanitizeSettings({ translationProvider: "disabled", chatProvider: "kimi" }).chatProvider, "kimi");
   assert.equal(sanitizeSettings({ chatProvider: "baidu" }).chatProvider, "disabled");
+  assert.equal(sanitizeSettings({ chatProvider: "local" }).chatProvider, "local");
+  assert.equal(sanitizeSettings({ translationProvider: "local" }).translationProvider, "disabled");
+  assert.equal(sanitizeSettings({}).localChatModel, "");
+  assert.equal(sanitizeSettings({ localChatModel: "  local-model  " }).localChatModel, "local-model");
+});
+
+test("本地聊天地址只允许本机回环接口，并保留远程配置边界", () => {
+  assert.equal(normalizeLocalChatCompletionsUrl("http://localhost:11434"),
+    "http://localhost:11434/v1/chat/completions");
+  assert.equal(normalizeLocalChatCompletionsUrl("http://127.0.0.1:11434/v1/"),
+    "http://127.0.0.1:11434/v1/chat/completions");
+  assert.equal(normalizeLocalChatCompletionsUrl("http://[::1]:1234/v1/chat/completions/"),
+    "http://[::1]:1234/v1/chat/completions");
+  assert.equal(normalizeLocalChatCompletionsUrl("https://localhost:1234/v1"),
+    "https://localhost:1234/v1/chat/completions");
+  for (const address of [
+    "http://192.168.1.2:1234/v1", "http://localhost.evil.test/v1",
+    "https://example.com/v1", "http://user:pass@localhost:1234/v1",
+    "http://localhost:1234/v1?token=x", "http://localhost:1234/v1#fragment"
+  ]) {
+    assert.throws(() => normalizeLocalChatCompletionsUrl(address));
+  }
+  assert.deepEqual(validateLocalChatConfiguration("http://localhost:1234/v1", "  my-model  "), {
+    endpoint: "http://localhost:1234/v1/chat/completions", model: "my-model"
+  });
+  assert.throws(() => validateLocalChatConfiguration("http://localhost:1234/v1", " "), /模型 ID/u);
 });
 
 test("聊天模型与思考深度只改变聊天请求，不向不支持的接口发送参数", () => {
@@ -32,6 +63,11 @@ test("聊天模型与思考深度只改变聊天请求，不向不支持的接�
   const custom = buildStudyChatRequestBody("openai-compatible", "custom", ...args, "high");
   assert.equal("thinking" in custom, false);
   assert.equal("reasoning_effort" in custom, false);
+  const local = buildStudyChatRequestBody("local", "my-model", ...args, "high");
+  assert.equal(local.model, "my-model");
+  assert.equal(local.max_tokens, 8_192);
+  assert.equal("thinking" in local, false);
+  assert.equal("reasoning_effort" in local, false);
 });
 
 test("聊天请求按八种目标区分，且只携带选中的学习材料和有限历史", () => {

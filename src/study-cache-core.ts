@@ -132,6 +132,27 @@ export function validateStudyCache(value: unknown, videoId: string): StudyCacheF
   };
 }
 
+export function recoverStudyCache(value: unknown, videoId: string): {
+  cache: StudyCacheFile;
+  invalidEntries: Record<string, unknown>;
+} {
+  if (!isRecord(value) || !isRecord(value.analyses)) {
+    throw new Error("知识卡缓存最外层格式不正确");
+  }
+  const rawAnalyses = value.analyses;
+  const cache = validateStudyCache({ ...value, analyses: {} }, videoId);
+  const invalidEntries: Record<string, unknown> = {};
+  for (const [fingerprint, rawEntry] of Object.entries(rawAnalyses)) {
+    try {
+      const one = validateStudyCache({ ...value, analyses: { [fingerprint]: rawEntry } }, videoId);
+      Object.assign(cache.analyses, one.analyses);
+    } catch {
+      invalidEntries[fingerprint] = rawEntry;
+    }
+  }
+  return { cache, invalidEntries };
+}
+
 export function upsertStudyCacheEntry(
   current: StudyCacheFile,
   fingerprint: string,

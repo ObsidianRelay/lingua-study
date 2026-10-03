@@ -5,7 +5,7 @@
 Turn English YouTube and Bilibili videos, plus public podcast episodes, into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 2.0.1 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 2.1.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
 ## Join the QQ Group
 
@@ -14,7 +14,11 @@ Scan the QR code below to join the Lingua Study QQ group:
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 124526985" width="320"></p>
 <p align="center"><strong>QQ group number: 124526985</strong></p>
 
-## Recent updates (1.3.0–2.0.1)
+## Recent updates (1.3.0–2.1.0)
+
+- **Desktop player positioning (2.1.0)**: hold the pin button to move the player inside Obsidian; unpin to return it to the note, with smoothly scaling Lingua Paper controls
+- **Local-model study chat (2.1.0)**: connect to an already running local compatible service, enter its model ID, and test the connection in settings; translation and study cards keep their existing providers
+- **Data-safety fixes (2.1.0)**: protect vocabulary and highlight files during sync, isolate damaged entries with backups, and update linked data when a transcript is renamed
 
 - **Knowledge-card dictionary lookup (2.0.1)**: double-click an English word in a generated study card to open the right-sidebar dictionary, including words inside saved highlights
 - **Study chat**: discuss selected transcript or study-card text in a right-sidebar chat with separate in-session conversations for each study profile; configure a chat provider separately
@@ -156,6 +160,7 @@ Open the **Lingua Study subscriptions** tab in the right sidebar, or run **在�
 ### Study chat and highlight notebook
 
 - In **Settings → Community plugins → Lingua Study → 学习聊天**, configure a separate chat provider. Open the chat from its right-sidebar tab or the **打开学习聊天** command. Selected transcript or study-card text can be attached as context. Conversations are separated by study profile and stay only in memory until the plugin stops; sending a message may incur third-party API charges.
+- For local study chat, enter an already running service's `/v1` URL and model ID, then use **测试连接**. A local API key is optional and should have its own credential. Lingua Study does not download or start a model; the selected service may forward requests to the cloud.
 - Enable highlights and adjust color categories under **高亮笔记** in settings. Select study text to save a highlight and personal note, then run **打开高亮笔记** to review them in the dictionary sidebar. Highlights are stored separately from transcript files.
 
 ### Import a podcast
@@ -235,7 +240,7 @@ Provide:
 - The exact model ID supported by the provider
 - A Bearer API key selected through Obsidian SecretStorage
 
-The current version does not support custom headers, Anthropic-compatible endpoints, Ollama, or additional target languages. Optional whole-transcript translation is available, runs sequentially, and skips segments that already have results. In Reading view, drag to select multiple transcript words; Lingua Study immediately calls the selected translation provider and displays the result in a draggable, non-modal floating card near the selection. Double-clicking a single word still performs an offline dictionary lookup. In the Markdown editor, select text and run **Lingua Study: Translate selected English text** from the command palette; the command can also be assigned a hotkey.
+Translation currently does not support custom headers, Anthropic-compatible endpoints, Ollama, or additional target languages; Ollama can be used for local-model study chat described above. Optional whole-transcript translation is available, runs sequentially, and skips segments that already have results. In Reading view, drag to select multiple transcript words; Lingua Study immediately calls the selected translation provider and displays the result in a draggable, non-modal floating card near the selection. Double-clicking a single word still performs an offline dictionary lookup. In the Markdown editor, select text and run **Lingua Study: Translate selected English text** from the command palette; the command can also be assigned a hotkey.
 
 ## Translation controls
 
@@ -262,6 +267,10 @@ Dictation and shadowing currently require the desktop YouTube player or a locall
 2. Select **Add to vocabulary book** to save the word together with the current video sentence and timestamp. In the vocabulary detail view, you can edit the word, phonetic spelling, part of speech, definitions, exam tags, and personal note without resetting its contexts or review progress. A fully edited entry becomes the user's personal version: adding the same word again only appends context and does not overwrite those fields with dictionary data.
 3. Use the **Vocabulary book** tab to search or filter saved words, and **Today's review** to complete the current review queue.
 4. Export the vocabulary book to an Obsidian note, or create paginated PNG images on desktop.
+
+**Multi-device review:** ratings currently update the same `Lingua Study/Vocabulary/wordbook.json` file. Finish reviewing and wait for sync before continuing on another device. Simultaneous offline ratings can overwrite one another. A separate review-event log is needed before concurrent ratings can be merged reliably.
+
+When the vocabulary book or highlight library is missing, Lingua Study asks before creating a new file so you can wait for sync. If a file previously seen on this device disappears, writes stop. If one vocabulary entry is malformed, the remaining entries can still be read; the full original file and invalid entry are saved before the next write.
 
 Manual edits store the first version in an optional `originalText` field in the same version 1 transcript JSON. Existing files remain compatible.
 
@@ -292,10 +301,10 @@ example.zh-CN.study.json
 - PDF, DOCX, TXT, Markdown, and pasted creator transcripts are parsed locally. Image-only PDFs require OCR before import.
 - Local transcript alignment and English-audio transcription download a pinned Whisper Base English model and runtime only after confirmation; the video, audio, and transcript remain on the device.
 - Translation requests connect only to the configured Baidu Translate, DeepSeek, Kimi, or OpenAI-compatible HTTPS endpoint.
-- Study chat connects to the separately configured DeepSeek, Kimi, or OpenAI-compatible HTTPS endpoint only when you send a message; it sends the question, active study profile, attached study text, and limited in-session history.
+- Study chat connects to the separately configured DeepSeek, Kimi, or OpenAI-compatible HTTPS endpoint or a local loopback address when you send a message; it sends the question, active study profile, attached study text, and limited in-session history. The connection test sends only a brief test question.
 - A study-card request sends only the segment explicitly selected by the user, the selected study profile, and matching local dictionary tags.
 - Offline dictionary lookups and system pronunciation do not make network requests.
-- The connection test sends the fixed sentence `Thank you for using Lingua Study.`.
+- The translation connection test sends the fixed sentence `Thank you for using Lingua Study.`; the local study-chat connection test sends only `请只回答 OK。`.
 - The plugin does not collect telemetry, serve advertisements, create accounts, or operate a developer-controlled server.
 - The plugin does not write translation API key values to plugin data, notes, transcript files, translation caches, or console logs.
 - Translation providers may charge for API usage. Review the provider's current terms and pricing before use.

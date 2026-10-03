@@ -696,20 +696,43 @@ try {
           check(floatingToggle.getAttribute("aria-pressed") === "false", "取消悬浮后按钮状态没有同步");
           check(segmentToolStack.style.getPropertyValue("--evs-segment-action-top") === "", "取消悬浮后字幕操作栏没有恢复默认位置");
 
+          dock.style.setProperty("--evs-player-width", "481px");
+          const widthBeforeCompact = toolbar.querySelector(".evs-seek-button").getBoundingClientRect().width;
+          const heightBeforeCompact = toolbar.getBoundingClientRect().height;
+          const speedWidthBeforeCompact = speedGroup.getBoundingClientRect().width;
           dock.style.setProperty("--evs-player-width", "480px");
           const compactToolbarRect = toolbar.getBoundingClientRect();
           const compactControls = Array.from(toolbar.children);
           check(Math.abs(dock.getBoundingClientRect().width - 480) <= 1, "播放器无法缩到允许的最小宽度");
+          check(
+            Math.abs(toolbar.querySelector(".evs-seek-button").getBoundingClientRect().width - widthBeforeCompact) <= 1 &&
+              Math.abs(compactToolbarRect.height - heightBeforeCompact) <= 1 &&
+              Math.abs(speedGroup.getBoundingClientRect().width - speedWidthBeforeCompact) <= 2,
+            "播放器经过 480px 时控制栏尺寸突然跳变"
+          );
           check(toolbar.scrollWidth <= toolbar.clientWidth + 1, "最小播放器的控制栏产生横向溢出");
           check(
-            compactControls.every((control) => control.getBoundingClientRect().right <= compactToolbarRect.right + 1),
-            "最小播放器仍有按钮跑出控制栏右边界"
+            compactControls.every((control) => {
+              const rect = control.getBoundingClientRect();
+              return rect.left >= compactToolbarRect.left - 1 && rect.right <= compactToolbarRect.right + 1;
+            }),
+            "最小播放器仍有按钮跑出控制栏边界"
           );
           check(
-            toolbar.querySelector(".evs-play-button").getBoundingClientRect().width <= 38 &&
+            toolbar.querySelector(".evs-play-button").getBoundingClientRect().width <= 39 &&
               sourceLink.getBoundingClientRect().width <= 34 &&
               speedGroup.getBoundingClientRect().height <= 32,
             "播放器缩小时按钮和倍速控制器没有同步收紧"
+          );
+          dock.style.setProperty("--evs-player-width", "360px");
+          const narrowToolbarRect = toolbar.getBoundingClientRect();
+          check(
+            toolbar.scrollWidth <= toolbar.clientWidth + 1 &&
+              compactControls.every((control) => {
+                const rect = control.getBoundingClientRect();
+                return rect.left >= narrowToolbarRect.left - 1 && rect.right <= narrowToolbarRect.right + 1;
+              }),
+            "笔记栏宽于播放器时，控制栏仍有按钮被裁切"
           );
           dock.style.setProperty("--evs-player-width", initialDockRect.width + "px");
 

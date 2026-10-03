@@ -1,5 +1,6 @@
 import { App, normalizePath, TFile, TFolder } from "obsidian";
 import { AsyncKeyedQueue } from "./async-keyed-queue";
+import { replaceRenamedPath } from "./rename-path-core";
 import {
   HIGHLIGHT_BOOK_PATH,
   HIGHLIGHT_BOOK_V1_BACKUP_PATH,
@@ -27,16 +28,30 @@ export interface HighlightBookLoadResult {
 export class HighlightStore {
   private readonly writeQueue = new AsyncKeyedQueue();
   private writeBlockedReason: string | null = null;
+  private hasSeenFile = false;
+  private readonly seenStorageKey = "lingua-study:seen-highlight-book-v1";
   readonly path = normalizePath(HIGHLIGHT_BOOK_PATH);
   readonly legacyBackupPath = normalizePath(HIGHLIGHT_BOOK_V1_BACKUP_PATH);
   readonly v2BackupPath = normalizePath(HIGHLIGHT_BOOK_V2_BACKUP_PATH);
 
-  constructor(private readonly app: App) {}
+  constructor(
+    private readonly app: App,
+    private readonly confirmCreate: (path: string, previouslySeen?: boolean) => Promise<boolean> = async () => false
+  ) {
+    this.hasSeenFile = app.loadLocalStorage(this.seenStorageKey) === true;
+  }
+
+  private markFileSeen(): void {
+    if (this.hasSeenFile) return;
+    this.hasSeenFile = true;
+    this.app.saveLocalStorage(this.seenStorageKey, true);
+  }
 
   async load(): Promise<HighlightBookLoadResult> {
     const file = this.app.vault.getAbstractFileByPath(this.path);
     if (file === null) {
-      return { book: createEmptyHighlightBook(), warning: this.writeBlockedReason };
+      return { book: createEmptyHighlightBook(), warning: this.writeBlockedReason ?? (this.hasSeenFile
+        ? `高亮笔记文件曾存在但当前缺失。请检查同步；若已主动删除，可用命令“重新建立空高亮笔记”。` : null) };
     }
     if (!(file instanceof TFile)) {
       return {
@@ -44,6 +59,7 @@ export class HighlightStore {
         warning: `高亮笔记路径不是文件：${this.path}`
       };
     }
+    this.markFileSeen();
     try {
       return {
         book: parseHighlightBook(JSON.parse(await this.app.vault.cachedRead(file)) as unknown).book,
@@ -62,6 +78,28 @@ export class HighlightStore {
       book,
       createHighlightAnnotation(input)
     ));
+  }
+
+  /** 仅由用户明确启动；若同步文件在确认期间出现，则不覆盖。 */
+  async recreateMissingFile(): Promise<boolean> {
+    return this.writeQueue.run(this.path, async () => {
+      if (this.writeBlockedReason) throw new Error(this.writeBlockedReason);
+      if (this.app.vault.getAbstractFileByPath(this.path) !== null) return false;
+      if (!(await this.confirmCreate(this.path, this.hasSeenFile))) return false;
+      if (this.app.vault.getAbstractFileByPath(this.path) !== null) return false;
+      await this.ensureParentFolder();
+      const serialized = `${JSON.stringify(createEmptyHighlightBook(), null, 2)}\n`;
+      await this.app.vault.create(this.path, serialized);
+      this.markFileSeen();
+      try {
+        await this.verifyDiskWrite(serialized);
+      } catch (caught) {
+        this.writeBlockedReason = caught instanceof Error
+          ? caught.message : `高亮笔记写入校验失败：${this.path}`;
+        throw new Error(this.writeBlockedReason);
+      }
+      return true;
+    });
   }
 
   async addStudy(input: StudyHighlightAnchorInput): Promise<HighlightBookFile> {
@@ -133,6 +171,28 @@ export class HighlightStore {
     });
   }
 
+  async pathsRenamed(oldPath: string, newPath: string): Promise<boolean> {
+    const file = this.app.vault.getAbstractFileByPath(this.path);
+    if (!(file instanceof TFile)) return false;
+    const raw = await this.app.vault.cachedRead(file);
+    const escapedOldPath = JSON.stringify(oldPath).slice(1, -1);
+    if (!raw.includes(oldPath) && !raw.includes(escapedOldPath)) return false;
+    let changed = false;
+    await this.mutate((book) => {
+      const annotations = Object.fromEntries(Object.entries(book.annotations).map(([id, annotation]) => {
+        const sourcePath = replaceRenamedPath(annotation.sourcePath, oldPath, newPath);
+        const transcriptPath = replaceRenamedPath(annotation.transcriptPath, oldPath, newPath);
+        if (sourcePath === annotation.sourcePath && transcriptPath === annotation.transcriptPath) {
+          return [id, annotation];
+        }
+        changed = true;
+        return [id, { ...annotation, sourcePath, transcriptPath }];
+      }));
+      return changed ? { ...book, annotations } : book;
+    });
+    return changed;
+  }
+
   private async mutate(
     change: (book: HighlightBookFile) => HighlightBookFile
   ): Promise<HighlightBookFile> {
@@ -140,16 +200,33 @@ export class HighlightStore {
       if (this.writeBlockedReason) {
         throw new Error(this.writeBlockedReason);
       }
-      const existing = this.app.vault.getAbstractFileByPath(this.path);
+      let existing = this.app.vault.getAbstractFileByPath(this.path);
       if (existing !== null && !(existing instanceof TFile)) {
         throw new Error(`高亮笔记路径不是文件：${this.path}`);
+      }
+      let initialOnMissing: HighlightBookFile | null = null;
+      if (existing === null) {
+        if (this.hasSeenFile) {
+          throw new Error(`高亮笔记文件曾存在但当前缺失，已停止写入，请检查同步：${this.path}`);
+        }
+        const empty = createEmptyHighlightBook();
+        initialOnMissing = change(empty);
+        if (initialOnMissing === empty) return empty;
+        if (!(await this.confirmCreate(this.path))) {
+          throw new Error(`未创建高亮笔记；请先确认同步完成：${this.path}`);
+        }
+        existing = this.app.vault.getAbstractFileByPath(this.path);
+        if (existing !== null && !(existing instanceof TFile)) {
+          throw new Error(`高亮笔记路径不是文件：${this.path}`);
+        }
       }
       let current = createEmptyHighlightBook();
       let migratedFromVersion: 1 | 2 | null = null;
       let originalSerialized: string | null = null;
       if (existing instanceof TFile) {
+        this.markFileSeen();
         try {
-          originalSerialized = await this.app.vault.cachedRead(existing);
+          originalSerialized = await this.app.vault.read(existing);
           const parsed = parseHighlightBook(JSON.parse(originalSerialized) as unknown);
           current = parsed.book;
           migratedFromVersion = parsed.migratedFromVersion;
@@ -157,17 +234,24 @@ export class HighlightStore {
           throw new Error(`高亮笔记文件格式错误，已停止写入：${this.path}`);
         }
       }
-      const committed = change(current);
+      const committed = existing === null && initialOnMissing !== null
+        ? initialOnMissing : change(current);
       if (committed === current) return current;
       const serialized = `${JSON.stringify(committed, null, 2)}\n`;
       if (existing instanceof TFile) {
         if (migratedFromVersion !== null && originalSerialized !== null) {
           await this.ensureLegacyBackup(originalSerialized, migratedFromVersion);
         }
-        await this.app.vault.modify(existing, serialized);
+        await this.app.vault.process(existing, (raw) => {
+          if (raw !== originalSerialized) {
+            throw new Error("高亮笔记在写入前发生变化，请重试，避免覆盖同步内容。");
+          }
+          return serialized;
+        });
       } else {
         await this.ensureParentFolder();
         await this.app.vault.create(this.path, serialized);
+        this.markFileSeen();
       }
       try {
         await this.verifyDiskWrite(serialized);

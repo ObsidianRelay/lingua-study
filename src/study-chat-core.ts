@@ -1,10 +1,42 @@
 import { getStudyProfileInstruction, STUDY_PROFILE_LABELS, type StudyProfile } from "./study-core";
 import type { TranslationRequestBody } from "./translation-core";
 
-export type StudyChatProvider = "disabled" | "deepseek" | "kimi" | "openai-compatible";
+export type StudyChatProvider = "disabled" | "deepseek" | "kimi" | "openai-compatible" | "local";
 export type StudyChatReasoningEffort = "none" | "low" | "high" | "max";
 export type StudyChatMessage = { role: "user" | "assistant"; content: string };
 export type StudyChatContext = { sentence: string; focus?: string };
+
+export function isLocalChatHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+/** 本地聊天只允许回环地址；远程兼容接口仍使用原有的 HTTPS 校验。 */
+export function normalizeLocalChatCompletionsUrl(input: string): string {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    throw new Error("本地 API 地址格式不正确，请填写完整的 http://localhost:端口/v1 地址。");
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || !isLocalChatHost(url.hostname.toLowerCase())) {
+    throw new Error("本地模型只能连接 localhost、127.0.0.1 或 ::1。");
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error("本地 API 地址不能包含账号、密码、查询参数或锚点。");
+  }
+  const path = url.pathname.replace(/\/+$/u, "");
+  url.pathname = path.endsWith("/chat/completions")
+    ? path
+    : `${path || "/v1"}/chat/completions`;
+  return url.toString();
+}
+
+export function validateLocalChatConfiguration(baseUrl: string, model: string): { endpoint: string; model: string } {
+  const endpoint = normalizeLocalChatCompletionsUrl(baseUrl);
+  const trimmedModel = model.trim();
+  if (!trimmedModel) throw new Error("请填写本地模型 ID。");
+  return { endpoint, model: trimmedModel };
+}
 
 export interface StudyChatSession {
   context: StudyChatContext | null;
@@ -111,7 +143,9 @@ export function buildStudyChatRequestBody(
     { role: "user", content: trimmed }
   ];
   const body: TranslationRequestBody = { model, messages, stream: false, max_tokens: 1_600 };
-  if (provider === "deepseek") {
+  if (provider === "local") {
+    body.max_tokens = 8_192;
+  } else if (provider === "deepseek") {
     body.thinking = { type: effort === "none" ? "disabled" : "enabled" };
     if (effort !== "none") {
       body.reasoning_effort = effort;

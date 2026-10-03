@@ -5,6 +5,42 @@ export interface SubtitleRowGeometry {
 
 export type PlayerResizeCorner = "nw" | "ne" | "sw" | "se";
 
+export interface PlayerPosition {
+  left: number;
+  top: number;
+}
+
+export interface RectBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export function rectsOverlap(first: RectBounds, second: RectBounds): boolean {
+  return first.right > first.left && first.bottom > first.top &&
+    second.right > second.left && second.bottom > second.top &&
+    first.left < second.right && first.right > second.left &&
+    first.top < second.bottom && first.bottom > second.top;
+}
+
+/** 把拖动位置限制在当前 Obsidian 窗口内，给播放器四周留下可操作的边距。 */
+export function clampPlayerPosition(
+  left: number,
+  top: number,
+  playerWidth: number,
+  playerHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  margin = 8
+): PlayerPosition {
+  const safeMargin = Math.max(0, margin);
+  return {
+    left: Math.max(safeMargin, Math.min(left, viewportWidth - playerWidth - safeMargin)),
+    top: Math.max(safeMargin, Math.min(top, viewportHeight - playerHeight - safeMargin))
+  };
+}
+
 /**
  * 把四角拖动换算为播放器宽度。高度仍由 CSS 的 16:9 比例决定。
  * 播放器在文稿中始终居中，因此左侧角向左拖和右侧角向右拖都代表放大。

@@ -9,6 +9,7 @@ import {
   introduceVocabularyEntry,
   previewVocabularyRating,
   rateVocabularyEntry,
+  recoverVocabularyBook,
   removeVocabularyEntry,
   updateVocabularyEntry,
   updateVocabularyNote,
@@ -28,6 +29,25 @@ const dictionaryEntry: DictionaryEntry = {
   frequencyRank: 300,
   inflections: [{ label: "第三人称单数", value: "studies" }]
 };
+
+test("损坏的单条生词单独隔离，其余词条仍能读取", () => {
+  const valid = addVocabularyEntry(createEmptyVocabularyBook(), {
+    rawWord: "study",
+    dictionaryEntry,
+    customMeaning: "",
+    studyProfile: "cet4",
+    context: null,
+    now: new Date("2026-10-02T00:00:00.000Z")
+  }).book;
+  const raw = {
+    ...valid,
+    entries: { ...valid.entries, broken: { word: "broken", review: null } }
+  };
+  assert.throws(() => validateVocabularyBook(raw));
+  const recovered = recoverVocabularyBook(raw);
+  assert.deepEqual(recovered.book, valid);
+  assert.deepEqual(recovered.invalidEntries, { broken: raw.entries.broken });
+});
 
 function addInput(now: Date, start = 6): VocabularyAddInput {
   return {

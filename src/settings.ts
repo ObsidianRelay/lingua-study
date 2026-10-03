@@ -41,6 +41,7 @@ export {
   DEFAULT_SETTINGS,
   MAX_DESKTOP_PLAYER_WIDTH,
   MIN_DESKTOP_PLAYER_WIDTH,
+  mergeSettingsForSave,
   sanitizeSettings,
   type LinguaStudySettings
 } from "./settings-core";
@@ -210,10 +211,17 @@ export class LinguaStudySettingTab extends PluginSettingTab {
   private dictionaryUpdatePromptHandled = false;
   private whisperModelStatusEl: HTMLElement | null = null;
   private whisperModelStatusRequest = 0;
+  private localChatTestController: AbortController | null = null;
 
   constructor(app: App, private readonly plugin: LinguaStudyPlugin) {
     super(app, plugin);
     this.containerEl.addClass("lingua-study-settings");
+  }
+
+  hide(): void {
+    this.localChatTestController?.abort();
+    this.localChatTestController = null;
+    super.hide();
   }
 
   /** 顶层按学习与导入分组；各原生子页面仍参与 Obsidian 设置搜索。 */
@@ -1137,6 +1145,10 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                     ? undefined
                     : "请输入 0.70–0.99 之间的数值。"
               }
+            },
+            {
+              name: "多设备复习提醒",
+              desc: "当前复习记录保存在同一个生词本文件中。请在一台设备完成复习并等待同步结束后，再到另一台设备继续；两台设备离线同时评分可能互相覆盖。"
             }
           ]
         }
@@ -1377,7 +1389,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
           items: [
             {
               name: "聊天服务",
-              desc: "独立于翻译服务；同一提供商的 API 地址和 Key 共用。发送问题时才会调用 API 并产生费用。",
+              desc: "独立于翻译服务；同一云端提供商的 API 地址和 Key 共用。仅发送问题时请求所选服务，云端服务可能计费。",
               control: {
                 type: "dropdown",
                 key: "chatProvider",
@@ -1386,13 +1398,79 @@ export class LinguaStudySettingTab extends PluginSettingTab {
                   disabled: "关闭聊天",
                   deepseek: "DeepSeek 官方",
                   kimi: "Kimi 官方（国内）",
-                  "openai-compatible": "OpenAI 兼容中转站"
+                  "openai-compatible": "OpenAI 兼容中转站",
+                  local: "本地模型（兼容接口）"
                 }
               }
             }
           ]
         },
         ...this.apiCredentialGroups("chat"),
+        {
+          type: "group",
+          heading: "本地模型",
+          cls: "lingua-study-settings-section",
+          visible: () => this.plugin.settings.chatProvider === "local",
+          items: [
+            {
+              name: "本地 API 地址",
+              desc: "仅连接这台电脑；填写 /v1 或完整的 /chat/completions 地址。",
+              control: {
+                type: "text",
+                key: "localChatBaseUrl",
+                placeholder: "http://127.0.0.1:11434/v1"
+              }
+            },
+            {
+              name: "本地模型 ID",
+              desc: "填写本地服务显示的模型名称。",
+              control: {
+                type: "text",
+                key: "localChatModel",
+                placeholder: "例如 qwen3:8b"
+              }
+            },
+            {
+              name: "API Key（可选）",
+              desc: "仅在本地服务要求认证时填写；请为本地服务单独创建凭据，不要选用云端 API Key。凭据保存在 Obsidian 安全库中。",
+              render: (setting) => {
+                new SecretComponent(this.app, setting.controlEl)
+                  .setValue(this.plugin.settings.localChatSecretId)
+                  .onChange(async (value) => {
+                    await this.plugin.updateSettings({ localChatSecretId: value });
+                  });
+              }
+            },
+            {
+              name: "测试连接",
+              desc: "主动发送一条简短问题，不读取当前笔记；首次加载模型可能需要较长时间。",
+              render: (setting) => {
+                setting.addButton((button) => {
+                  button.setButtonText("测试连接").onClick(async () => {
+                    const controller = new AbortController();
+                    this.localChatTestController = controller;
+                    button.setDisabled(true).setButtonText("测试中…");
+                    try {
+                      const model = await this.plugin.testLocalChatConnection(controller.signal);
+                      if (!controller.signal.aborted) new Notice(`本地模型连接成功：${model}`);
+                    } catch (error) {
+                      if (!controller.signal.aborted) {
+                        new Notice(error instanceof Error ? error.message : "本地模型连接失败。", 6_000);
+                      }
+                    } finally {
+                      if (this.localChatTestController === controller) this.localChatTestController = null;
+                      if (button.buttonEl.isConnected) button.setDisabled(false).setButtonText("测试连接");
+                    }
+                  });
+                });
+              }
+            },
+            {
+              name: "本地运行提醒",
+              desc: "插件只连接本机地址；服务仍可能把请求转发到云端，是否离线取决于所选服务和模型。"
+            }
+          ]
+        },
         {
           type: "group",
           heading: "使用提醒",
@@ -1726,6 +1804,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
     if (this.plugin.settings.chatProvider === "deepseek") return "DeepSeek 官方";
     if (this.plugin.settings.chatProvider === "kimi") return "Kimi 官方（国内）";
     if (this.plugin.settings.chatProvider === "openai-compatible") return "OpenAI 兼容中转站";
+    if (this.plugin.settings.chatProvider === "local") return "本地模型（兼容接口）";
     return "已关闭";
   }
 
@@ -1770,7 +1849,7 @@ export class LinguaStudySettingTab extends PluginSettingTab {
 
     if (
       key === "chatProvider" &&
-      (value === "disabled" || value === "deepseek" || value === "kimi" || value === "openai-compatible")
+      (value === "disabled" || value === "deepseek" || value === "kimi" || value === "openai-compatible" || value === "local")
     ) {
       await this.plugin.updateSettings({ chatProvider: value });
       this.refreshDomState();
@@ -1810,6 +1889,14 @@ export class LinguaStudySettingTab extends PluginSettingTab {
 
     if (key === "customModel" && typeof value === "string") {
       return this.plugin.updateSettings({ customModel: value.trim() });
+    }
+
+    if (key === "localChatBaseUrl" && typeof value === "string") {
+      return this.plugin.updateSettings({ localChatBaseUrl: value.trim() });
+    }
+
+    if (key === "localChatModel" && typeof value === "string") {
+      return this.plugin.updateSettings({ localChatModel: value.trim() });
     }
 
     if (key === "autoImportPastedVideoLinks" && typeof value === "boolean") {

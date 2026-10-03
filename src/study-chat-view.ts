@@ -14,6 +14,8 @@ export class StudyChatView extends ItemView {
   private streamingSession: StudyChatSession | null = null;
   private streamingAnimator: StudyChatTextAnimator | null = null;
   private streamingLogEl: HTMLElement | null = null;
+  private streamingStatusNode: Text | null = null;
+  private reasoningSession: StudyChatSession | null = null;
   private historyOpen = false;
   private historyQuery = "";
   private contextExpanded = false;
@@ -46,6 +48,8 @@ export class StudyChatView extends ItemView {
     this.streamingAnimator = null;
     this.streamingSession = null;
     this.streamingLogEl = null;
+    this.streamingStatusNode = null;
+    this.reasoningSession = null;
     this.contentEl.empty();
   }
 
@@ -82,6 +86,7 @@ export class StudyChatView extends ItemView {
     this.streamingSession = null;
     this.streamingAnimator = null;
     this.streamingLogEl = null;
+    this.streamingStatusNode = null;
     root.empty();
     root.addClass("lingua-study-chat-view");
     root.classList.toggle("is-history-open", this.historyOpen);
@@ -213,12 +218,15 @@ export class StudyChatView extends ItemView {
         );
       const textEl = entry.createDiv({ cls: "lingua-study-chat-text" });
       const visibleText = animator.visibleText;
-      const textNode = textEl.ownerDocument.createTextNode(visibleText || "正在思考……");
+      const textNode = textEl.ownerDocument.createTextNode(visibleText ||
+        (this.reasoningSession === session ? "思考中……" :
+          this.plugin.settings.chatProvider === "local" ? "正在等待回答……" : "正在思考……"));
       textEl.appendChild(textNode);
       let hasContent = visibleText.length > 0;
       this.streamingSession = session;
       this.streamingAnimator = animator;
       this.streamingLogEl = conversation;
+      this.streamingStatusNode = textNode;
       animator.setRenderer((next) => {
         if (!this.opened || this.streamingSession !== session) return;
         const shouldFollow = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 80;
@@ -282,7 +290,7 @@ export class StudyChatView extends ItemView {
       if (!session.pending && this.plugin.settings.chatProvider !== "disabled") form.requestSubmit();
     });
     const formFooter = composer.createDiv({ cls: "lingua-study-chat-form-footer" });
-    const providerLabels = { disabled: "未配置聊天服务", deepseek: "DeepSeek", kimi: "Kimi", "openai-compatible": "兼容接口" };
+    const providerLabels = { disabled: "未配置聊天服务", deepseek: "DeepSeek", kimi: "Kimi", "openai-compatible": "兼容接口", local: "本地模型" };
     formFooter.createSpan({
       cls: "lingua-study-chat-provider",
       text: `${providerLabels[this.plugin.settings.chatProvider]} · ${this.plugin.getStudyProfileLabel(profile)}`
@@ -376,13 +384,20 @@ export class StudyChatView extends ItemView {
     session.pending = true;
     session.pendingAnswer = "";
     session.error = null;
+    this.reasoningSession = null;
     this.render();
     try {
       const answer = await this.plugin.chat(profile, session.context, history, question, (delta) => {
         if (this.plugin.chatSessions.get(profile) !== session) return;
         session.pendingAnswer += delta;
         if (this.streamingSession === session) this.streamingAnimator?.append(delta);
-      }, request.signal);
+      }, request.signal, () => {
+        if (this.plugin.chatSessions.get(profile) !== session) return;
+        this.reasoningSession = session;
+        if (this.streamingSession === session && !session.pendingAnswer && this.streamingStatusNode) {
+          this.streamingStatusNode.data = "思考中……";
+        }
+      });
       if (this.plugin.chatSessions.get(profile) !== session) return;
       if (answer.startsWith(session.pendingAnswer)) {
         const tail = answer.slice(session.pendingAnswer.length);
@@ -398,6 +413,7 @@ export class StudyChatView extends ItemView {
       session.error = error instanceof Error ? error.message : "聊天请求失败，请稍后重试。";
     } finally {
       this.activeRequests.delete(request);
+      if (this.reasoningSession === session) this.reasoningSession = null;
       session.pending = false;
       session.pendingAnswer = "";
       if (this.plugin.settings.studyProfile === profile) this.render();

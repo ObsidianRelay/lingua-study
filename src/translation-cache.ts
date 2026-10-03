@@ -1,4 +1,5 @@
 import { App, normalizePath, TFile } from "obsidian";
+import { recoverCacheForWrite } from "./cache-recovery";
 import {
   getTranslationCachePath,
   type TranslationProvider
@@ -84,6 +85,30 @@ function validateCache(value: unknown, videoId: string): TranslationCacheFile {
   };
 }
 
+function recoverCache(value: unknown, videoId: string): {
+  cache: TranslationCacheFile;
+  invalidEntries: Record<string, unknown>;
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("翻译缓存最外层格式不正确");
+  }
+  const data = value as Record<string, unknown>;
+  if (!data.translations || typeof data.translations !== "object" || Array.isArray(data.translations)) {
+    throw new Error("翻译缓存 translations 字段格式不正确");
+  }
+  const cache = validateCache({ ...data, translations: {} }, videoId);
+  const invalidEntries: Record<string, unknown> = {};
+  for (const [fingerprint, rawEntry] of Object.entries(data.translations as Record<string, unknown>)) {
+    try {
+      const one = validateCache({ ...data, translations: { [fingerprint]: rawEntry } }, videoId);
+      Object.assign(cache.translations, one.translations);
+    } catch {
+      invalidEntries[fingerprint] = rawEntry;
+    }
+  }
+  return { cache, invalidEntries };
+}
+
 /** 负责缓存读取和同一路径的串行写入，防止多句并发翻译时互相覆盖。 */
 export class TranslationCacheStore {
   private readonly writeQueues = new Map<string, Promise<void>>();
@@ -107,8 +132,13 @@ export class TranslationCacheStore {
 
     try {
       const parsed: unknown = JSON.parse(await this.app.vault.cachedRead(abstractFile));
-      const cache = validateCache(parsed, videoId);
-      return { path, translations: cache.translations, warning: null };
+      const recovered = recoverCache(parsed, videoId);
+      const invalidCount = Object.keys(recovered.invalidEntries).length;
+      return {
+        path,
+        translations: recovered.cache.translations,
+        warning: invalidCount > 0 ? `翻译缓存有 ${invalidCount} 条无效条目，其他条目仍可使用：${path}` : null
+      };
     } catch {
       return {
         path,
@@ -157,13 +187,11 @@ export class TranslationCacheStore {
         return cache;
       };
       if (abstractFile instanceof TFile) {
+        const original = await this.app.vault.read(abstractFile);
+        const cache = await recoverCacheForWrite(this.app, path, original,
+          (value) => recoverCache(value, videoId), () => createEmptyCache(videoId));
         await this.app.vault.process(abstractFile, (raw) => {
-          let cache = createEmptyCache(videoId);
-          try {
-            cache = validateCache(JSON.parse(raw) as unknown, videoId);
-          } catch {
-            // 损坏或过期缓存只在本次成功批量导入时重建。
-          }
+          if (raw !== original) throw new Error("翻译缓存发生变化，请重试以避免覆盖同步内容。");
           return `${JSON.stringify(applyEntries(cache), null, 2)}\n`;
         });
       } else {
@@ -194,14 +222,11 @@ export class TranslationCacheStore {
     }
 
     if (abstractFile instanceof TFile) {
+      const original = await this.app.vault.read(abstractFile);
+      const cache = await recoverCacheForWrite(this.app, path, original,
+        (value) => recoverCache(value, videoId), () => createEmptyCache(videoId));
       await this.app.vault.process(abstractFile, (raw) => {
-        let cache = createEmptyCache(videoId);
-        try {
-          cache = validateCache(JSON.parse(raw) as unknown, videoId);
-        } catch {
-          // 损坏或过期的缓存会在下一次成功翻译时重建，不影响英文字幕和播放器。
-        }
-
+        if (raw !== original) throw new Error("翻译缓存发生变化，请重试以避免覆盖同步内容。");
         cache.translations[fingerprint] = entry;
         return `${JSON.stringify(cache, null, 2)}\n`;
       });
