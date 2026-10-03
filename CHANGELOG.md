@@ -2,7 +2,7 @@
 
 All notable changes to Lingua Study are documented in this file.
 
-## 2.1.0 - Unreleased
+## 2.1.0 - 2026-10-03
 
 ### Added
 
