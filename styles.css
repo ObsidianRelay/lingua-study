@@ -108,6 +108,12 @@
   z-index: 10;
 }
 
+.evs-player-placeholder {
+  flex: 0 0 auto;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
 .evs-player-stage {
   position: relative;
   width: 100%;
@@ -117,8 +123,8 @@
 
 .evs-player-utilities {
   position: absolute;
-  top: 0;
-  right: -32px;
+  top: 14px;
+  right: 14px;
   z-index: 4;
   display: flex;
   flex-direction: row;
@@ -131,8 +137,7 @@
   min-width: 32px;
   height: 32px;
   min-height: 32px;
-  border-left: 0;
-  border-radius: 0 7px 7px 0;
+  border-radius: 50%;
   border-color: var(--background-modifier-border);
   background: var(--background-primary);
   color: var(--text-normal);
@@ -3622,15 +3627,15 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pl
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities {
-  top: 12px;
-  right: 12px;
+  top: 14px;
+  right: 14px;
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities .evs-icon-button {
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  min-height: 40px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   border: 1px solid var(--lingua-paper-line);
   border-radius: 50%;
   background: var(--lingua-paper-card);
@@ -3706,7 +3711,7 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-to
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-group {
-  min-width: 245px;
+  min-width: 0;
   max-width: 360px;
   height: 40px;
   margin-left: auto;
@@ -3729,7 +3734,9 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-sp
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-label {
+  font-size: min(13px, 2.35cqw);
   line-height: 32px;
+  white-space: nowrap;
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-speed-label.is-active {
@@ -4290,11 +4297,6 @@ body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-missing {
   border: 0;
   border-radius: 0;
   background: transparent;
-}
-
-body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities {
-  top: 0;
-  right: -40px;
 }
 
 body:not(.is-mobile) .lingua-study-settings-home-group {
@@ -7161,4 +7163,124 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-highlight-card:is(:hover, :
   .lingua-highlight-category-row button {
     grid-row: 2;
   }
+}
+
+/* 桌面端长按置顶按钮移动时保留原文档位置，播放器本身留在同一个 DOM 中。 */
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock.is-detached {
+  position: fixed;
+  inset: auto;
+  z-index: 30;
+  width: min(var(--evs-detached-width), calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-placeholder {
+  width: min(var(--evs-detached-width), calc(100vw - 16px));
+}
+
+.evs-player-move-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 浮层贴近窗口边缘时，置顶按钮仍留在播放器内，方便随时取消置顶。 */
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock.is-detached .evs-player-utilities {
+  top: 14px;
+  right: 14px;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-floating-toggle {
+  touch-action: none;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-floating-toggle.is-drag-ready {
+  cursor: grab;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock.is-moving {
+  user-select: none;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock.is-moving :is(iframe, video) {
+  pointer-events: none;
+}
+
+/* 鼠标在播放器内时显示置顶按钮；按住拖动和键盘操作期间保持可见。 */
+@media (hover: hover) {
+  body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+  }
+
+  body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-stage:hover .evs-player-utilities,
+  body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock.is-moving .evs-player-utilities,
+  body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities:has(.evs-floating-toggle:active),
+  body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities:has(.evs-floating-toggle:focus-visible) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: reduce) {
+  body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-utilities {
+    transition: none;
+  }
+}
+
+/* Paper 播放器工具栏随播放器宽度连续缩放；约 650px 以上保持原尺寸。 */
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-toolbar {
+  min-height: clamp(40px, 10.77cqw, 70px);
+  gap: clamp(3px, 1.846cqw, 12px);
+  padding: clamp(4px, 1.231cqw, 8px) clamp(4px, 2.154cqw, 14px);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-primary-controls {
+  gap: clamp(2px, 1.538cqw, 10px);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-primary-controls .evs-icon-button,
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-toolbar > .evs-source-link {
+  width: clamp(24px, 7.077cqw, 46px);
+  min-width: 0;
+  height: clamp(24px, 7.077cqw, 46px);
+  min-height: 0;
+  flex-basis: clamp(24px, 7.077cqw, 46px);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-primary-controls .evs-play-button {
+  width: clamp(26px, 8cqw, 52px);
+  height: clamp(26px, 8cqw, 52px);
+  flex-basis: clamp(26px, 8cqw, 52px);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-primary-controls .evs-icon-button .svg-icon {
+  width: clamp(12px, 3.385cqw, 22px);
+  height: clamp(12px, 3.385cqw, 22px);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-toolbar > .evs-add-transcript-button {
+  width: clamp(24px, 5.846cqw, 38px);
+  min-width: 0;
+  height: clamp(24px, 5.846cqw, 38px);
+  min-height: 0;
+  flex-basis: clamp(24px, 5.846cqw, 38px);
+}
+
+/* 倍速栏保留原来的伸缩方式，只让高度连续变化。 */
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-speed-group {
+  min-width: 0;
+  height: clamp(24px, 6.154cqw, 40px);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-speed-label {
+  line-height: calc(clamp(24px, 6.154cqw, 40px) - 8px);
 }

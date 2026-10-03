@@ -31,6 +31,9 @@ export interface LinguaStudySettings {
   chatDeepSeekModel: DeepSeekModel;
   chatDeepSeekEffort: "none" | "low" | "high" | "max";
   chatKimiThinking: boolean;
+  localChatBaseUrl: string;
+  localChatModel: string;
+  localChatSecretId: string;
   translateWholeTranscript: boolean;
   baiduAppId: string;
   baiduSecretId: string;
@@ -72,6 +75,9 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   chatDeepSeekModel: "deepseek-v4-flash",
   chatDeepSeekEffort: "none",
   chatKimiThinking: false,
+  localChatBaseUrl: "http://127.0.0.1:11434/v1",
+  localChatModel: "",
+  localChatSecretId: "",
   // 默认只处理用户当前选择的句子，避免新用户误触整篇翻译并产生额外费用。
   translateWholeTranscript: false,
   baiduAppId: "",
@@ -99,19 +105,26 @@ export const DEFAULT_SETTINGS: LinguaStudySettings = {
   highlightCategories: DEFAULT_HIGHLIGHT_CATEGORIES.map((category) => ({ ...category }))
 };
 
-/** 读取旧配置时只保留仍受支持的字段；旧 whisperModel 会在这里被移除。 */
+/** 保留其他版本的设置字段，避免旧设备写回时抹掉新设备的配置。 */
 export function sanitizeSettings(value: unknown): LinguaStudySettings {
-  if (!value || typeof value !== "object") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ...DEFAULT_SETTINGS };
   }
 
   const data = value as Record<string, unknown>;
+  const preserved = { ...data };
+  // 这几个字段已明确废弃；其余未知字段可能属于另一个版本。
+  delete preserved.whisperModel;
+  delete preserved.speechCloudBaseUrl;
+  delete preserved.speechCloudModel;
+  delete preserved.speechCloudSecretId;
   const provider = data.translationProvider;
   const chatProvider = data.chatProvider;
   const model = data.deepSeekModel;
   const kimiModel = data.kimiModel;
 
   return {
+    ...preserved,
     transcriptFolder: sanitizeTranscriptFolder(data.transcriptFolder),
     ytDlpPath: typeof data.ytDlpPath === "string" ? data.ytDlpPath.trim() : "",
     whisperModelSource: sanitizeWhisperModelSource(data.whisperModelSource),
@@ -134,7 +147,7 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
         : DEFAULT_SETTINGS.translationProvider,
     chatProvider:
       chatProvider === "deepseek" || chatProvider === "kimi" ||
-        chatProvider === "openai-compatible" || chatProvider === "disabled"
+      chatProvider === "openai-compatible" || chatProvider === "local" || chatProvider === "disabled"
         ? chatProvider
         : DEFAULT_SETTINGS.chatProvider,
     chatDeepSeekModel:
@@ -152,6 +165,12 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
       typeof data.chatKimiThinking === "boolean"
         ? data.chatKimiThinking
         : DEFAULT_SETTINGS.chatKimiThinking,
+    localChatBaseUrl: typeof data.localChatBaseUrl === "string"
+      ? data.localChatBaseUrl.trim() : DEFAULT_SETTINGS.localChatBaseUrl,
+    localChatModel: typeof data.localChatModel === "string"
+      ? data.localChatModel.trim() : DEFAULT_SETTINGS.localChatModel,
+    localChatSecretId: typeof data.localChatSecretId === "string"
+      ? data.localChatSecretId : DEFAULT_SETTINGS.localChatSecretId,
     translateWholeTranscript:
       typeof data.translateWholeTranscript === "boolean"
         ? data.translateWholeTranscript
@@ -207,4 +226,23 @@ export function sanitizeSettings(value: unknown): LinguaStudySettings {
         : DEFAULT_SETTINGS.enableHighlights,
     highlightCategories: sanitizeHighlightCategories(data.highlightCategories)
   };
+}
+
+/** 只替换用户本次改动的字段；其他版本认识的值原样留在 data.json。 */
+export function mergeSettingsForSave(
+  stored: unknown,
+  current: LinguaStudySettings,
+  changes: Partial<LinguaStudySettings>
+): Record<string, unknown> {
+  const data = stored && typeof stored === "object" && !Array.isArray(stored)
+    ? { ...(stored as Record<string, unknown>) }
+    : {};
+  delete data.whisperModel;
+  delete data.speechCloudBaseUrl;
+  delete data.speechCloudModel;
+  delete data.speechCloudSecretId;
+  for (const key of Object.keys(changes) as Array<keyof LinguaStudySettings>) {
+    data[key] = current[key];
+  }
+  return data;
 }

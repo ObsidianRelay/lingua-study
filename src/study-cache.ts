@@ -1,10 +1,11 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { AsyncKeyedQueue } from "./async-keyed-queue";
+import { recoverCacheForWrite } from "./cache-recovery";
 import {
   createEmptyStudyCache,
   getStudyCachePath,
+  recoverStudyCache,
   upsertStudyCacheEntry,
-  validateStudyCache,
   type StudyCacheEntry
 } from "./study-cache-core";
 
@@ -33,8 +34,13 @@ export class StudyCacheStore {
     }
     try {
       const parsed: unknown = JSON.parse(await this.app.vault.cachedRead(file));
-      const cache = validateStudyCache(parsed, videoId);
-      return { path, analyses: cache.analyses, warning: null };
+      const recovered = recoverStudyCache(parsed, videoId);
+      const invalidCount = Object.keys(recovered.invalidEntries).length;
+      return {
+        path,
+        analyses: recovered.cache.analyses,
+        warning: invalidCount > 0 ? `知识卡缓存有 ${invalidCount} 条无效条目，其他条目仍可使用：${path}` : null
+      };
     } catch {
       return {
         path,
@@ -65,13 +71,11 @@ export class StudyCacheStore {
       throw new Error(`知识卡缓存路径不是文件：${path}`);
     }
     if (file instanceof TFile) {
+      const original = await this.app.vault.read(file);
+      const cache = await recoverCacheForWrite(this.app, path, original,
+        (value) => recoverStudyCache(value, videoId), () => createEmptyStudyCache(videoId));
       await this.app.vault.process(file, (raw) => {
-        let cache = createEmptyStudyCache(videoId);
-        try {
-          cache = validateStudyCache(JSON.parse(raw) as unknown, videoId);
-        } catch {
-          // 损坏缓存会在下一次成功生成时重建，不影响已有字幕和纯译文。
-        }
+        if (raw !== original) throw new Error("知识卡缓存发生变化，请重试以避免覆盖同步内容。");
         return `${JSON.stringify(upsertStudyCacheEntry(cache, fingerprint, entry), null, 2)}\n`;
       });
       return;

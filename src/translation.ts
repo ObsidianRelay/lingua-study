@@ -19,8 +19,13 @@ import {
   type StudyDictionaryHint,
   type StudyProfile
 } from "./study-core";
-import { buildStudyChatRequestBody, type StudyChatContext, type StudyChatMessage } from "./study-chat-core";
-import { streamStudyChat } from "./study-chat-stream";
+import {
+  buildStudyChatRequestBody,
+  validateLocalChatConfiguration,
+  type StudyChatContext,
+  type StudyChatMessage
+} from "./study-chat-core";
+import { streamStudyChat, StudyChatHttpError } from "./study-chat-stream";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const BAIDU_MIN_REQUEST_INTERVAL_MS = 1_100;
@@ -127,13 +132,16 @@ export class TranslationService {
     history: readonly StudyChatMessage[],
     question: string,
     onDelta: (text: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onReasoning?: () => void
   ): Promise<string> {
     const settings = this.getSettings();
     if (settings.chatProvider === "disabled") {
       throw new Error("请先在插件设置中选择聊天服务。");
     }
-    const config = this.resolveConfig(settings.chatProvider);
+    const config = settings.chatProvider === "local"
+      ? this.resolveLocalChatConfig()
+      : this.resolveConfig(settings.chatProvider);
     const model = settings.chatProvider === "deepseek" ? settings.chatDeepSeekModel : config.model;
     const effort = settings.chatProvider === "deepseek"
       ? settings.chatDeepSeekEffort
@@ -141,7 +149,43 @@ export class TranslationService {
     const body = buildStudyChatRequestBody(
       settings.chatProvider, model, profile, context, history, question, effort
     );
-    return streamStudyChat(config.endpoint, config.apiKey, { ...body, stream: true }, onDelta, signal);
+    const requestBody = { ...body, stream: true };
+    if (settings.chatProvider !== "local") {
+      return streamStudyChat(config.endpoint, config.apiKey, requestBody, onDelta, signal);
+    }
+    try {
+      // Ollama 等兼容接口可关闭推理，避免短学习问题只生成推理而没有正文。
+      return await streamStudyChat(config.endpoint, config.apiKey,
+        { ...requestBody, reasoning_effort: "none" }, onDelta, signal, { onReasoning });
+    } catch (error) {
+      // 其他兼容服务可能不接受该可选字段，改用标准 Chat Completions 请求。
+      if (!(error instanceof StudyChatHttpError) || ![400, 422].includes(error.status) || signal?.aborted) {
+        throw error;
+      }
+      return streamStudyChat(config.endpoint, config.apiKey, requestBody, onDelta, signal, { onReasoning });
+    }
+  }
+
+  async testLocalChatConnection(signal?: AbortSignal): Promise<string> {
+    const config = this.resolveLocalChatConfig();
+    await streamStudyChat(config.endpoint, config.apiKey, {
+      model: config.model,
+      messages: [{ role: "user", content: "请只回答 OK。" }],
+      stream: true,
+      max_tokens: 16
+    }, () => undefined, signal, { allowEmptyResponse: true });
+    return config.model;
+  }
+
+  private resolveLocalChatConfig(): { endpoint: string; model: string; apiKey: string } {
+    const settings = this.getSettings();
+    const config = validateLocalChatConfiguration(settings.localChatBaseUrl, settings.localChatModel);
+    return {
+      ...config,
+      apiKey: settings.localChatSecretId.trim()
+        ? this.readSecret(settings.localChatSecretId, "本地模型")
+        : ""
+    };
   }
 
   private async requestBaiduTranslation(

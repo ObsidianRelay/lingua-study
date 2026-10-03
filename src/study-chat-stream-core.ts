@@ -4,6 +4,9 @@ export class StudyChatStreamParser {
   private dataLines: string[] = [];
   private completed = false;
   private answer = "";
+  private reasoningSeen = false;
+
+  get hasReasoning(): boolean { return this.reasoningSeen; }
 
   push(chunk: string): string[] {
     this.lineBuffer += chunk;
@@ -19,11 +22,15 @@ export class StudyChatStreamParser {
     return deltas;
   }
 
-  finish(): string {
+  finish(requireContent = true): string {
     if (this.lineBuffer) this.readLine(this.lineBuffer.replace(/\r$/u, ""), []);
     this.dispatch([]);
     if (!this.completed) throw new Error("聊天连接提前中断，回答可能不完整，请重试。");
-    if (!this.answer.trim()) throw new Error("聊天服务返回了空内容，请稍后重试。");
+    if (requireContent && !this.answer.trim()) {
+      throw new Error(this.reasoningSeen
+        ? "模型只返回了思考内容，没有回答正文。请重试或切换模型。"
+        : "聊天服务返回了空内容，请稍后重试。");
+    }
     return this.answer;
   }
 
@@ -58,7 +65,12 @@ export class StudyChatStreamParser {
       const choice = item as Record<string, unknown>;
       const delta = choice.delta;
       if (delta && typeof delta === "object") {
-        const content = (delta as Record<string, unknown>).content;
+        const deltaRecord = delta as Record<string, unknown>;
+        if (typeof deltaRecord.reasoning === "string" && deltaRecord.reasoning ||
+          typeof deltaRecord.reasoning_content === "string" && deltaRecord.reasoning_content) {
+          this.reasoningSeen = true;
+        }
+        const content = deltaRecord.content;
         if (typeof content === "string" && content) {
           this.answer += content;
           deltas.push(content);

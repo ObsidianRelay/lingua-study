@@ -344,6 +344,26 @@ export function validateVocabularyBook(value: unknown): VocabularyBookFile {
   return { version: VOCABULARY_BOOK_VERSION, entries };
 }
 
+/** 仅隔离格式错误的词条；最外层结构和版本仍必须完整匹配。 */
+export function recoverVocabularyBook(value: unknown): {
+  book: VocabularyBookFile;
+  invalidEntries: Record<string, unknown>;
+} {
+  if (!isRecord(value) || value.version !== VOCABULARY_BOOK_VERSION || !isRecord(value.entries)) {
+    throw new Error("生词本版本或最外层格式不正确");
+  }
+  const entries: Record<string, VocabularyEntry> = {};
+  const invalidEntries: Record<string, unknown> = {};
+  for (const [key, rawEntry] of Object.entries(value.entries)) {
+    try {
+      entries[key] = validateEntry(key, rawEntry);
+    } catch {
+      invalidEntries[key] = rawEntry;
+    }
+  }
+  return { book: { version: VOCABULARY_BOOK_VERSION, entries }, invalidEntries };
+}
+
 function vocabularyContextKey(context: VocabularyContext): string {
   return [
     context.sourcePath,

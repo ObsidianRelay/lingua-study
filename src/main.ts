@@ -11,8 +11,10 @@ import {
   Plugin,
   requestUrl,
   setIcon,
+  TAbstractFile,
   TFile,
   TFolder,
+  type EventRef,
   type WorkspaceLeaf
 } from "obsidian";
 import {
@@ -21,6 +23,7 @@ import {
   LinguaStudySettingTab,
   MAX_DESKTOP_PLAYER_WIDTH,
   MIN_DESKTOP_PLAYER_WIDTH,
+  mergeSettingsForSave,
   sanitizeSettings,
   type LinguaStudySettings
 } from "./settings";
@@ -30,6 +33,7 @@ import {
   type TranslationCacheLoadResult
 } from "./translation-cache";
 import { createSegmentFingerprint, getTranslationCachePath } from "./translation-core";
+import { confirmLibraryCreation } from "./confirm-library-creation";
 import {
   TranslationService,
   type StudyAnalysisResult,
@@ -88,6 +92,8 @@ import {
   calculatePlayerResizeWidth,
   calculateTranscriptEndSpacer,
   calculateViewportAlignedScrollDelta,
+  clampPlayerPosition,
+  rectsOverlap,
   type PlayerResizeCorner
 } from "./ui-layout-core";
 import {
@@ -682,6 +688,11 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private destroyed = false;
   private controlsActivated = false;
   private playerReady = false;
+  private playerPopoverObserver: MutationObserver | null = null;
+  private playerPopoverOverlayObserver: MutationObserver | null = null;
+  private playerPopoverRefreshFrame: number | null = null;
+  private playerPopoverLeafChangeRef: EventRef | null = null;
+  private playerPopoverLastRect: DOMRect | null = null;
   private playerState = -1;
   private currentTime = 0;
   private duration = 0;
@@ -733,6 +744,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private shadowingPlaybackStopAt: number | null = null;
   private translationBatchRunning = false;
   private playerDockEl: HTMLElement | null = null;
+  private playerPlaceholderEl: HTMLElement | null = null;
+  private playerDockResizeObserver: ResizeObserver | null = null;
+  private playerLongPressTimer: number | null = null;
+  private playerLongPressWindow: Window | null = null;
   private playerWidthSaveTimer: number | null = null;
   private pendingDesktopPlayerWidth: number | null = null;
   private fullWidthObserver: ResizeObserver | null = null;
@@ -806,6 +821,17 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.restoreLivePreviewHostStyle();
     this.transcriptResizeObserver?.disconnect();
     this.transcriptResizeObserver = null;
+    this.stopPlayerPopoverObserver();
+    if (this.playerDockEl?.matches(":popover-open")) {
+      this.playerDockEl.hidePopover();
+    }
+    this.playerDockResizeObserver?.disconnect();
+    this.playerDockResizeObserver = null;
+    if (this.playerLongPressTimer !== null) {
+      this.playerLongPressWindow?.clearTimeout(this.playerLongPressTimer);
+      this.playerLongPressTimer = null;
+    }
+    this.playerLongPressWindow = null;
     this.translationViews.forEach((view) => {
       view.requestGeneration += 1;
     });
@@ -895,6 +921,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.shadowingPlaybackStopAt = null;
     this.translationBatchRunning = false;
     this.playerDockEl = null;
+    this.playerPlaceholderEl = null;
     this.viewViewportEl = null;
     this.restoreContainerLayout();
     this.containerEl.empty();
@@ -1154,8 +1181,154 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.applyDesktopPlayerWidth();
     if (!this.plugin.capabilities.mobile) {
       this.createPlayerResizeCorners(dock, root);
+      const viewWindow = dock.ownerDocument.defaultView ?? window;
+      this.registerDomEvent(viewWindow, "resize", () => this.clampDetachedPlayer(dock));
+      this.playerDockResizeObserver?.disconnect();
+      this.playerDockResizeObserver = new ResizeObserver(() => {
+        if (!dock.classList.contains("is-detached") || !dock.matches(":popover-open")) {
+          return;
+        }
+        const rect = dock.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        if (this.playerPlaceholderEl) {
+          this.playerPlaceholderEl.style.height = `${rect.height}px`;
+          this.playerPlaceholderEl.style.setProperty("--evs-detached-width", `${rect.width}px`);
+        }
+        this.clampDetachedPlayer(dock);
+      });
+      this.playerDockResizeObserver.observe(dock);
     }
     return dock;
+  }
+
+  private clampDetachedPlayer(dock: HTMLElement, left?: number, top?: number): void {
+    if (!dock.classList.contains("is-detached") || !dock.matches(":popover-open")) {
+      return;
+    }
+    const viewWindow = dock.ownerDocument.defaultView ?? window;
+    const rect = dock.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const position = clampPlayerPosition(
+      left ?? (Number.parseFloat(dock.style.left) || 0),
+      top ?? (Number.parseFloat(dock.style.top) || 0),
+      rect.width,
+      rect.height,
+      viewWindow.innerWidth,
+      viewWindow.innerHeight
+    );
+    dock.style.left = `${position.left}px`;
+    dock.style.top = `${position.top}px`;
+    this.scheduleTranscriptLayout(false);
+  }
+
+  private detachPlayer(dock: HTMLElement): void {
+    if (dock.classList.contains("is-detached")) {
+      return;
+    }
+    const rect = dock.getBoundingClientRect();
+    this.playerPopoverLastRect = rect;
+    const placeholder = dock.createDiv({ cls: "evs-player-placeholder" });
+    placeholder.style.setProperty("--evs-detached-width", `${rect.width}px`);
+    placeholder.style.height = `${rect.height}px`;
+    dock.before(placeholder);
+    this.playerPlaceholderEl = placeholder;
+    dock.style.setProperty("--evs-detached-width", `${rect.width}px`);
+    dock.classList.add("is-floating", "is-detached");
+    // Obsidian 的 workspace-leaf 使用 contain: strict；浏览器顶层可越过裁切，
+    // 而播放器仍留在原 DOM 位置，避免重新加载 iframe 或本地视频。
+    dock.setAttribute("popover", "manual");
+    dock.showPopover();
+    this.startPlayerPopoverObserver(dock);
+    this.clampDetachedPlayer(dock, rect.left, rect.top);
+  }
+
+  private restoreDetachedPlayer(dock: HTMLElement): void {
+    this.stopPlayerPopoverObserver();
+    if (dock.matches(":popover-open")) {
+      dock.hidePopover();
+    }
+    dock.removeAttribute("popover");
+    dock.classList.remove("is-detached", "is-moving");
+    dock.style.removeProperty("left");
+    dock.style.removeProperty("top");
+    dock.style.removeProperty("--evs-detached-width");
+    this.playerPlaceholderEl?.remove();
+    this.playerPlaceholderEl = null;
+    this.playerPopoverLastRect = null;
+  }
+
+  private startPlayerPopoverObserver(dock: HTMLElement): void {
+    this.stopPlayerPopoverObserver();
+    const viewDocument = dock.ownerDocument;
+    const viewWindow = viewDocument.defaultView ?? window;
+    const overlaySelector = ".modal-container, .menu, .suggestion-container, .hover-popover";
+    const refresh = (): void => {
+      if (this.playerPopoverRefreshFrame !== null) return;
+      this.playerPopoverRefreshFrame = viewWindow.requestAnimationFrame(() => {
+        this.playerPopoverRefreshFrame = null;
+        if (!dock.classList.contains("is-detached")) return;
+        const leaf = this.containerEl.closest<HTMLElement>(".workspace-leaf");
+        const hostVisible = this.containerEl.isConnected &&
+          (leaf === null || leaf.getClientRects().length > 0);
+        if (dock.matches(":popover-open")) {
+          const rect = dock.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) this.playerPopoverLastRect = rect;
+        }
+        const playerRect = this.playerPopoverLastRect;
+        const overlayVisible = Array.from(viewDocument.querySelectorAll<HTMLElement>(overlaySelector))
+          .some((element) => {
+            if (dock.contains(element)) return false;
+            if (element.getClientRects().length === 0) return false;
+            const style = viewWindow.getComputedStyle(element);
+            if (style.visibility === "hidden") return false;
+            if (element.matches(".modal-container")) return true;
+            return style.opacity !== "0" && playerRect !== null &&
+              rectsOverlap(playerRect, element.getBoundingClientRect());
+          });
+        const shouldShow = hostVisible && !overlayVisible;
+        if (shouldShow && !dock.matches(":popover-open")) {
+          dock.showPopover();
+          this.clampDetachedPlayer(dock);
+        }
+        if (!shouldShow && dock.matches(":popover-open")) dock.hidePopover();
+      });
+    };
+    const watchOverlayNodes = (): void => {
+      this.playerPopoverOverlayObserver?.disconnect();
+      viewDocument.querySelectorAll<HTMLElement>(overlaySelector).forEach((element) => {
+        this.playerPopoverOverlayObserver?.observe(element, {
+          attributes: true,
+          attributeFilter: ["class", "style", "aria-hidden"]
+        });
+      });
+    };
+    this.playerPopoverOverlayObserver = new MutationObserver(refresh);
+    this.playerPopoverObserver = new MutationObserver(() => {
+      watchOverlayNodes();
+      refresh();
+    });
+    this.playerPopoverObserver.observe(viewDocument.body, {
+      childList: true
+    });
+    watchOverlayNodes();
+    this.playerPopoverLeafChangeRef = this.plugin.app.workspace.on("active-leaf-change", refresh);
+    refresh();
+  }
+
+  private stopPlayerPopoverObserver(): void {
+    this.playerPopoverObserver?.disconnect();
+    this.playerPopoverObserver = null;
+    this.playerPopoverOverlayObserver?.disconnect();
+    this.playerPopoverOverlayObserver = null;
+    if (this.playerPopoverLeafChangeRef) {
+      this.plugin.app.workspace.offref(this.playerPopoverLeafChangeRef);
+      this.playerPopoverLeafChangeRef = null;
+    }
+    if (this.playerPopoverRefreshFrame !== null) {
+      const viewWindow = this.playerDockEl?.ownerDocument.defaultView ?? window;
+      viewWindow.cancelAnimationFrame(this.playerPopoverRefreshFrame);
+      this.playerPopoverRefreshFrame = null;
+    }
   }
 
   /**
@@ -1223,6 +1396,11 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         latestWidth = nextWidth;
         didResize = true;
         dock.style.setProperty("--evs-player-width", `${nextWidth}px`);
+        if (dock.classList.contains("is-detached")) {
+          dock.style.setProperty("--evs-detached-width", `${nextWidth}px`);
+          this.playerPlaceholderEl?.style.setProperty("--evs-detached-width", `${nextWidth}px`);
+          this.clampDetachedPlayer(dock, centerX - nextWidth / 2);
+        }
         // 松手事件可能被嵌入式视频窗口拦截，停止拖动后仍会通过防抖保存最终尺寸。
         this.scheduleDesktopPlayerWidthSave(nextWidth, false);
       });
@@ -1239,6 +1417,17 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       "--evs-player-width",
       `${width || DEFAULT_DESKTOP_PLAYER_WIDTH}px`
     );
+    if (this.playerDockEl?.classList.contains("is-detached")) {
+      this.playerDockEl.style.setProperty(
+        "--evs-detached-width",
+        `${width || DEFAULT_DESKTOP_PLAYER_WIDTH}px`
+      );
+      this.playerPlaceholderEl?.style.setProperty(
+        "--evs-detached-width",
+        `${width || DEFAULT_DESKTOP_PLAYER_WIDTH}px`
+      );
+      this.clampDetachedPlayer(this.playerDockEl);
+    }
     this.scheduleTranscriptLayout(false);
   }
 
@@ -1289,8 +1478,11 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     button.type = "button";
     button.setAttribute("aria-pressed", "false");
     this.setControlIcon(button, "pin", "让视频保持在当前画面中");
-    button.addEventListener("click", () => {
-      const floating = !dock.classList.contains("is-floating");
+    let suppressNextClick = false;
+    const setFloating = (floating: boolean, recenter = true): void => {
+      if (!floating) {
+        this.restoreDetachedPlayer(dock);
+      }
       dock.classList.toggle("is-floating", floating);
       button.setAttribute("aria-pressed", floating.toString());
       this.setControlIcon(
@@ -1298,7 +1490,136 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         floating ? "pin-off" : "pin",
         floating ? "取消视频悬浮" : "让视频保持在当前画面中"
       );
-      this.scheduleTranscriptLayout(true);
+      this.scheduleTranscriptLayout(recenter);
+    };
+
+    if (!this.plugin.capabilities.mobile) {
+      const moveHint = parent.createSpan({
+        cls: "evs-player-move-hint",
+        text: "长按约半秒后拖动播放器；聚焦此按钮后用方向键移动，按 Home 恢复位置。"
+      });
+      moveHint.id = `evs-player-move-hint-${Math.random().toString(36).slice(2)}`;
+      button.setAttribute("aria-describedby", moveHint.id);
+      const viewWindow = dock.ownerDocument.defaultView ?? window;
+      const viewDocument = dock.ownerDocument;
+      let activePointerId: number | null = null;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+      let holdReady = false;
+      let movedBeforeHold = false;
+      let dragged = false;
+
+      const clearLongPress = (): void => {
+        if (this.playerLongPressTimer !== null) {
+          viewWindow.clearTimeout(this.playerLongPressTimer);
+          this.playerLongPressTimer = null;
+        }
+        this.playerLongPressWindow = null;
+      };
+      this.register(clearLongPress);
+
+      this.registerDomEvent(button, "pointerdown", (event) => {
+        if (event.button !== 0 || activePointerId !== null) {
+          return;
+        }
+        activePointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        const rect = dock.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
+        holdReady = false;
+        movedBeforeHold = false;
+        dragged = false;
+        button.setPointerCapture(event.pointerId);
+        this.playerLongPressWindow = viewWindow;
+        this.playerLongPressTimer = viewWindow.setTimeout(() => {
+          this.playerLongPressTimer = null;
+          this.playerLongPressWindow = null;
+          if (activePointerId !== null && !movedBeforeHold) {
+            holdReady = true;
+            button.classList.add("is-drag-ready");
+          }
+        }, 450);
+      });
+
+      this.registerDomEvent(viewDocument, "pointermove", (event) => {
+        if (activePointerId !== event.pointerId) {
+          return;
+        }
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        if (!holdReady) {
+          if (Math.hypot(dx, dy) > 6) {
+            movedBeforeHold = true;
+            clearLongPress();
+          }
+          return;
+        }
+        if (!dragged && Math.hypot(dx, dy) < 4) {
+          return;
+        }
+        event.preventDefault();
+        if (!dragged) {
+          dragged = true;
+          this.detachPlayer(dock);
+          dock.classList.add("is-moving");
+          setFloating(true, false);
+        }
+        this.clampDetachedPlayer(dock, startLeft + dx, startTop + dy);
+      });
+
+      const finishPress = (event: PointerEvent): void => {
+        if (activePointerId !== event.pointerId) {
+          return;
+        }
+        activePointerId = null;
+        clearLongPress();
+        button.classList.remove("is-drag-ready");
+        dock.classList.remove("is-moving");
+        if (holdReady || movedBeforeHold || dragged) {
+          suppressNextClick = true;
+          viewWindow.setTimeout(() => { suppressNextClick = false; }, 0);
+        }
+        if (dragged) {
+          this.scheduleTranscriptLayout(true);
+        }
+      };
+      this.registerDomEvent(viewDocument, "pointerup", finishPress);
+      this.registerDomEvent(viewDocument, "pointercancel", finishPress);
+      this.registerDomEvent(button, "lostpointercapture", finishPress);
+      this.registerDomEvent(button, "keydown", (event) => {
+        const directions: Record<string, [number, number]> = {
+          ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]
+        };
+        const direction = directions[event.key];
+        if (event.key !== "Home" && !direction) return;
+        event.preventDefault();
+        if (!dock.classList.contains("is-detached")) {
+          this.detachPlayer(dock);
+          setFloating(true, false);
+        }
+        if (event.key === "Home") {
+          const rect = this.playerPlaceholderEl?.getBoundingClientRect();
+          if (rect) this.clampDetachedPlayer(dock, rect.left, rect.top);
+          return;
+        }
+        const rect = dock.getBoundingClientRect();
+        const step = event.shiftKey ? 1 : 10;
+        this.clampDetachedPlayer(dock, rect.left + direction[0] * step, rect.top + direction[1] * step);
+      });
+    }
+
+    button.addEventListener("click", (event) => {
+      if (suppressNextClick && event.detail !== 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressNextClick = false;
+        return;
+      }
+      setFloating(!dock.classList.contains("is-floating"));
     });
     return button;
   }
@@ -6572,8 +6893,46 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       actionDock.style.removeProperty("--evs-segment-action-top");
       return;
     }
+    if (playerDock.classList.contains("is-detached")) {
+      const viewport = this.fullWidthScrollEl ?? this.viewViewportEl;
+      const playerRect = playerDock.getBoundingClientRect();
+      const actionRect = actionDock.getBoundingClientRect();
+      const viewportTop = viewport?.getBoundingClientRect().top ?? 0;
+      if (
+        playerRect.top > viewportTop + 16 ||
+        playerRect.right <= actionRect.left ||
+        playerRect.left >= actionRect.right
+      ) {
+        actionDock.style.removeProperty("--evs-segment-action-top");
+        return;
+      }
+      actionDock.style.setProperty(
+        "--evs-segment-action-top",
+        `${Math.ceil(playerRect.bottom - viewportTop + 16)}px`
+      );
+      return;
+    }
     const playerHeight = Math.ceil(playerDock.getBoundingClientRect().height);
     actionDock.style.setProperty("--evs-segment-action-top", `${playerHeight + 16}px`);
+  }
+
+  private getPlayerObstructionBottom(viewportRect: DOMRect): number {
+    const dock = this.playerDockEl;
+    if (!dock?.classList.contains("is-floating")) {
+      return viewportRect.top;
+    }
+    const playerRect = dock.getBoundingClientRect();
+    if (!dock.classList.contains("is-detached")) {
+      return playerRect.bottom;
+    }
+    const contentRect = this.segmentRows[0]?.getBoundingClientRect()
+      ?? this.transcriptListEl?.getBoundingClientRect()
+      ?? viewportRect;
+    return playerRect.top <= viewportRect.top + 16 &&
+      playerRect.right > contentRect.left &&
+      playerRect.left < contentRect.right
+      ? playerRect.bottom
+      : viewportRect.top;
   }
 
   private updateTranscriptEndSpacer(): void {
@@ -6584,9 +6943,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       return;
     }
     const viewportRect = viewport.getBoundingClientRect();
-    const dockBottom = this.playerDockEl?.classList.contains("is-floating")
-      ? this.playerDockEl.getBoundingClientRect().bottom
-      : viewportRect.top;
+    const dockBottom = this.getPlayerObstructionBottom(viewportRect);
     const visibleTop = Math.max(viewportRect.top + 8, dockBottom + 8);
     const visibleHeight = Math.max(0, viewportRect.bottom - 8 - visibleTop);
     const height = `${calculateTranscriptEndSpacer(
@@ -6609,9 +6966,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
     const rowRect = row.getBoundingClientRect();
     const viewportRect = viewport.getBoundingClientRect();
-    const dockBottom = this.playerDockEl?.classList.contains("is-floating")
-      ? this.playerDockEl.getBoundingClientRect().bottom
-      : viewportRect.top;
+    const dockBottom = this.getPlayerObstructionBottom(viewportRect);
     const visibleTop = Math.max(viewportRect.top + 8, dockBottom + 8);
     const visibleBottom = viewportRect.bottom - 8;
     const delta = calculateViewportAlignedScrollDelta(
@@ -6770,6 +7125,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 }
 
 export default class LinguaStudyPlugin extends Plugin {
+  private settingsUpdateQueue: Promise<void> = Promise.resolve();
   settings: LinguaStudySettings = { ...DEFAULT_SETTINGS };
   readonly chatSessions = new StudyChatSessions();
   readonly capabilities: PlatformCapabilities = getPlatformCapabilities();
@@ -6820,16 +7176,20 @@ export default class LinguaStudyPlugin extends Plugin {
   private studyBlockRevealGeneration = 0;
   private readonly transcriptFingerprintCache = new VersionedAsyncCache<TranscriptFingerprintData>(8);
   private updateCheckPromise: Promise<PluginUpdateInfo | null> | null = null;
+  private renameQueue: Promise<void> = Promise.resolve();
 
   async onload(): Promise<void> {
-    this.settings = sanitizeSettings(await this.loadData());
-    await this.saveData(this.settings);
+    await this.backupMalformedSettingsData();
+    const storedSettings: unknown = await this.loadData();
+    this.settings = sanitizeSettings(storedSettings);
     this.applyInterfaceTheme();
     this.translationService = new TranslationService(this.app, () => this.settings);
     this.translationCacheStore = new TranslationCacheStore(this.app);
     this.studyCacheStore = new StudyCacheStore(this.app);
-    this.vocabularyStore = new VocabularyStore(this.app);
-    this.highlightStore = new HighlightStore(this.app);
+    this.vocabularyStore = new VocabularyStore(this.app, (path, previouslySeen) =>
+      confirmLibraryCreation(this.app, "生词本", path, previouslySeen));
+    this.highlightStore = new HighlightStore(this.app, (path, previouslySeen) =>
+      confirmLibraryCreation(this.app, "高亮笔记", path, previouslySeen));
     let ytDlpFetcher: YtDlpTranscriptFetcher | null = null;
     if (this.capabilities.desktop) {
       const [
@@ -6927,12 +7287,13 @@ export default class LinguaStudyPlugin extends Plugin {
       this.registerInterval(window.setInterval(() => {
         if (this.settings.autoRefreshRssSubscriptions) void this.refreshRssSubscriptionsAutomatically();
       }, RSS_AUTO_REFRESH_INTERVAL_MS));
-      this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-        void controller.store.noteRenamed(oldPath, file.path).catch((error) => {
-          console.warn("Lingua Study: 订阅笔记路径更新失败", error);
-        });
-      }));
     }
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      const run = () => this.handleVaultRename(file, oldPath);
+      this.renameQueue = this.renameQueue.then(run, run).catch((error: unknown) => {
+        console.warn("Lingua Study: 文件路径更新失败", error);
+      });
+    }));
     this.bilibiliSessionService = new BilibiliSessionService();
     this.bilibiliImporter = new BilibiliImportController(
       this.app,
@@ -7024,6 +7385,19 @@ export default class LinguaStudyPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "recreate-missing-vocabulary-book",
+      name: "重新建立空生词本（仅在主动删除旧文件后）",
+      callback: () => {
+        const store = this.vocabularyStore;
+        if (!store) return;
+        void store.recreateMissingFile().then((created) => {
+          new Notice(created ? "已建立空生词本。" : "未建立生词本；文件可能已恢复或操作已取消。", 6_000);
+          if (created) this.notifyVocabularyChanged();
+        }).catch((error) => new Notice(error instanceof Error ? error.message : "生词本建立失败。", 8_000));
+      }
+    });
+
+    this.addCommand({
       id: "open-highlight-library",
       name: "打开高亮笔记",
       checkCallback: (checking) => {
@@ -7031,6 +7405,19 @@ export default class LinguaStudyPlugin extends Plugin {
           void this.openDictionarySection("highlights");
         }
         return this.capabilities.desktop;
+      }
+    });
+
+    this.addCommand({
+      id: "recreate-missing-highlight-book",
+      name: "重新建立空高亮笔记（仅在主动删除旧文件后）",
+      callback: () => {
+        const store = this.highlightStore;
+        if (!store) return;
+        void store.recreateMissingFile().then((created) => {
+          new Notice(created ? "已建立空高亮笔记。" : "未建立高亮笔记；文件可能已恢复或操作已取消。", 6_000);
+          if (created) this.notifyHighlightsChanged();
+        }).catch((error) => new Notice(error instanceof Error ? error.message : "高亮笔记建立失败。", 8_000));
       }
     });
 
@@ -7189,6 +7576,38 @@ export default class LinguaStudyPlugin extends Plugin {
     );
     // 插件重新加载时不会再次触发 file-open；主动处理当前笔记，避免源码状态被保留。
     this.scheduleStudyBlockReveal(this.app.workspace.getActiveFile());
+  }
+
+  private async backupMalformedSettingsData(): Promise<void> {
+    const path = normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}/data.json`);
+    if (!(await this.app.vault.adapter.exists(path))) return;
+    const raw = await this.app.vault.adapter.read(path);
+    try {
+      JSON.parse(raw);
+    } catch {
+      const showBackupError = (backupPath: string): never => {
+        const message = `Lingua Study 设置文件格式错误，原文已备份到 ${backupPath}。请检查该文件后重新加载插件。`;
+        new Notice(message, 12_000);
+        throw new Error(message);
+      };
+      const folder = path.slice(0, path.lastIndexOf("/"));
+      const prefix = path.replace(/\.json$/u, ".invalid-");
+      const existing = await this.app.vault.adapter.list(folder);
+      for (const backupPath of existing.files) {
+        if (!backupPath.startsWith(prefix) || !backupPath.endsWith(".backup.json")) continue;
+        if (await this.app.vault.adapter.read(backupPath) === raw) showBackupError(backupPath);
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
+      for (let suffix = 0; suffix < 100; suffix += 1) {
+        const backupPath = path.replace(/\.json$/u,
+          `.invalid-${stamp}${suffix ? `-${suffix}` : ""}.backup.json`);
+        if (await this.app.vault.adapter.exists(backupPath)) continue;
+        await this.app.vault.adapter.write(backupPath, raw);
+        showBackupError(backupPath);
+      }
+      new Notice(`Lingua Study 设置文件格式错误，且无法创建备份：${path}`, 12_000);
+      throw new Error(`Lingua Study 设置文件格式错误，且无法创建唯一备份，已停止启动：${path}`);
+    }
   }
 
   onunload(): void {
@@ -7410,7 +7829,67 @@ export default class LinguaStudyPlugin extends Plugin {
     });
   }
 
+  private async handleVaultRename(file: TAbstractFile, oldPath: string): Promise<void> {
+    const newPath = file.path;
+    const actions: Array<[string, () => Promise<void>]> = [
+      ["订阅笔记", async () => {
+        await this.rssSubscriptionController?.store.noteRenamed(oldPath, newPath);
+      }],
+      ["生词语境", async () => {
+        if (await this.vocabularyStore?.pathsRenamed(oldPath, newPath)) this.notifyVocabularyChanged();
+      }],
+      ["高亮笔记", async () => {
+        if (await this.highlightStore?.pathsRenamed(oldPath, newPath)) this.notifyHighlightsChanged();
+      }]
+    ];
+    for (const [label, action] of actions) {
+      try {
+        await action();
+      } catch (error) {
+        console.warn(`Lingua Study: ${label}路径更新失败`, error);
+      }
+    }
+    if (!(file instanceof TFile) || !oldPath.toLowerCase().endsWith(".json") ||
+        !newPath.toLowerCase().endsWith(".json") ||
+        /\.zh-CN\.(?:translations|study)\.json$/iu.test(oldPath)) return;
+    for (const getPath of [getTranslationCachePath, getStudyCachePath]) {
+      const from = normalizePath(getPath(oldPath));
+      const to = normalizePath(getPath(newPath));
+      if (from === to) continue;
+      const sidecar = this.app.vault.getAbstractFileByPath(from);
+      if (!(sidecar instanceof TFile)) continue;
+      if (this.app.vault.getAbstractFileByPath(to) !== null) {
+        console.warn(`Lingua Study: 缓存目标路径已存在，保留原缓存：${from} → ${to}`);
+        continue;
+      }
+      try {
+        await this.app.vault.rename(sidecar, to);
+      } catch (error) {
+        console.warn(`Lingua Study: 缓存路径更新失败：${from} → ${to}`, error);
+      }
+    }
+  }
+
   async updateSettings(changes: Partial<LinguaStudySettings>): Promise<void> {
+    const task = this.settingsUpdateQueue.catch(() => undefined)
+      .then(() => this.updateSettingsNow(changes));
+    this.settingsUpdateQueue = task;
+    await task;
+  }
+
+  async onExternalSettingsChange(): Promise<void> {
+    try {
+      await this.updateSettings({});
+    } catch (error) {
+      console.warn("Lingua Study: 外部设置变化读取失败，保留当前设置。", error);
+    }
+  }
+
+  private async updateSettingsNow(changes: Partial<LinguaStudySettings>): Promise<void> {
+    await this.backupMalformedSettingsData();
+    const latestStored: unknown = await this.loadData();
+    const latestSettings = sanitizeSettings(latestStored);
+    const latestSnapshot = mergeSettingsForSave(latestStored, latestSettings, {});
     const previousProfile = this.settings.studyProfile;
     const previousChatProvider = this.settings.chatProvider;
     const previousDailyNewWordLimit = this.settings.dailyNewWordLimit;
@@ -7422,8 +7901,12 @@ export default class LinguaStudyPlugin extends Plugin {
     const previousAutoOpenRssSidebar = this.settings.autoOpenRssSidebar;
     const previousEnableHighlights = this.settings.enableHighlights;
     const previousHighlightCategories = JSON.stringify(this.settings.highlightCategories);
-    this.settings = sanitizeSettings({ ...this.settings, ...changes });
-    await this.saveData(this.settings);
+    const nextSettings = sanitizeSettings({ ...latestSettings, ...changes });
+    const nextStoredSettings = mergeSettingsForSave(latestStored, nextSettings, changes);
+    if (JSON.stringify(nextStoredSettings) !== JSON.stringify(latestSnapshot)) {
+      await this.saveData(nextStoredSettings);
+    }
+    this.settings = nextSettings;
     if (this.settings.chatProvider !== previousChatProvider) {
       for (const leaf of this.app.workspace.getLeavesOfType(STUDY_CHAT_VIEW_TYPE)) {
         if (leaf.view instanceof StudyChatView) leaf.view.refresh();
@@ -7579,6 +8062,10 @@ export default class LinguaStudyPlugin extends Plugin {
       "Thank you for using Lingua Study."
     );
     return result.text;
+  }
+
+  async testLocalChatConnection(signal?: AbortSignal): Promise<string> {
+    return this.getTranslationService().testLocalChatConnection(signal);
   }
 
   openSelectionTranslation(sourceText: string): void {
@@ -7766,9 +8253,10 @@ export default class LinguaStudyPlugin extends Plugin {
     history: readonly StudyChatMessage[],
     question: string,
     onDelta: (text: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onReasoning?: () => void
   ): Promise<string> {
-    return this.getTranslationService().chat(profile, context, history, question, onDelta, signal);
+    return this.getTranslationService().chat(profile, context, history, question, onDelta, signal, onReasoning);
   }
 
   async openRssSidebar(): Promise<void> {

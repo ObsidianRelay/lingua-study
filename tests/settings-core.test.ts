@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sanitizeSettings } from "../src/settings-core";
+import { mergeSettingsForSave, sanitizeSettings } from "../src/settings-core";
 
 test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   const settings = sanitizeSettings({
     transcriptFolder: " Study/Transcripts ",
     ytDlpPath: " /opt/homebrew/bin/yt-dlp ",
     whisperModel: "small.en",
+    speechCloudBaseUrl: "https://old.example.com",
+    speechCloudModel: "old",
+    speechCloudSecretId: "old",
     translationProvider: "disabled",
     cacheTranslations: false
   });
@@ -35,6 +38,27 @@ test("升级时删除旧 Whisper 模型选项并保留其他设置", () => {
   assert.equal("speechCloudBaseUrl" in settings, false);
   assert.equal("speechCloudModel" in settings, false);
   assert.equal("speechCloudSecretId" in settings, false);
+});
+
+test("保留其他版本的未知设置，供下一次主动保存时写回", () => {
+  const settings = sanitizeSettings({
+    futureFeature: { enabled: true },
+    dailyNewWordLimit: 20,
+    whisperModel: "small.en"
+  });
+  assert.deepEqual((settings as unknown as Record<string, unknown>).futureFeature, { enabled: true });
+  assert.equal(settings.dailyNewWordLimit, 20);
+  assert.equal("whisperModel" in settings, false);
+  assert.equal("0" in sanitizeSettings(["not a settings object"]), false);
+});
+
+test("修改旧版设置时保留新版已扩展的枚举值", () => {
+  const stored = { translationProvider: "future-provider", dailyNewWordLimit: 10 };
+  const current = sanitizeSettings(stored);
+  const changed = sanitizeSettings({ ...current, dailyNewWordLimit: 12 });
+  const saved = mergeSettingsForSave(stored, changed, { dailyNewWordLimit: 12 });
+  assert.equal(saved.translationProvider, "future-provider");
+  assert.equal(saved.dailyNewWordLimit, 12);
 });
 
 test("订阅侧栏自动显示默认关闭，仅保留明确的布尔设置", () => {

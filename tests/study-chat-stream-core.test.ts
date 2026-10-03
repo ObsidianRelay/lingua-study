@@ -6,6 +6,7 @@ test("流式聊天按跨网络片段的 SSE 事件逐段输出，只显示回答
   const parser = new StudyChatStreamParser();
   assert.deepEqual(parser.push('data: {"choices":[{"delta":{"reasoning_content":"隐藏思考"}}]}\r'), []);
   assert.deepEqual(parser.push('\n\r\ndata: {"choices":[{"delta":{"content":"你好"}}]}\n\n'), ["你好"]);
+  assert.equal(parser.hasReasoning, true);
   assert.deepEqual(parser.push('data: {"choices":[{"delta":{"content":"，世界"},"finish_reason":"stop"}]}\n\n'), ["，世界"]);
   assert.deepEqual(parser.push("data: [DONE]\n\n"), []);
   assert.equal(parser.finish(), "你好，世界");
@@ -22,4 +23,9 @@ test("流式聊天发现提前断线、无效事件和空回答", () => {
   const empty = new StudyChatStreamParser();
   empty.push("data: [DONE]\n\n");
   assert.throws(() => empty.finish(), /空内容/u);
+
+  const reasoningOnly = new StudyChatStreamParser();
+  reasoningOnly.push('data: {"choices":[{"delta":{"reasoning":"还在思考"},"finish_reason":"length"}]}\n\n');
+  assert.deepEqual(reasoningOnly.push("data: [DONE]\n\n"), []);
+  assert.throws(() => reasoningOnly.finish(), /只有思考内容|只返回了思考内容/u);
 });

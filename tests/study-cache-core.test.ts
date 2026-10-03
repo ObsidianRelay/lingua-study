@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createEmptyStudyCache,
   getStudyCachePath,
+  recoverStudyCache,
   upsertStudyCacheEntry,
   validateStudyCache,
   type StudyCacheEntry
@@ -30,6 +31,17 @@ const entry: StudyCacheEntry = {
   model: "test-model",
   updatedAt: "2026-08-18T00:00:00.000Z"
 };
+
+test("知识卡缓存隔离单条坏数据并保留正常结果", () => {
+  const valid = upsertStudyCacheEntry(createEmptyStudyCache("video"), "a".repeat(64), entry);
+  const raw = { ...valid, analyses: {
+    ...valid.analyses,
+    ["b".repeat(64)]: { ...entry, profile: "invalid" }
+  } };
+  const recovered = recoverStudyCache(raw, "video");
+  assert.deepEqual(recovered.cache, valid);
+  assert.equal(Object.keys(recovered.invalidEntries).length, 1);
+});
 
 test("知识卡缓存使用独立路径并保留不同指纹", () => {
   assert.equal(

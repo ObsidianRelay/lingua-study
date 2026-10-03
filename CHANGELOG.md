@@ -2,6 +2,27 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 2.1.0 - 2026-10-03
+
+### Added
+
+- Added an optional local-model provider for study chat using a loopback OpenAI-compatible Chat Completions endpoint, a manually entered model ID, an optional Obsidian SecretStorage credential, and a connection test
+- Added desktop player positioning inside the Obsidian window: hold the pin button to drag, use the keyboard to adjust position, and unpin to return to the original place without reloading the video
+
+### Changed
+
+- Show the smaller pin button when the pointer enters the player; keep the floating player clear of relevant Obsidian dialogs and overlapping menus
+- Scale Lingua Paper player controls continuously with player width, including at the minimum size
+- Show a thinking indicator when a local reasoning model streams reasoning before its answer, and allow a larger output budget for local models
+
+### Fixed
+
+- Prevent a missing vocabulary book or highlight library from being silently recreated while sync is incomplete; recover valid entries from damaged data and back up the original before rewriting it
+- Update transcript-linked highlights, vocabulary context, translations, and study caches when a transcript file is renamed
+- Preserve unknown and externally changed settings, back up malformed settings data, and discover all test files automatically
+
+Review ratings are still stored in one shared vocabulary-book file. Finish sync before reviewing on another device; simultaneous offline ratings cannot yet be merged reliably.
+
 ## 2.0.1 - 2026-09-30
 
 ### Added

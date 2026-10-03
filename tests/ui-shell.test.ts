@@ -452,7 +452,6 @@ test("设置页样式统一导航卡片、状态和窄窗口布局", async () =>
 
 test("云端语音识别入口、配置和实现已完整移除", async () => {
   const files = await Promise.all([
-    "src/settings-core.ts",
     "src/settings.ts",
     "src/document-transcript-import.ts",
     "src/bilibili-import.ts",
@@ -460,6 +459,13 @@ test("云端语音识别入口、配置和实现已完整移除", async () => {
   ].map((path) => readFile(path, "utf8")));
   const source = files.join("\n");
   assert.doesNotMatch(source, /speechCloud|CloudSpeech|云端自动对齐|audio\/transcriptions/u);
+  const settingsCore = await readFile("src/settings-core.ts", "utf8");
+  const withoutLegacyCleanup = settingsCore.replace(
+    /^[ \t]*delete (?:preserved|data)\.speechCloud(?:BaseUrl|Model|SecretId);\r?\n?/gmu,
+    ""
+  );
+  assert.doesNotMatch(withoutLegacyCleanup,
+    /speechCloud|CloudSpeech|云端自动对齐|audio\/transcriptions/u);
 });
 
 test("Whisper Worker 构建时固定使用 Web ONNX 后端", async () => {
@@ -646,8 +652,8 @@ test("简洁样式铺开全部字幕并移除内部滚动窗口", async () => {
   assert.match(css, /\.evs-player-stage \{[\s\S]*?position: relative;/u);
   assert.match(css, /\.evs-loading-player \{[\s\S]*?aspect-ratio: 16 \/ 9;/u);
   assert.match(css, /@keyframes evs-loading-shimmer/u);
-  assert.match(css, /\.evs-player-utilities \{[\s\S]*?position: absolute;[\s\S]*?top: 0;[\s\S]*?right: -32px;/u);
-  assert.match(css, /\.evs-player-utilities \.evs-icon-button \{[\s\S]*?border-left: 0;[\s\S]*?border-radius: 0 7px 7px 0;/u);
+  assert.match(css, /\.evs-player-utilities \{[\s\S]*?position: absolute;[\s\S]*?top: 14px;[\s\S]*?right: 14px;/u);
+  assert.match(css, /\.evs-player-utilities \.evs-icon-button \{[\s\S]*?border-radius: 50%;/u);
   assert.match(css, /\.evs-root\.evs-mobile \.evs-toolbar \{[\s\S]*?flex-wrap: nowrap;[\s\S]*?justify-content: flex-end;[\s\S]*?gap: 4px;/u);
   assert.doesNotMatch(css, /\.evs-speed-select/u);
   assert.match(css, /\.evs-root\.evs-mobile \.evs-toolbar > \.evs-floating-toggle/u);
@@ -1098,7 +1104,7 @@ test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", a
   assert.doesNotMatch(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-study-settings-home-group/u);
   assert.match(css, /--interactive-accent: var\(--lingua-paper-accent\);/u);
   assert.match(css, /\.evs-speed-label\.is-active \{[\s\S]*?color: #fff !important;/u);
-  assert.match(css, /\.evs-player-utilities \{[\s\S]*?top: 0;[\s\S]*?right: -40px;/u);
+  assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-player-utilities \{[\s\S]*?top: 14px;[\s\S]*?right: 14px;/u);
   assert.match(css, /\.evs-player-frame \{[\s\S]*?overflow: hidden;[\s\S]*?border-radius: inherit;/u);
   assert.match(css, /\.lingua-dictionary-tabs \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
   assert.match(css, /\.lingua-dictionary-tabs button\.is-active \{[\s\S]*?border-radius: 999px;/u);

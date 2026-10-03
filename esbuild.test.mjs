@@ -5,57 +5,16 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const testOutputDirectory = join(tmpdir(), "lingua-study-test-dist");
+const entryPoints = (await readdir("tests"))
+  .filter((file) => file.endsWith(".test.ts"))
+  .sort()
+  .map((file) => join("tests", file));
 
 await rm(testOutputDirectory, { recursive: true, force: true });
 
 await esbuild.build({
-  entryPoints: [
-    "tests/bilibili-api-core.test.ts",
-    "tests/bilibili-cache-core.test.ts",
-    "tests/bilibili-cache-settings-core.test.ts",
-    "tests/bilibili-cache-settings.test.ts",
-    "tests/bilibili-cache-storage.test.ts",
-    "tests/bilibili-session-core.test.ts",
-    "tests/async-keyed-queue.test.ts",
-    "tests/document-transcript-core.test.ts",
-    "tests/document-import-draft.test.ts",
-    "tests/dictation-core.test.ts",
-    "tests/highlight-core.test.ts",
-    "tests/shadowing-core.test.ts",
-    "tests/ui-shell.test.ts",
-    "tests/ui-layout-core.test.ts",
-    "tests/settings-core.test.ts",
-    "tests/update-check-core.test.ts",
-    "tests/legacy-whisper-cleanup.test.ts",
-    "tests/local-whisper-core.test.ts",
-    "tests/podcast-cache.test.ts",
-    "tests/podcast-import-log.test.ts",
-    "tests/podcast-rss-core.test.ts",
-    "tests/rss-subscription-core.test.ts",
-    "tests/rss-subscription-source-core.test.ts",
-    "tests/podcast-source-core.test.ts",
-    "tests/live-preview-core.test.ts",
-    "tests/player-control-core.test.ts",
-    "tests/platform-core.test.ts",
-    "tests/translation-core.test.ts",
-    "tests/study-core.test.ts",
-    "tests/study-chat-core.test.ts",
-    "tests/study-chat-stream-core.test.ts",
-    "tests/study-chat-text-animator.test.ts",
-    "tests/study-cache-core.test.ts",
-    "tests/dictionary-core.test.ts",
-    "tests/custom-dictionary-core.test.ts",
-    "tests/custom-dictionary.test.ts",
-    "tests/full-dictionary.test.ts",
-    "tests/vocabulary-core.test.ts",
-    "tests/vocabulary-export-core.test.ts",
-    "tests/vocabulary-image-export-core.test.ts",
-    "tests/transcript-core.test.ts",
-    "tests/versioned-async-cache.test.ts",
-    "tests/import-core.test.ts",
-    "tests/yt-dlp-core.test.ts",
-    "tests/yt-dlp-runtime.test.ts"
-  ],
+  entryPoints,
+  alias: { obsidian: join(process.cwd(), "tests/obsidian-vault-mock.ts") },
   bundle: true,
   platform: "node",
   format: "cjs",
@@ -70,6 +29,9 @@ const testFiles = (await readdir(testOutputDirectory))
   .filter((file) => file.endsWith(".test.cjs"))
   .sort()
   .map((file) => join(testOutputDirectory, file));
+if (testFiles.length !== entryPoints.length) {
+  throw new Error(`测试入口数量不一致：源码 ${entryPoints.length}，构建结果 ${testFiles.length}`);
+}
 const testResult = spawnSync(process.execPath, ["--test", ...testFiles], {
   stdio: "inherit"
 });
