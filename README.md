@@ -12,7 +12,7 @@
 扫描下方二维码加入 Lingua Study QQ 群：
 
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ 群二维码，群号 124526985" width="320"></p>
-<p align="center"><strong>QQ群号：124526985</strong></p>
+<p align="center"><strong>QQ群号：1124526985</strong></p>
 
 ## 近期更新（1.3.0–2.1.0）
 
