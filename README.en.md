@@ -11,7 +11,7 @@ Turn English YouTube and Bilibili videos, plus public podcast episodes, into mat
 
 Scan the QR code below to join the Lingua Study QQ group:
 
-<p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 124526985" width="320"></p>
+<p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 1124526985" width="320"></p>
 <p align="center"><strong>QQ group number: 1124526985</strong></p>
 
 ## Recent updates (1.3.0–2.1.0)
