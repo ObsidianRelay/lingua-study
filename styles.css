@@ -6803,6 +6803,7 @@ body.lingua-study-theme-paper:not(.is-mobile)
 
 .lingua-highlight-library-summary {
   display: flex;
+  flex-wrap: wrap;
   min-height: 28px;
   margin-top: 10px;
   align-items: center;
@@ -6810,6 +6811,13 @@ body.lingua-study-theme-paper:not(.is-mobile)
   gap: 12px;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
+}
+
+.lingua-highlight-summary-actions {
+  display: flex;
+  margin-left: auto;
+  align-items: center;
+  gap: 12px;
 }
 
 .lingua-highlight-sort {

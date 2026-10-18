@@ -145,6 +145,11 @@ import {
 import { selectNewestEligibleRenderer } from "./vocabulary-navigation-core";
 import { HighlightStore, type HighlightBookLoadResult } from "./highlight-store";
 import {
+  writeHighlightExport,
+  type HighlightExportStorage,
+  type HighlightExportWriteResult
+} from "./highlight-export-core";
+import {
   HIGHLIGHT_BOOK_VERSION,
   MAX_HIGHLIGHT_NOTE_LENGTH,
   annotationsForSegment,
@@ -8584,6 +8589,45 @@ export default class LinguaStudyPlugin extends Plugin {
 
   async loadHighlightBook(): Promise<HighlightBookLoadResult> {
     return this.getHighlightStore().load();
+  }
+
+  async exportHighlightBookToNote(): Promise<HighlightExportWriteResult> {
+    if (!this.capabilities.desktop) {
+      throw new Error("移动端暂不支持高亮笔记导出，请在电脑端使用。");
+    }
+    const loaded = await this.getHighlightStore().load();
+    if (loaded.warning) throw new Error(loaded.warning);
+    if (Object.keys(loaded.book.annotations).length === 0) {
+      throw new Error("高亮笔记为空，暂时没有可导出的内容。");
+    }
+    const storage: HighlightExportStorage = {
+      inspect: (path) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (node === null) return null;
+        if (node instanceof TFile) return "file";
+        if (node instanceof TFolder) return "folder";
+        throw new Error(`无法识别导出路径类型：${path}`);
+      },
+      read: async (path) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) throw new Error(`无法读取导出笔记：${path}`);
+        return this.app.vault.cachedRead(node);
+      },
+      createFolder: async (path) => { await this.app.vault.createFolder(normalizePath(path)); },
+      createFile: async (path, content) => { await this.app.vault.create(normalizePath(path), content); },
+      updateFile: async (path, content) => {
+        const node = this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if (!(node instanceof TFile)) throw new Error(`无法更新导出笔记：${path}`);
+        await this.app.vault.modify(node, content);
+      }
+    };
+    const result = await writeHighlightExport(storage, loaded.book, this.settings.highlightCategories, new Date());
+    const exported = this.app.vault.getAbstractFileByPath(normalizePath(result.path));
+    if (!(exported instanceof TFile)) {
+      throw new Error("高亮笔记已经写入，但暂时无法打开，请在文件列表中手动打开。");
+    }
+    await this.openVocabularyExportFile(exported);
+    return result;
   }
 
   private validateHighlightCategoryIds(categoryIds: readonly string[]): void {
