@@ -2,6 +2,19 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 2.1.1 - 2026-10-24
+
+### Added
+
+- Export all saved highlights to one Markdown note grouped by highlight category
+- Loop the current transcript sentence from the desktop player controls, beside the playback speed selector
+
+### Fixed
+
+- Let learners copy completed AI chat answers and select answer text
+- Save study chat conversations, history selection, and drafts locally so they return after restarting Obsidian
+- Update the pinned sharp dependency to the patched 0.35.5 release
+
 ## 2.1.0 - 2026-10-03
 
 ### Added
