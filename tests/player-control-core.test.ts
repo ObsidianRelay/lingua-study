@@ -5,6 +5,7 @@ import {
   isPlaybackStateConfirmed,
   shouldAdvancePlaybackClock,
   shouldResumeTranscriptAutoFollow,
+  shouldRestartSentenceLoop,
   shouldStopDictationPlayback,
   waitForMediaMetadata,
   type MediaMetadataSource
@@ -68,6 +69,15 @@ test("听写播放只在到达当前句结束时间后停止", () => {
   assert.equal(shouldStopDictationPlayback(10, 10), true);
   assert.equal(shouldStopDictationPlayback(10.25, 10), true);
   assert.equal(shouldStopDictationPlayback(10.25, null), false);
+});
+
+test("单句循环只在播放越过句尾后重播，并忽略跳转期间的旧时间", () => {
+  assert.equal(shouldRestartSentenceLoop(9.99, 5, 10, true, 1_000), false);
+  assert.equal(shouldRestartSentenceLoop(10, 5, 10, true, 1_000), true);
+  assert.equal(shouldRestartSentenceLoop(10.2, 5, 10, false, 1_000), false);
+  assert.equal(shouldRestartSentenceLoop(10.2, 5, 10, true, 100), false);
+  assert.equal(shouldRestartSentenceLoop(0.3, 0, 0.2, true, 100), true);
+  assert.equal(shouldRestartSentenceLoop(10, 10, 10, true, 1_000), false);
 });
 
 test("暂停或等待暂停确认时不会恢复字幕自动跟随", () => {

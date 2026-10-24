@@ -20,6 +20,7 @@ export class StudyChatView extends ItemView {
   private historyQuery = "";
   private contextExpanded = false;
   private readonly activeRequests = new Set<AbortController>();
+  private draftSaveTimer: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: LinguaStudyPlugin) {
     super(leaf);
@@ -41,6 +42,11 @@ export class StudyChatView extends ItemView {
 
   async onClose(): Promise<void> {
     this.opened = false;
+    if (this.draftSaveTimer !== null) {
+      window.clearTimeout(this.draftSaveTimer);
+      this.draftSaveTimer = null;
+      await this.plugin.persistStudyChatSessions();
+    }
     for (const request of this.activeRequests) request.abort();
     this.unsubscribeProfile?.();
     this.unsubscribeProfile = null;
@@ -63,6 +69,7 @@ export class StudyChatView extends ItemView {
       return;
     }
     this.plugin.chatSessions.attachContext(profile, context);
+    void this.plugin.persistStudyChatSessions();
     this.historyOpen = false;
     this.historyQuery = "";
     this.contextExpanded = false;
@@ -150,6 +157,7 @@ export class StudyChatView extends ItemView {
           });
           entry.addEventListener("click", () => {
             if (this.plugin.chatSessions.select(profile, saved)) {
+              void this.plugin.persistStudyChatSessions();
               this.historyOpen = false;
               this.historyQuery = "";
               this.contextExpanded = false;
@@ -194,9 +202,20 @@ export class StudyChatView extends ItemView {
     }
     for (const message of session.messages) {
       const entry = conversation.createDiv({ cls: `lingua-study-chat-message is-${message.role}` });
-      entry.createDiv({ cls: "lingua-study-chat-speaker", text: message.role === "user" ? "你" : "AI 老师" });
+      const heading = entry.createDiv({ cls: "lingua-study-chat-message-heading" });
+      heading.createDiv({ cls: "lingua-study-chat-speaker", text: message.role === "user" ? "你" : "AI 老师" });
       const text = entry.createDiv({ cls: "lingua-study-chat-text" });
       if (message.role === "assistant") {
+        const copy = heading.createEl("button", { cls: "lingua-study-chat-copy", text: "复制回答" });
+        copy.type = "button";
+        copy.setAttribute("aria-label", "复制 AI 回答");
+        copy.addEventListener("click", () => {
+          void navigator.clipboard.writeText(message.content).then(() => {
+            new Notice("回答已复制。", 3_000);
+          }).catch(() => {
+            new Notice("复制失败，请手动选择回答复制。", 5_000);
+          });
+        });
         text.addClass("markdown-rendered");
         void MarkdownRenderer.render(this.app, message.content, text, "", this).catch(() => {
           text.setText(message.content);
@@ -266,6 +285,7 @@ export class StudyChatView extends ItemView {
       remove.disabled = session.pending;
       remove.addEventListener("click", () => {
         this.plugin.chatSessions.removeContext(profile);
+        void this.plugin.persistStudyChatSessions();
         this.contextExpanded = false;
         this.render();
       });
@@ -280,7 +300,14 @@ export class StudyChatView extends ItemView {
     textarea.value = session.draft;
     textarea.maxLength = 2_000;
     textarea.disabled = session.pending;
-    textarea.addEventListener("input", () => { session.draft = textarea.value; });
+    textarea.addEventListener("input", () => {
+      session.draft = textarea.value;
+      if (this.draftSaveTimer !== null) window.clearTimeout(this.draftSaveTimer);
+      this.draftSaveTimer = window.setTimeout(() => {
+        this.draftSaveTimer = null;
+        void this.plugin.persistStudyChatSessions();
+      }, 500);
+    });
     let composing = false;
     textarea.addEventListener("compositionstart", () => { composing = true; });
     textarea.addEventListener("compositionend", () => { composing = false; });
@@ -362,6 +389,7 @@ export class StudyChatView extends ItemView {
 
   private startNewConversation(profile: StudyProfile): void {
     this.plugin.chatSessions.clear(profile);
+    void this.plugin.persistStudyChatSessions();
     this.historyOpen = false;
     this.historyQuery = "";
     this.contextExpanded = false;
@@ -386,6 +414,7 @@ export class StudyChatView extends ItemView {
     session.error = null;
     this.reasoningSession = null;
     this.render();
+    await this.plugin.persistStudyChatSessions();
     try {
       const answer = await this.plugin.chat(profile, session.context, history, question, (delta) => {
         if (this.plugin.chatSessions.get(profile) !== session) return;
@@ -416,6 +445,7 @@ export class StudyChatView extends ItemView {
       if (this.reasoningSession === session) this.reasoningSession = null;
       session.pending = false;
       session.pendingAnswer = "";
+      await this.plugin.persistStudyChatSessions();
       if (this.plugin.settings.studyProfile === profile) this.render();
     }
   }

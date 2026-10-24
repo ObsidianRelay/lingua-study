@@ -286,6 +286,7 @@ export class LinguaDictionaryView extends ItemView {
   private highlightSearch = "";
   private highlightFilter: HighlightFilter = "all";
   private highlightSortDescending = true;
+  private highlightExporting = false;
   private selectedHighlightId: string | null = null;
   private editingHighlightId: string | null = null;
   private unsubscribeHighlights: (() => void) | null = null;
@@ -564,7 +565,8 @@ export class LinguaDictionaryView extends ItemView {
     summary.createSpan({
       text: `共 ${allAnnotations.length.toLocaleString()} 条标注 · 来自 ${sourceCount.toLocaleString()} 个笔记`
     });
-    const sort = summary.createEl("button", {
+    const summaryActions = summary.createDiv({ cls: "lingua-highlight-summary-actions" });
+    const sort = summaryActions.createEl("button", {
       cls: "lingua-highlight-sort",
       attr: { type: "button", "aria-label": "切换标注时间排序" }
     });
@@ -572,6 +574,29 @@ export class LinguaDictionaryView extends ItemView {
       sort.setText(`按时间 ${this.highlightSortDescending ? "↓" : "↑"}`);
     };
     syncSortText();
+    const exportButton = summaryActions.createEl("button", {
+      cls: "lingua-highlight-sort",
+      text: this.highlightExporting ? "导出中…" : "按类别导出",
+      attr: { type: "button", "aria-label": "将全部高亮笔记按类别导出为一篇笔记" }
+    });
+    exportButton.disabled = allAnnotations.length === 0 || this.highlightWarning !== null || this.highlightExporting;
+    exportButton.addEventListener("click", () => {
+      if (this.highlightExporting || this.highlightWarning || allAnnotations.length === 0) return;
+      this.highlightExporting = true;
+      exportButton.disabled = true;
+      exportButton.setText("导出中…");
+      void this.plugin.exportHighlightBookToNote().then((result) => {
+        new Notice(`已按类别导出 ${result.count} 条高亮笔记，并打开导出笔记。`, 4_000);
+      }).catch((caught) => {
+        new Notice(caught instanceof Error ? caught.message : "高亮笔记导出失败，请重试。", 6_000);
+      }).finally(() => {
+        this.highlightExporting = false;
+        if (exportButton.isConnected) {
+          exportButton.disabled = allAnnotations.length === 0 || this.highlightWarning !== null;
+          exportButton.setText("按类别导出");
+        }
+      });
+    });
 
     const results = parent.createDiv({ cls: "lingua-highlight-results" });
     const renderResults = (): void => {

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-lingua-study",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Study English in Obsidian with video and podcast transcripts, RSS feeds, AI chat, highlights, and vocabulary review.",
   "private": true,
   "license": "MIT",
@@ -50,6 +50,6 @@
     "ts-fsrs": "5.4.2"
   },
   "overrides": {
-    "sharp": "0.35.4"
+    "sharp": "0.35.5"
   }
 }

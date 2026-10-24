@@ -543,7 +543,7 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.equal(source.match(/this\.createTranscriptImportButton\(/gu)?.length, 2);
   assert.match(
     source,
-    /this\.createTranscriptImportButton\(toolbar, config, transcriptData !== null\);\s*if \(!transcriptData\) \{\s*this\.createLocalWhisperRetryButton\(toolbar, config\);\s*\}\s*this\.createSpeedControls\(toolbar\);\s*this\.createSourceLink\(toolbar, sourceUrl\);/u
+    /this\.createTranscriptImportButton\(toolbar, config, transcriptData !== null\);\s*if \(!transcriptData\) \{\s*this\.createLocalWhisperRetryButton\(toolbar, config\);\s*\}\s*this\.createSpeedControls\(toolbar\);\s*this\.createSentenceLoopButton\(toolbar\);\s*this\.createSourceLink\(toolbar, sourceUrl\);/u
   );
   assert.match(
     source,

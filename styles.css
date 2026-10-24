@@ -666,6 +666,8 @@
   background: color-mix(in srgb, var(--background-secondary) 72%, transparent);
 }
 
+.evs-segment.is-looping { box-shadow: inset 0 0 0 2px var(--interactive-accent); }
+
 .evs-segment.is-vocabulary-target {
   border-left-color: var(--interactive-accent);
   background: var(--background-secondary);
@@ -2940,6 +2942,10 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-se
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment.is-action-target:not(.is-active) {
   background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment.is-looping {
+  box-shadow: 0 0 0 2px var(--lingua-paper-accent);
 }
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-meta {
@@ -6106,8 +6112,24 @@ body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-paper-modal .lingua-rs
   border-radius: 14px;
   background: var(--background-secondary);
 }
+.lingua-study-chat-message-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 .lingua-study-chat-speaker { margin-bottom: 4px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.lingua-study-chat-text { white-space: pre-wrap; line-height: 1.55; }
+.lingua-study-chat-copy {
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+.lingua-study-chat-copy:hover { color: var(--text-normal); }
+.lingua-study-chat-text { white-space: pre-wrap; line-height: 1.55; user-select: text; -webkit-user-select: text; }
 .lingua-study-chat-message.is-assistant:not(.is-pending) .lingua-study-chat-text {
   overflow-x: auto;
   white-space: normal;
@@ -6803,6 +6825,7 @@ body.lingua-study-theme-paper:not(.is-mobile)
 
 .lingua-highlight-library-summary {
   display: flex;
+  flex-wrap: wrap;
   min-height: 28px;
   margin-top: 10px;
   align-items: center;
@@ -6810,6 +6833,13 @@ body.lingua-study-theme-paper:not(.is-mobile)
   gap: 12px;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
+}
+
+.lingua-highlight-summary-actions {
+  display: flex;
+  margin-left: auto;
+  align-items: center;
+  gap: 12px;
 }
 
 .lingua-highlight-sort {
@@ -7283,4 +7313,48 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pl
 
 body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-speed-label {
   line-height: calc(clamp(24px, 6.154cqw, 40px) - 8px);
+}
+
+/* 为单句循环留出独立按钮，倍速仍保留五档直接选择。 */
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-speed-group {
+  flex: 1 1 210px;
+  min-width: 180px;
+  max-width: 300px;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-sentence-loop-button {
+  flex: 0 0 clamp(24px, 7.077cqw, 46px);
+  width: clamp(24px, 7.077cqw, 46px);
+  min-width: 0;
+  height: clamp(24px, 7.077cqw, 46px);
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  background: transparent;
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-sentence-loop-button .svg-icon {
+  width: clamp(12px, 3.385cqw, 22px);
+  height: clamp(12px, 3.385cqw, 22px);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-sentence-loop-button:hover:not(:disabled):not([aria-pressed="true"]) {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-hover);
+}
+
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-sentence-loop-button[aria-pressed="true"] {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-sentence-loop-button {
+  border-color: var(--lingua-paper-accent);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-player-dock .evs-sentence-loop-button[aria-pressed="true"] {
+  background: var(--text-normal);
+  color: var(--background-primary);
 }
