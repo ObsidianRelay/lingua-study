@@ -154,3 +154,36 @@ test("未提问时替换材料或点新对话不会制造空历史", () => {
   sessions.clear("ielts");
   assert.equal(sessions.list("ielts").length, 1);
 });
+
+test("学习聊天快照可跨重启恢复当前会话、历史和草稿", () => {
+  const sessions = new StudyChatSessions();
+  const first = sessions.attachContext("ielts", { sentence: "An example." });
+  first.messages.push({ role: "user", content: "解释一下" }, { role: "assistant", content: "这是例句。" });
+  const current = sessions.clear("ielts");
+  current.draft = "下一题";
+  sessions.get("cet4").messages.push({ role: "assistant", content: "Bonjour" });
+  const saved = JSON.parse(JSON.stringify(sessions.snapshot()));
+  const restored = new StudyChatSessions();
+  restored.restore(saved);
+  assert.equal(restored.get("ielts").draft, "下一题");
+  assert.equal(restored.list("ielts")[1]?.messages[1]?.content, "这是例句。");
+  assert.equal(restored.list("ielts")[1]?.context?.sentence, "An example.");
+  assert.equal(restored.get("cet4").messages[0]?.content, "Bonjour");
+  assert.equal(restored.get("ielts").pending, false);
+});
+
+test("生成中的问题恢复为草稿，损坏的会话条目不会阻止加载", () => {
+  const sessions = new StudyChatSessions();
+  const current = sessions.get("ielts");
+  current.messages.push({ role: "user", content: "尚未得到回答的问题" });
+  current.pending = true;
+  current.pendingAnswer = "未完成的回答";
+  const saved = sessions.snapshot();
+  const restored = new StudyChatSessions();
+  restored.restore(saved);
+  assert.equal(restored.get("ielts").draft, "尚未得到回答的问题");
+  assert.equal(restored.get("ielts").messages.length, 0);
+  assert.equal(restored.get("ielts").pendingAnswer, "");
+  restored.restore({ version: 1, profiles: { broken: { currentIndex: 0, sessions: [{ messages: null }] } } });
+  assert.equal(restored.get("ielts").draft, "尚未得到回答的问题");
+});

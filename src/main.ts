@@ -100,6 +100,7 @@ import {
   buildMobileYouTubeStartUrl,
   isPlaybackStateConfirmed,
   shouldAdvancePlaybackClock,
+  shouldRestartSentenceLoop,
   shouldStopDictationPlayback,
   shouldResumeTranscriptAutoFollow,
   waitForMediaMetadata
@@ -739,10 +740,13 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private highlightPenSaving = false;
   private segmentEditButton: HTMLButtonElement | null = null;
   private segmentChatButton: HTMLButtonElement | null = null;
+  private segmentLoopButton: HTMLButtonElement | null = null;
   private segmentDictationButton: HTMLButtonElement | null = null;
   private segmentShadowingButton: HTMLButtonElement | null = null;
   private segmentActionTargetIndex = -1;
   private segmentActionTargetPinned = false;
+  private sentenceLoopIndex: number | null = null;
+  private sentenceLoopLastRestartAt = 0;
   private dictationSession: DictationSession | null = null;
   private dictationPlaybackStopAt: number | null = null;
   private shadowingSession: ShadowingSession | null = null;
@@ -916,10 +920,13 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.highlightPenSaving = false;
     this.segmentEditButton = null;
     this.segmentChatButton = null;
+    this.segmentLoopButton = null;
     this.segmentDictationButton = null;
     this.segmentShadowingButton = null;
     this.segmentActionTargetIndex = -1;
     this.segmentActionTargetPinned = false;
+    this.sentenceLoopIndex = null;
+    this.sentenceLoopLastRestartAt = 0;
     this.dictationSession = null;
     this.dictationPlaybackStopAt = null;
     this.shadowingSession = null;
@@ -1827,6 +1834,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     );
     this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
     this.createSpeedControls(toolbar);
+    this.createSentenceLoopButton(toolbar);
     const relink = toolbar.createEl("button", {
       cls: "evs-button evs-icon-button"
     });
@@ -1872,6 +1880,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       }
       this.currentTime = video.currentTime;
       this.lastTimeUpdateAt = Date.now();
+      if (this.sentenceLoopIndex !== null) this.updateActiveSegment();
+    });
+    video.addEventListener("ended", () => {
+      if (!this.destroyed && this.sentenceLoopIndex !== null) this.restartSentenceLoop();
     });
     video.addEventListener("ratechange", () => {
       if (this.destroyed) {
@@ -1947,7 +1959,14 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     });
     audio.addEventListener("play", () => { if (!this.destroyed) this.onPlayerStateChange(PLAYER_STATE_PLAYING); });
     audio.addEventListener("pause", () => { if (!this.destroyed) this.onPlayerStateChange(PLAYER_STATE_PAUSED); });
-    audio.addEventListener("timeupdate", () => { this.currentTime = audio.currentTime; this.lastTimeUpdateAt = Date.now(); });
+    audio.addEventListener("timeupdate", () => {
+      this.currentTime = audio.currentTime;
+      this.lastTimeUpdateAt = Date.now();
+      if (this.sentenceLoopIndex !== null) this.updateActiveSegment();
+    });
+    audio.addEventListener("ended", () => {
+      if (!this.destroyed && this.sentenceLoopIndex !== null) this.restartSentenceLoop();
+    });
     audio.addEventListener("ratechange", () => { this.playbackRate = audio.playbackRate; this.updateSpeedControl(audio.playbackRate); });
     audio.addEventListener("error", () => this.setStatusText("本地播客音频无法播放，请重新导入节目。", false));
     this.setStatusText(`正在读取播客音频 · ${asset.title}`, false);
@@ -2001,6 +2020,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       this.createLocalWhisperRetryButton(toolbar, config);
     }
     this.createSpeedControls(toolbar);
+    this.createSentenceLoopButton(toolbar);
     this.createSourceLink(toolbar, sourceUrl);
     this.createMobileFloatingToggle(toolbar, playerDock);
 
@@ -2046,6 +2066,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       }
       this.currentTime = (this.cachedVideoOffsets[this.cachedVideoIndex] ?? 0) + video.currentTime;
       this.lastTimeUpdateAt = Date.now();
+      if (this.sentenceLoopIndex !== null) this.updateActiveSegment();
     });
     video.addEventListener("ratechange", () => {
       if (this.destroyed) {
@@ -2056,6 +2077,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     });
     video.addEventListener("ended", () => {
       if (this.destroyed) {
+        return;
+      }
+      if (this.sentenceLoopIndex !== null) {
+        this.restartSentenceLoop();
         return;
       }
       void this.playNextCachedSegment();
@@ -2239,6 +2264,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       );
       this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
       this.createSpeedControls(toolbar);
+      this.createSentenceLoopButton(toolbar);
     }
     this.createSourceLink(toolbar, sourceUrl);
     this.createMobileFloatingToggle(toolbar, playerDock);
@@ -2483,6 +2509,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
     this.updateDictationActionAvailability();
     this.updateShadowingActionAvailability();
+    this.updateSentenceLoopActionAvailability();
     this.translationViews.forEach((view) => this.updateTranslationView(view));
     this.transcriptEndSpacerEl = transcriptList.createDiv({
       cls: "evs-transcript-end-spacer"
@@ -3493,6 +3520,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     ) {
       return;
     }
+
+    if (pinnedByUser && this.sentenceLoopIndex !== null && this.sentenceLoopIndex !== index) {
+      this.stopSentenceLoop();
+    }
     if (
       (this.dictationSession && this.dictationSession.index !== index) ||
       (this.shadowingSession && this.shadowingSession.index !== index)
@@ -3505,7 +3536,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       this.translationViews[this.segmentActionTargetIndex]?.primaryButton.detach();
     }
     this.segmentActionTargetIndex = index;
-    this.segmentActionTargetPinned = pinnedByUser;
+    this.segmentActionTargetPinned = pinnedByUser || this.sentenceLoopIndex === index;
     row.classList.add("is-action-target");
     dock.setAttribute("aria-label", `第 ${index + 1} 句字幕操作`);
     editButton.disabled = this.dictationSession !== null || this.shadowingSession !== null;
@@ -3518,6 +3549,97 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     dock.appendChild(shadowingButton);
     this.updateDictationActionAvailability();
     this.updateShadowingActionAvailability();
+    this.updateSentenceLoopActionAvailability();
+  }
+
+  /** 单句循环只保存在当前播放器内，不修改字幕或用户设置。 */
+  private toggleSentenceLoop(): void {
+    const index = this.segmentActionTargetIndex;
+    if (this.sentenceLoopIndex === index) {
+      this.stopSentenceLoop();
+      return;
+    }
+    const segment = this.transcript?.segments[index];
+    if (
+      !segment || segment.end <= segment.start ||
+      this.plugin.capabilities.mobile ||
+      (!this.localVideoEl && !this.iframeEl) ||
+      !this.controlsActivated || this.dictationSession || this.shadowingSession
+    ) {
+      return;
+    }
+    this.stopSentenceLoop();
+    this.sentenceLoopIndex = index;
+    this.segmentActionTargetPinned = true;
+    this.segmentRows[index]?.classList.add("is-looping");
+    this.updateSentenceLoopActionAvailability();
+    this.restartSentenceLoop();
+  }
+
+  private stopSentenceLoop(): void {
+    if (this.sentenceLoopIndex === null) return;
+    this.segmentRows[this.sentenceLoopIndex]?.classList.remove("is-looping");
+    this.sentenceLoopIndex = null;
+    this.sentenceLoopLastRestartAt = 0;
+    this.segmentActionTargetPinned = false;
+    this.updateSentenceLoopActionAvailability();
+  }
+
+  private updateSentenceLoopActionAvailability(): void {
+    const button = this.segmentLoopButton;
+    if (!button) return;
+    const index = this.segmentActionTargetIndex;
+    const segment = this.transcript?.segments[index];
+    const active = this.sentenceLoopIndex === index;
+    button.disabled = !segment || segment.end <= segment.start ||
+      this.plugin.capabilities.mobile ||
+      (!this.localVideoEl && !this.iframeEl) ||
+      !this.controlsActivated || this.dictationSession !== null || this.shadowingSession !== null;
+    button.setAttribute("aria-pressed", String(active));
+    button.classList.toggle("is-active", active);
+    const label = this.plugin.capabilities.mobile
+      ? "单句循环暂时只支持桌面端"
+      : !this.localVideoEl && !this.iframeEl
+        ? "当前在线播放器无法控制单句循环，请先缓存视频"
+        : !this.controlsActivated
+          ? "播放器准备完成后可开始单句循环"
+          : !segment || segment.end <= segment.start
+            ? "请先选择有有效时间范围的字幕"
+            : this.dictationSession || this.shadowingSession
+              ? "听写或跟读期间不能开启单句循环"
+              : active ? `停止第 ${index + 1} 句循环` : `循环播放第 ${index + 1} 句`;
+    this.setTranscriptActionLabel(button, label);
+  }
+
+  private restartSentenceLoop(): void {
+    const segment = this.transcript?.segments[this.sentenceLoopIndex ?? -1];
+    if (!segment || this.destroyed) return;
+    this.sentenceLoopLastRestartAt = Date.now();
+    if (this.localVideoEl) {
+      void this.seekLocalVideoTo(segment.start, true);
+      return;
+    }
+    if (!this.iframeEl) return;
+    const wasPlaying = this.playerState === PLAYER_STATE_PLAYING;
+    this.clearPendingPlaybackCommand();
+    this.setCurrentTime(segment.start);
+    if (!wasPlaying) this.beginPlaybackCommand(PLAYER_STATE_PLAYING);
+    this.sendCommand("seekTo", [segment.start, true]);
+    if (!wasPlaying) this.sendCommand("playVideo");
+  }
+
+  private restartSentenceLoopAtBoundary(): boolean {
+    const segment = this.transcript?.segments[this.sentenceLoopIndex ?? -1];
+    if (!segment) return false;
+    const isPlaying = this.localVideoEl
+      ? !this.localVideoEl.paused
+      : this.playerState === PLAYER_STATE_PLAYING && this.pendingPlaybackState === null;
+    if (!shouldRestartSentenceLoop(
+      this.getEstimatedCurrentTime(), segment.start, segment.end,
+      isPlaying, Date.now() - this.sentenceLoopLastRestartAt
+    )) return false;
+    this.restartSentenceLoop();
+    return true;
   }
 
   /** 听写只在桌面端可精确控制的 YouTube 或本地缓存播放器中启用。 */
@@ -3638,6 +3760,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       return;
     }
 
+    this.stopSentenceLoop();
     this.selectSegmentForActions(index, true);
     const panel = content.createDiv({ cls: "evs-dictation-panel" });
     panel.setAttribute("aria-label", `第 ${index + 1} 句听写`);
@@ -4067,6 +4190,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       return;
     }
 
+    this.stopSentenceLoop();
     this.selectSegmentForActions(index, true);
     const panel = content.createDiv({ cls: "evs-shadowing-panel" });
     panel.setAttribute("aria-label", `第 ${index + 1} 句跟读录音`);
@@ -6127,6 +6251,18 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.speedSliderEl = slider;
   }
 
+  private createSentenceLoopButton(parent: HTMLElement): void {
+    const button = parent.createEl("button", {
+      cls: "evs-button evs-icon-button evs-sentence-loop-button"
+    });
+    button.type = "button";
+    button.disabled = true;
+    button.setAttribute("aria-pressed", "false");
+    this.setControlIcon(button, "repeat-1", "请先选择要循环的字幕");
+    button.addEventListener("click", () => this.toggleSentenceLoop());
+    this.segmentLoopButton = button;
+  }
+
   private setControlIcon(element: HTMLElement, icon: string, label: string): void {
     element.empty();
     setIcon(element, icon);
@@ -6181,6 +6317,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
     this.updateDictationActionAvailability();
     this.updateShadowingActionAvailability();
+    this.updateSentenceLoopActionAvailability();
     this.updateActiveSegment();
   }
 
@@ -6362,6 +6499,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       }
     } else {
       this.cancelTranscriptAutoFollowResume();
+      if (state === 0 && this.sentenceLoopIndex !== null) this.restartSentenceLoop();
     }
   }
 
@@ -6503,6 +6641,9 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   private seekBy(deltaSeconds: number): void {
     this.clearVocabularyNavigationTarget();
+    const loop = this.transcript?.segments[this.sentenceLoopIndex ?? -1];
+    const requestedTime = this.getEstimatedCurrentTime() + deltaSeconds;
+    if (loop && (requestedTime < loop.start || requestedTime >= loop.end)) this.stopSentenceLoop();
     this.resumeTranscriptAutoFollow(true);
     if (this.localVideoEl) {
       const requested = Math.max(0, this.getEstimatedCurrentTime() + deltaSeconds);
@@ -6523,6 +6664,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   private jumpTo(seconds: number): void {
     this.clearVocabularyNavigationTarget();
+    const loop = this.transcript?.segments[this.sentenceLoopIndex ?? -1];
+    if (loop && (seconds < loop.start || seconds >= loop.end)) this.stopSentenceLoop();
     this.resumeTranscriptAutoFollow(true);
     if (this.localVideoEl) {
       void this.seekLocalVideoTo(seconds, true);
@@ -6717,6 +6860,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (this.stopDictationPlaybackAtBoundary() || this.stopShadowingPlaybackAtBoundary()) {
       return;
     }
+    if (this.restartSentenceLoopAtBoundary()) return;
 
     const currentTime = this.getEstimatedCurrentTime();
     const nextIndex = segments.findIndex(
@@ -6823,9 +6967,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private resumeTranscriptAutoFollow(recenter: boolean): void {
     this.cancelTranscriptAutoFollowResume();
     this.transcriptAutoFollowEnabled = true;
-    this.segmentActionTargetPinned = false;
-    if (this.activeSegmentIndex >= 0) {
-      this.selectSegmentForActions(this.activeSegmentIndex, false);
+    this.segmentActionTargetPinned = this.sentenceLoopIndex !== null;
+    const targetIndex = this.sentenceLoopIndex ?? this.activeSegmentIndex;
+    if (targetIndex >= 0) {
+      this.selectSegmentForActions(targetIndex, false);
     }
     if (recenter && this.activeSegmentIndex >= 0) {
       this.scheduleTranscriptLayout(true);
@@ -7187,6 +7332,9 @@ export default class LinguaStudyPlugin extends Plugin {
     await this.backupMalformedSettingsData();
     const storedSettings: unknown = await this.loadData();
     this.settings = sanitizeSettings(storedSettings);
+    if (storedSettings && typeof storedSettings === "object" && !Array.isArray(storedSettings)) {
+      this.chatSessions.restore((storedSettings as Record<string, unknown>).studyChatSessions);
+    }
     this.applyInterfaceTheme();
     this.translationService = new TranslationService(this.app, () => this.settings);
     this.translationCacheStore = new TranslationCacheStore(this.app);
@@ -7880,6 +8028,25 @@ export default class LinguaStudyPlugin extends Plugin {
       .then(() => this.updateSettingsNow(changes));
     this.settingsUpdateQueue = task;
     await task;
+  }
+
+  async persistStudyChatSessions(): Promise<void> {
+    const snapshot = this.chatSessions.snapshot();
+    const task = this.settingsUpdateQueue.catch(() => undefined).then(async () => {
+      await this.backupMalformedSettingsData();
+      const stored: unknown = await this.loadData();
+      const data = stored && typeof stored === "object" && !Array.isArray(stored)
+        ? { ...(stored as Record<string, unknown>) } : {};
+      data.studyChatSessions = snapshot;
+      await this.saveData(data);
+    });
+    this.settingsUpdateQueue = task;
+    try {
+      await task;
+    } catch (error) {
+      console.warn("Lingua Study: 学习聊天保存失败。", error);
+      new Notice("学习聊天保存失败，请检查 Obsidian 文件权限或磁盘空间。", 8_000);
+    }
   }
 
   async onExternalSettingsChange(): Promise<void> {

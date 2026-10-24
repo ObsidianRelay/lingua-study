@@ -86,6 +86,24 @@ export function shouldStopDictationPlayback(
   return stopAt !== null && Number.isFinite(currentTime) && currentTime >= stopAt;
 }
 
+/** 句尾才重新播放；短暂冷却可避免播放器跳转时的旧时间回报重复触发。 */
+export function shouldRestartSentenceLoop(
+  currentTime: number,
+  start: number,
+  end: number,
+  isPlaying: boolean,
+  elapsedSinceRestartMs: number
+): boolean {
+  const cooldownMs = Math.min(400, (end - start) * 500);
+  return isPlaying &&
+    Number.isFinite(currentTime) &&
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    end > start &&
+    currentTime >= end &&
+    elapsedSinceRestartMs >= cooldownMs;
+}
+
 /**
  * 自动跟随只允许在视频确实播放时恢复。
  * 本地播放器直接读取 paused；YouTube 则要求当前状态为播放且没有待确认命令。

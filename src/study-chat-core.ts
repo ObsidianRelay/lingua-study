@@ -47,15 +47,62 @@ export interface StudyChatSession {
   error: string | null;
 }
 
+export interface StoredStudyChatSessions {
+  version: 1;
+  profiles: Record<string, {
+    currentIndex: number;
+    sessions: Array<Pick<StudyChatSession, "context" | "messages" | "draft">>;
+  }>;
+}
+
 function emptySession(context: StudyChatContext | null = null): StudyChatSession {
   return { context, messages: [], draft: "", pending: false, pendingAnswer: "", error: null };
 }
 
 export class StudyChatSessions {
-  private readonly byProfile = new Map<StudyProfile, {
+  private readonly byProfile = new Map<string, {
     current: StudyChatSession;
     sessions: StudyChatSession[];
   }>();
+
+  snapshot(): StoredStudyChatSessions {
+    const profiles: StoredStudyChatSessions["profiles"] = Object.create(null) as StoredStudyChatSessions["profiles"];
+    for (const [key, state] of this.byProfile) {
+      profiles[key] = {
+        currentIndex: state.sessions.indexOf(state.current),
+        sessions: state.sessions.map((session) => {
+          const messages = session.messages.map((message) => ({ ...message }));
+          let draft = session.draft;
+          if (session.pending && messages.at(-1)?.role === "user") {
+            draft = messages.pop()?.content ?? draft;
+          }
+          return { context: session.context ? { ...session.context } : null, messages, draft };
+        })
+      };
+    }
+    return { version: 1, profiles };
+  }
+
+  restore(value: unknown): void {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const stored = value as Partial<StoredStudyChatSessions>;
+    if (stored.version !== 1 || !stored.profiles || typeof stored.profiles !== "object" || Array.isArray(stored.profiles)) return;
+    for (const [key, value] of Object.entries(stored.profiles)) {
+      if (!key || !value || !Array.isArray(value.sessions)) continue;
+      const sessions = value.sessions.flatMap((raw) => {
+        if (!raw || !Array.isArray(raw.messages)) return [];
+        const messages = raw.messages.filter((message): message is StudyChatMessage =>
+          !!message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string");
+        const context = raw.context && typeof raw.context.sentence === "string" && raw.context.sentence.trim()
+          ? normalizeStudyChatContext(raw.context) : null;
+        return [{ ...emptySession(context), messages, draft: typeof raw.draft === "string" ? raw.draft.slice(0, 2_000) : "" }];
+      });
+      if (!sessions.length) continue;
+      const index = Number.isInteger(value.currentIndex) && value.currentIndex >= 0 && value.currentIndex < sessions.length
+        ? value.currentIndex : 0;
+      this.byProfile.set(key, { current: sessions[index], sessions });
+    }
+  }
 
   private getProfile(profile: StudyProfile): { current: StudyChatSession; sessions: StudyChatSession[] } {
     let state = this.byProfile.get(profile);
