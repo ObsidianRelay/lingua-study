@@ -1,4 +1,14 @@
 import { ItemView, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
+import {
+  buildDailyReviewQueue,
+  computeVocabularyReviewStats,
+  getDailyReviewSummary,
+  previewVocabularyRating,
+  type ReviewRating,
+  type VocabularyBookFile,
+  type VocabularyContext,
+  type VocabularyEntry,
+} from "./vocabulary-core";
 
 import {
   CATEGORY_ORDER,
@@ -21,6 +31,7 @@ import {
 } from "./highlight-review-core";
 
 export const HIGHLIGHT_REVIEW_VIEW_TYPE = "lingua-study-highlight-review";
+export type HighlightReviewMode = "highlights" | "vocabulary";
 
 const CAT_LABEL: Record<string, string> = {
   expression: "重点表达",
@@ -52,6 +63,12 @@ export interface HighlightReviewHost {
   loadCards(): Promise<ReviewCard[] | null>;
   openSource(card: ReviewCard): void;
   openVideo(card: ReviewCard): void;
+  loadVocabulary(): Promise<{ book: VocabularyBookFile; warning: string | null }>;
+  rateVocabulary(id: string, rating: ReviewRating, now: Date): Promise<VocabularyBookFile>;
+  openVocabularyContext(context: VocabularyContext): void;
+  speakWord(word: string): void;
+  dailyNewWordLimit(): number;
+  fsrsRequestRetention(): number;
 }
 
 interface ViewState {
@@ -67,7 +84,22 @@ interface ViewState {
   view: "cards" | "stats";
 }
 
+interface ModeSnapshot extends Pick<ViewState,
+  "category" | "source" | "search" | "starredOnly" | "dueOnly" | "index" | "back"> {
+  cardId: string | null;
+}
+
+function initialViewState(): ViewState {
+  return {
+    category: "", source: "", search: "", starredOnly: false, dueOnly: true,
+    index: 0, back: false, queue: [], counts: { due: 0, fresh: 0 }, view: "cards"
+  };
+}
+
 interface Shell {
+  title: HTMLElement;
+  statsButton: HTMLButtonElement;
+  modeButtons: Record<HighlightReviewMode, HTMLButtonElement>;
   sub: HTMLElement;
   strip: HTMLElement;
   chips: HTMLElement;
@@ -115,6 +147,14 @@ function isTypingTarget(target: Element | null): boolean {
  */
 export class HighlightReviewView extends ItemView {
   private readonly host: HighlightReviewHost;
+  private mode: HighlightReviewMode = "highlights";
+  private vocabularyBook: VocabularyBookFile | null = null;
+  private highlightCards: ReviewCard[] | null = null;
+  private statsLoading = false;
+  private statsErrors: Partial<Record<HighlightReviewMode, string>> = {};
+  private pendingWordId: string | null = null;
+  private loadingGeneration = 0;
+  private ratingVocabulary = false;
 
   private cards: ReviewCard[] = [];
 
@@ -124,18 +164,8 @@ export class HighlightReviewView extends ItemView {
 
   private shell: Shell | null = null;
 
-  private state: ViewState = {
-    category: "",
-    source: "",
-    search: "",
-    starredOnly: false,
-    dueOnly: true,
-    index: 0,
-    back: false,
-    queue: [],
-    counts: { due: 0, fresh: 0 },
-    view: "cards",
-  };
+  private state: ViewState = initialViewState();
+  private readonly modeSnapshots: Partial<Record<HighlightReviewMode, ModeSnapshot>> = {};
 
   constructor(leaf: WorkspaceLeaf, host: HighlightReviewHost) {
     super(leaf);
@@ -147,7 +177,7 @@ export class HighlightReviewView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "高亮卡片复习";
+    return "卡片复习";
   }
 
   getIcon(): string {
@@ -162,6 +192,63 @@ export class HighlightReviewView extends ItemView {
     await this.reload();
   }
 
+  async showMode(mode: HighlightReviewMode, wordId?: string): Promise<void> {
+    this.mode = mode;
+    this.state = initialViewState();
+    delete this.modeSnapshots[mode];
+    if (this.shell) this.shell.search.value = "";
+    this.pendingWordId = mode === "vocabulary" ? wordId ?? null : null;
+    if (this.pendingWordId) {
+      this.state.dueOnly = false;
+    }
+    if (this.shell) {
+      this.updateModeButtons();
+      await this.reload();
+    }
+  }
+
+  private async switchMode(mode: HighlightReviewMode): Promise<void> {
+    if (mode === this.mode || this.ratingVocabulary) return;
+    if (this.ready) {
+      const { category, source, search, starredOnly, dueOnly, index, back } = this.state;
+      this.modeSnapshots[this.mode] = {
+        category, source, search, starredOnly, dueOnly, index, back,
+        cardId: this.currentCard()?.id ?? null
+      };
+    }
+    const snapshot = this.modeSnapshots[mode];
+    this.mode = mode;
+    this.state = snapshot
+      ? {
+        ...initialViewState(),
+        category: snapshot.category, source: snapshot.source, search: snapshot.search,
+        starredOnly: snapshot.starredOnly, dueOnly: snapshot.dueOnly, view: "cards"
+      }
+      : initialViewState();
+    this.pendingWordId = null;
+    if (this.shell) this.shell.search.value = this.state.search;
+    this.updateModeButtons();
+    await this.reload();
+    if (!snapshot || !this.ready || this.mode !== mode) return;
+    const cardIndex = snapshot.cardId
+      ? this.state.queue.findIndex((card) => card.id === snapshot.cardId) : -1;
+    this.state.index = cardIndex >= 0
+      ? cardIndex : Math.min(snapshot.index, Math.max(0, this.state.queue.length - 1));
+    this.state.back = snapshot.back && this.state.queue.length > 0;
+    this.render();
+  }
+
+  private updateModeButtons(): void {
+    if (!this.shell) return;
+    for (const mode of ["vocabulary", "highlights"] as const) {
+      const button = this.shell.modeButtons[mode];
+      const active = this.mode === mode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+      button.disabled = this.ratingVocabulary;
+    }
+  }
+
   async onClose(): Promise<void> {
     this.contentEl.empty();
   }
@@ -169,17 +256,45 @@ export class HighlightReviewView extends ItemView {
   /* ------------------------------------------------------------------ 数据 */
 
   async reload(): Promise<void> {
+    const generation = ++this.loadingGeneration;
     this.ready = false;
     this.loadError = "";
     this.cards = [];
+    if (this.mode === "vocabulary") this.vocabularyBook = null;
+    else this.highlightCards = null;
     this.renderStatus();
+    if (this.mode === "vocabulary") {
+      try {
+        const loaded = await this.host.loadVocabulary();
+        if (generation !== this.loadingGeneration) return;
+        this.vocabularyBook = loaded.book;
+        delete this.statsErrors.vocabulary;
+        if (loaded.warning && Object.keys(loaded.book.entries).length === 0) {
+          this.loadError = loaded.warning;
+          this.renderStatus();
+          return;
+        }
+        if (loaded.warning) new Notice(loaded.warning, 6_000);
+        this.cards = Object.values(loaded.book.entries).map((entry) => this.wordCard(entry));
+        this.ready = true;
+        this.rebuild();
+      } catch (error) {
+        if (generation !== this.loadingGeneration) return;
+        this.loadError = error instanceof Error ? error.message : "读取生词本失败。";
+        this.renderStatus();
+      }
+      return;
+    }
     const cards = await this.host.loadCards();
+    if (generation !== this.loadingGeneration) return;
     if (!cards || !cards.length) {
       this.loadError = "没有读到高亮数据。确认 Lingua Study 的高亮库文件存在，或先用 Ctrl+P → 重新载入高亮复习数据。";
       this.renderStatus();
       return;
     }
     this.cards = cards;
+    this.highlightCards = cards;
+    delete this.statsErrors.highlights;
     this.ready = true;
     this.rebuild();
   }
@@ -208,7 +323,8 @@ export class HighlightReviewView extends ItemView {
     const titleRow = el("div", "lc-title-row");
     const title = el("div", "lc-title");
     title.appendChild(el("span", "lc-logo", "LC"));
-    title.appendChild(el("h2", "", "高亮卡片"));
+    const titleText = el("h2", "", "卡片复习");
+    title.appendChild(titleText);
     const sub = el("span", "lc-sub", "");
     titleRow.appendChild(title);
     titleRow.appendChild(sub);
@@ -218,11 +334,29 @@ export class HighlightReviewView extends ItemView {
     btnStats.addEventListener("click", () => this.toggleStats());
     const btnReload = iconButton("refresh-cw", "刷新", "lc-btn-ghost");
     btnReload.addEventListener("click", () => {
+      if (this.state.view === "stats") {
+        this.vocabularyBook = null;
+        this.highlightCards = null;
+        this.statsErrors = {};
+      }
       void this.reload();
     });
     titleRow.appendChild(btnStats);
     titleRow.appendChild(btnReload);
     top.appendChild(titleRow);
+
+    const modeSwitch = el("div", "lc-mode-switch");
+    modeSwitch.setAttribute("role", "group");
+    modeSwitch.setAttribute("aria-label", "切换卡片类型");
+    const vocabularyMode = el("button", "lc-mode-option", "单词卡片");
+    vocabularyMode.type = "button";
+    vocabularyMode.addEventListener("click", () => { void this.switchMode("vocabulary"); });
+    const highlightsMode = el("button", "lc-mode-option", "短句卡片");
+    highlightsMode.type = "button";
+    highlightsMode.addEventListener("click", () => { void this.switchMode("highlights"); });
+    modeSwitch.appendChild(vocabularyMode);
+    modeSwitch.appendChild(highlightsMode);
+    top.appendChild(modeSwitch);
 
     const strip = el("div", "lc-strip");
     top.appendChild(strip);
@@ -286,13 +420,58 @@ export class HighlightReviewView extends ItemView {
     const statsPanel = el("div", "lc-stats-panel lc-hidden");
     root.appendChild(statsPanel);
 
-    this.shell = { sub, strip, chips, source, search, starToggle, dueToggle, fill, progressText, stage, footer, statsPanel };
+    this.shell = {
+      title: titleText, statsButton: btnStats,
+      modeButtons: { vocabulary: vocabularyMode, highlights: highlightsMode },
+      sub, strip, chips, source, search, starToggle, dueToggle, fill, progressText, stage, footer, statsPanel
+    };
+    this.updateModeButtons();
   }
 
   /* ------------------------------------------------------------------ 队列 */
 
   private currentCard(): ReviewCard | null {
     return this.state.queue[this.state.index] || null;
+  }
+
+  private currentWord(): VocabularyEntry | null {
+    const card = this.currentCard();
+    return card ? this.vocabularyBook?.entries[card.id] ?? null : null;
+  }
+
+  private wordCard(entry: VocabularyEntry): ReviewCard {
+    const context = entry.contexts.at(-1);
+    const sourcePath = context?.sourcePath ?? "";
+    return {
+      id: entry.id,
+      kind: "point",
+      category: "other",
+      categoryIds: ["other"],
+      categoryLabel: "单词",
+      quote: entry.word,
+      front: entry.word,
+      gloss: entry.chineseTranslation,
+      explain: entry.englishDefinition,
+      frontSource: "full",
+      sourcePath,
+      sourceAlias: sourcePath.split("/").at(-1)?.replace(/\.md$/u, "") ?? "",
+      videoId: context?.videoId ?? "",
+      transcriptPath: context?.transcriptPath ?? "",
+      segmentIndex: context?.segmentIndex ?? -1,
+      segmentStart: context?.start ?? 0,
+      segmentEnd: context?.end ?? 0,
+      createdAt: entry.createdAt,
+      updatedAt: entry.lastSeenAt,
+      note: entry.personalNote,
+      context: {
+        index: context?.segmentIndex ?? -1,
+        text: context?.sentence ?? "",
+        translation: "",
+        start: context?.start ?? 0,
+        end: context?.end ?? 0
+      },
+      relatedIds: []
+    };
   }
 
   private sources(): Array<{ path: string; alias: string; count: number }> {
@@ -316,6 +495,33 @@ export class HighlightReviewView extends ItemView {
       this.renderStatus();
       return;
     }
+    if (this.mode === "vocabulary") {
+      const book = this.vocabularyBook;
+      if (!book) return;
+      const dueIds = buildDailyReviewQueue(book, this.host.dailyNewWordLimit(), new Date());
+      const ids = this.state.dueOnly ? dueIds : Object.keys(book.entries);
+      const search = this.state.search.toLocaleLowerCase("en-US");
+      this.state.queue = ids
+        .map((id) => this.cards.find((card) => card.id === id))
+        .filter((card): card is ReviewCard => !!card)
+        .filter((card) => {
+          const entry = book.entries[card.id];
+          return !search || [entry.word, entry.chineseTranslation, entry.englishDefinition, entry.personalNote,
+            ...entry.contexts.map((context) => context.sentence)]
+            .some((value) => value.toLocaleLowerCase("en-US").includes(search));
+        });
+      this.state.counts = {
+        due: this.state.queue.filter((card) => book.entries[card.id]?.review.phase !== "new").length,
+        fresh: this.state.queue.filter((card) => book.entries[card.id]?.review.phase === "new").length
+      };
+      const focusedIndex = this.pendingWordId
+        ? this.state.queue.findIndex((card) => card.id === this.pendingWordId) : -1;
+      this.state.index = focusedIndex >= 0 ? focusedIndex : 0;
+      this.pendingWordId = null;
+      this.state.back = false;
+      this.render();
+      return;
+    }
     const result = buildReviewQueue(this.cards, this.getStore(), {
       today: this.today(),
       newPerDay: this.host.settings.newPerDay,
@@ -335,21 +541,29 @@ export class HighlightReviewView extends ItemView {
 
   private renderStatus(): void {
     if (!this.shell) return;
-    const { stage, footer, strip, progressText, fill } = this.shell;
+    const { stage, footer, statsPanel, strip, chips, source, starToggle, dueToggle, progressText, fill } = this.shell;
+    stage.removeClass("lc-hidden");
+    footer.removeClass("lc-hidden");
+    statsPanel.addClass("lc-hidden");
     stage.empty();
     footer.empty();
+    chips.empty();
+    source.addClass("lc-hidden");
+    starToggle.addClass("lc-hidden");
+    dueToggle.addClass("lc-hidden");
     const box = el("div", "lc-status");
     if (this.loadError) {
-      box.appendChild(el("div", "lc-status-title", "读不到高亮数据"));
+      box.appendChild(el("div", "lc-status-title", this.mode === "vocabulary" ? "读不到生词本" : "读不到高亮数据"));
       box.appendChild(el("div", "lc-status-text", this.loadError));
     } else {
       box.appendChild(el("div", "lc-status-title", "正在载入卡片…"));
-      box.appendChild(el("div", "lc-status-text", "第一次打开需要读取字幕与机翻文件，稍等一两秒。"));
+      box.appendChild(el("div", "lc-status-text", this.mode === "vocabulary"
+        ? "正在读取现有单词和复习进度。" : "第一次打开需要读取字幕与机翻文件，稍等一两秒。"));
     }
     stage.appendChild(box);
     strip.textContent = "";
     progressText.textContent = "";
-    fill.style.width = "0%";
+    fill.setCssProps({ width: "0%" });
   }
 
   /* ------------------------------------------------------------------ 渲染 */
@@ -371,13 +585,49 @@ export class HighlightReviewView extends ItemView {
     }
   }
 
-  private stats(): ReturnType<typeof computeReviewStats> {
-    return computeReviewStats(this.getStore(), this.getLog(), this.cards, { today: this.today() });
+  private stats(cards: readonly ReviewCard[] = this.cards): ReturnType<typeof computeReviewStats> {
+    return computeReviewStats(this.getStore(), this.getLog(), cards, { today: this.today() });
   }
 
   private renderTop(): void {
     if (!this.shell) return;
+    this.contentEl.dataset.mode = this.mode;
+    this.updateModeButtons();
     const { sub, strip, chips, source, starToggle, dueToggle, fill, progressText } = this.shell;
+    dueToggle.removeClass("lc-hidden");
+    if (this.mode === "vocabulary") {
+      const book = this.vocabularyBook;
+      if (!book) return;
+      const summary = getDailyReviewSummary(book, this.host.dailyNewWordLimit(), new Date());
+      this.shell.statsButton.removeClass("lc-hidden");
+      source.addClass("lc-hidden");
+      starToggle.addClass("lc-hidden");
+      this.shell.search.placeholder = "搜索单词 / 释义 / 语境";
+      sub.textContent = `${this.cards.length} 张卡 · 沿用生词本进度`;
+      strip.empty();
+      for (const [label, value] of [
+        ["今日待复习", summary.total], ["学习中", summary.dueLearning],
+        ["到期", summary.dueReview], ["新词", summary.availableNew]
+      ] as const) {
+        const pill = el("div", "lc-pill");
+        pill.appendChild(el("span", "lc-pill-label", label));
+        pill.appendChild(el("span", "lc-pill-value", String(value)));
+        strip.appendChild(pill);
+      }
+      chips.empty();
+      chips.appendChild(el("span", "lc-section-label", this.state.dueOnly ? "今日复习" : "全部单词"));
+      dueToggle.classList.toggle("is-active", this.state.dueOnly);
+      dueToggle.textContent = "只看今日";
+      const total = this.state.queue.length;
+      fill.setCssProps({ width: total ? `${Math.round(((this.state.index + 1) / total) * 100)}%` : "0%" });
+      progressText.textContent = total ? `${this.state.index + 1} / ${total} · 到期 ${this.state.counts.due} · 新词 ${this.state.counts.fresh}` : "队列为空";
+      return;
+    }
+    this.shell.statsButton.removeClass("lc-hidden");
+    source.removeClass("lc-hidden");
+    starToggle.removeClass("lc-hidden");
+    this.shell.search.placeholder = "搜索词条 / 释义 / 来源";
+    dueToggle.textContent = "只看到期";
     const stats = this.stats();
     sub.textContent = `${this.cards.length} 张卡 · ${this.sources().length} 个来源`;
 
@@ -408,7 +658,7 @@ export class HighlightReviewView extends ItemView {
     chips.appendChild(all);
 
     for (const key of CATEGORY_ORDER) {
-      const count = this.cards.filter((c) => c.category === key).length;
+      const count = this.cards.filter((c) => c.categoryIds.includes(key)).length;
       if (!count) continue;
       const chip = el("button", `lc-chip${this.state.category === key ? " is-active" : ""}`, CAT_LABEL[key] || key);
       chip.dataset.cat = key;
@@ -441,7 +691,7 @@ export class HighlightReviewView extends ItemView {
 
     const total = this.state.queue.length;
     const done = total ? Math.min(total, this.state.index + (this.state.view === "cards" ? 1 : 0)) : 0;
-    fill.style.width = total ? `${Math.round((done / total) * 100)}%` : "0%";
+    fill.setCssProps({ width: total ? `${Math.round((done / total) * 100)}%` : "0%" });
     progressText.textContent = total
       ? `${done} / ${total} · 到期 ${this.state.counts.due} · 新卡 ${this.state.counts.fresh}`
       : "队列为空";
@@ -464,6 +714,40 @@ export class HighlightReviewView extends ItemView {
     nav.appendChild(flip);
     nav.appendChild(next);
     footer.appendChild(nav);
+
+    if (this.mode === "vocabulary") {
+      const entry = this.currentWord();
+      const grades = el("div", "lc-footer-group lc-grades");
+      const options: Array<[ReviewRating, string, string, string]> = [
+        ["again", "忘记", "1", "forgot"], ["hard", "困难", "2", "fuzzy"],
+        ["good", "记得", "3", "know"], ["easy", "熟练", "4", "easy"]
+      ];
+      for (const [rating, label, key, tone] of options) {
+        const button = el("button", `lc-grade lc-grade-${tone}`);
+        button.appendChild(el("span", "lc-grade-name", label));
+        const interval = entry ? previewVocabularyRating(entry, rating, new Date(), this.host.fsrsRequestRetention()).intervalLabel : key;
+        button.appendChild(el("span", "lc-grade-hint", interval));
+        button.title = `${key} · ${label}`;
+        button.disabled = !entry || !this.state.back || this.ratingVocabulary;
+        button.addEventListener("click", () => { void this.gradeVocabulary(rating); });
+        grades.appendChild(button);
+      }
+      footer.appendChild(grades);
+      const extras = el("div", "lc-footer-group lc-extras");
+      const speak = iconButton("volume-2", "朗读", "lc-btn-ghost");
+      speak.disabled = !entry;
+      speak.addEventListener("click", () => { if (entry) this.host.speakWord(entry.word); });
+      extras.appendChild(speak);
+      const latestContext = entry?.contexts.at(-1);
+      if (latestContext) {
+        const sourceButton = iconButton("external-link", "来源", "lc-btn-ghost");
+        sourceButton.addEventListener("click", () => this.host.openVocabularyContext(latestContext));
+        extras.appendChild(sourceButton);
+      }
+      footer.appendChild(extras);
+      for (const button of [prev, flip, next]) button.disabled = !entry;
+      return;
+    }
 
     const grades = el("div", "lc-footer-group lc-grades");
     const g1 = el("button", "lc-grade lc-grade-forgot");
@@ -515,13 +799,15 @@ export class HighlightReviewView extends ItemView {
           "lc-status-text",
           this.state.search || this.state.category || this.state.source
             ? "换个分类、来源或搜索词试试。"
-            : "今天的到期卡已经复习完了 🎉 关掉「只看到期」可以自由复习全部卡片。"
+            : this.mode === "vocabulary"
+              ? "今天的单词已经复习完了。关掉「只看今日」可以自由浏览全部单词。"
+              : "今天的到期卡已经复习完了 🎉 关掉「只看到期」可以自由复习全部卡片。"
         )
       );
       stage.appendChild(empty);
       if (this.shell) {
         this.shell.progressText.textContent = "0 / 0";
-        this.shell.fill.style.width = "0%";
+        this.shell.fill.setCssProps({ width: "0%" });
       }
       return;
     }
@@ -530,8 +816,9 @@ export class HighlightReviewView extends ItemView {
     wrap.dataset.cat = card.category;
     wrap.tabIndex = 0;
     const inner = el("div", "lc-card-inner");
-    const front = this.buildFront(card);
-    const back = this.buildBack(card);
+    const word = this.mode === "vocabulary" ? this.currentWord() : null;
+    const front = word ? this.buildVocabularyFront(word) : this.buildFront(card);
+    const back = word ? this.buildVocabularyBack(word) : this.buildBack(card);
     inner.appendChild(front);
     inner.appendChild(back);
     wrap.appendChild(inner);
@@ -551,7 +838,7 @@ export class HighlightReviewView extends ItemView {
 
     const total = this.state.queue.length;
     this.shell.progressText.textContent = `${this.state.index + 1} / ${total} · 到期 ${this.state.counts.due} · 新卡 ${this.state.counts.fresh}`;
-    this.shell.fill.style.width = `${Math.round(((this.state.index + 1) / total) * 100)}%`;
+    this.shell.fill.setCssProps({ width: `${Math.round(((this.state.index + 1) / total) * 100)}%` });
   }
 
   private buildFront(card: ReviewCard): HTMLElement {
@@ -574,6 +861,8 @@ export class HighlightReviewView extends ItemView {
       front.appendChild(el("div", "lc-front-quote", card.quote));
     }
 
+    front.appendChild(el("div", "lc-front-source", `来源：${card.sourceAlias || "未知"}`));
+
     const foot = el("div", "lc-card-foot");
     const state = this.getStore()[card.id];
     const level = state ? state.level : 0;
@@ -587,9 +876,62 @@ export class HighlightReviewView extends ItemView {
     );
     foot.appendChild(el("span", "lc-hint", "空格 / 点击翻面 · → 下一张 · 1/2/3 评分"));
     front.appendChild(foot);
-
-    front.appendChild(el("div", "lc-front-source", `来源：${card.sourceAlias || "未知"}`));
     return front;
+  }
+
+  private buildVocabularyFront(entry: VocabularyEntry): HTMLElement {
+    const front = el("div", "lc-face lc-front");
+    const head = el("div", "lc-card-head");
+    head.appendChild(el("span", "lc-tag lc-tag-other", "单词"));
+    head.appendChild(el("span", "lc-kind", entry.review.phase === "new" ? "新词" : "生词本"));
+    head.appendChild(el("div", "lc-spacer"));
+    head.appendChild(el("span", "lc-time", prettyDate(entry.createdAt)));
+    front.appendChild(head);
+    front.appendChild(el("div", "lc-term lc-term-word", entry.word));
+    const context = entry.contexts.at(-1);
+    if (context) front.appendChild(el("div", "lc-front-source", `来源：${context.sourcePath.split("/").at(-1) ?? context.sourcePath}`));
+    const foot = el("div", "lc-card-foot");
+    foot.appendChild(el("span", "lc-meta", entry.review.phase === "new"
+      ? "新词 · 第一次见" : `已复习 ${entry.review.reviewCount} 次 · 下次 ${entry.review.dueAt.slice(0, 10)}`));
+    foot.appendChild(el("span", "lc-hint", "空格 / 点击翻面 · → 下一张 · 1/2/3/4 评分"));
+    front.appendChild(foot);
+    return front;
+  }
+
+  private buildVocabularyBack(entry: VocabularyEntry): HTMLElement {
+    const back = el("div", "lc-face lc-back");
+    const scroll = el("div", "lc-back-scroll");
+    const head = el("div", "lc-card-head");
+    head.appendChild(el("span", "lc-tag lc-tag-other", "单词"));
+    head.appendChild(el("div", "lc-spacer"));
+    const close = iconButton("rotate-cw", "翻回", "lc-btn-ghost lc-btn-mini");
+    close.addEventListener("click", () => this.flip());
+    head.appendChild(close);
+    scroll.appendChild(head);
+    scroll.appendChild(el("div", "lc-term lc-word-back-term", entry.word));
+    if (entry.phonetic) scroll.appendChild(el("div", "lc-meta", `/ ${entry.phonetic} /`));
+    if (entry.partOfSpeech) scroll.appendChild(el("div", "lc-meta", entry.partOfSpeech));
+    scroll.appendChild(el("div", "lc-gloss", entry.chineseTranslation || "暂无释义"));
+    if (entry.englishDefinition) scroll.appendChild(el("div", "lc-explain", entry.englishDefinition));
+    if (entry.personalNote) {
+      const note = el("div", "lc-quote-full");
+      note.appendChild(el("span", "lc-label", "个人备注"));
+      note.appendChild(el("span", "lc-quote-text", entry.personalNote));
+      scroll.appendChild(note);
+    }
+    const context = entry.contexts.at(-1);
+    if (context) {
+      const box = el("div", "lc-context");
+      box.appendChild(el("div", "lc-label", "原句"));
+      box.appendChild(el("p", "lc-ctx-en", context.sentence));
+      box.appendChild(el("div", "lc-ctx-meta", context.sourcePath));
+      const open = el("button", "lc-mini-btn", "回到视频原句");
+      open.addEventListener("click", () => this.host.openVocabularyContext(context));
+      box.appendChild(open);
+      scroll.appendChild(box);
+    }
+    back.appendChild(scroll);
+    return back;
   }
 
   private buildBack(card: ReviewCard): HTMLElement {
@@ -606,6 +948,12 @@ export class HighlightReviewView extends ItemView {
 
     if (card.gloss) scroll.appendChild(el("div", "lc-gloss", card.gloss));
     if (card.explain) scroll.appendChild(el("div", "lc-explain", card.explain));
+    if (card.note) {
+      const note = el("div", "lc-quote-full");
+      note.appendChild(el("span", "lc-label", "个人笔记"));
+      note.appendChild(el("span", "lc-quote-text", card.note));
+      scroll.appendChild(note);
+    }
 
     if (card.kind === "point" && card.quote && !card.explain) {
       scroll.appendChild(el("div", "lc-explain", card.quote));
@@ -699,6 +1047,7 @@ export class HighlightReviewView extends ItemView {
     if (wrap) wrap.classList.toggle("is-flipped", this.state.back);
     const back = this.shell ? this.shell.stage.querySelector(".lc-back") : null;
     if (back) back.setAttribute("aria-hidden", this.state.back ? "false" : "true");
+    if (this.mode === "vocabulary") this.renderFooter();
   }
 
   private next(): void {
@@ -744,6 +1093,33 @@ export class HighlightReviewView extends ItemView {
     this.render();
   }
 
+  private async gradeVocabulary(rating: ReviewRating): Promise<void> {
+    const entry = this.currentWord();
+    if (!entry || !this.state.back || this.ratingVocabulary) return;
+    const nextId = this.state.queue[this.state.index + 1]?.id;
+    const oldIndex = this.state.index;
+    this.ratingVocabulary = true;
+    this.updateModeButtons();
+    this.renderFooter();
+    try {
+      this.vocabularyBook = await this.host.rateVocabulary(entry.id, rating, new Date());
+      this.cards = Object.values(this.vocabularyBook.entries).map((word) => this.wordCard(word));
+      this.ratingVocabulary = false;
+      this.updateModeButtons();
+      this.rebuild();
+      if (this.state.queue.length > 0) {
+        const nextIndex = nextId ? this.state.queue.findIndex((card) => card.id === nextId) : -1;
+        this.state.index = nextIndex >= 0 ? nextIndex : Math.min(oldIndex, this.state.queue.length - 1);
+        this.render();
+      }
+    } catch (error) {
+      this.ratingVocabulary = false;
+      this.updateModeButtons();
+      new Notice(error instanceof Error ? error.message : "单词复习进度保存失败。", 6_000);
+      this.renderFooter();
+    }
+  }
+
   private toggleStar(): void {
     const card = this.currentCard();
     if (!card) return;
@@ -783,10 +1159,16 @@ export class HighlightReviewView extends ItemView {
   private openSource(): void {
     const card = this.currentCard();
     if (!card) return;
+    if (this.mode === "vocabulary") {
+      const context = this.currentWord()?.contexts.at(-1);
+      if (context) this.host.openVocabularyContext(context);
+      return;
+    }
     this.host.openSource(card);
   }
 
   private toggleStats(): void {
+    if (this.state.view === "cards") this.statsErrors = {};
     this.state.view = this.state.view === "stats" ? "cards" : "stats";
     this.render();
   }
@@ -800,7 +1182,7 @@ export class HighlightReviewView extends ItemView {
       /* ignore */
     }
     try {
-      if (this.app.workspace.activeLeaf === this.leaf) return true;
+      if (this.app.workspace.getActiveViewOfType(HighlightReviewView) === this) return true;
     } catch {
       /* ignore */
     }
@@ -824,9 +1206,10 @@ export class HighlightReviewView extends ItemView {
       " ": () => this.flip(),
       Spacebar: () => this.flip(),
       Enter: () => this.flip(),
-      "1": () => this.gradeCurrent("forgot"),
-      "2": () => this.gradeCurrent("fuzzy"),
-      "3": () => this.gradeCurrent("know"),
+      "1": () => { if (this.mode === "vocabulary") void this.gradeVocabulary("again"); else this.gradeCurrent("forgot"); },
+      "2": () => { if (this.mode === "vocabulary") void this.gradeVocabulary("hard"); else this.gradeCurrent("fuzzy"); },
+      "3": () => { if (this.mode === "vocabulary") void this.gradeVocabulary("good"); else this.gradeCurrent("know"); },
+      "4": () => { if (this.mode === "vocabulary") void this.gradeVocabulary("easy"); },
       s: () => this.openSource(),
       f: () => this.toggleStar(),
       r: () => this.shuffle(),
@@ -844,11 +1227,44 @@ export class HighlightReviewView extends ItemView {
 
   /* ------------------------------------------------------------------ 统计 */
 
+  private async loadStatsData(): Promise<void> {
+    if (this.statsLoading) return;
+    const needVocabulary = !this.vocabularyBook && !this.statsErrors.vocabulary;
+    const needHighlights = !this.highlightCards && !this.statsErrors.highlights;
+    if (!needVocabulary && !needHighlights) return;
+    this.statsLoading = true;
+    const generation = this.loadingGeneration;
+    const [vocabulary, highlights] = await Promise.allSettled([
+      needVocabulary ? this.host.loadVocabulary() : Promise.resolve(null),
+      needHighlights ? this.host.loadCards() : Promise.resolve(null)
+    ]);
+    this.statsLoading = false;
+    if (generation === this.loadingGeneration) {
+      if (needVocabulary) {
+        if (vocabulary.status === "fulfilled" && vocabulary.value) {
+          this.vocabularyBook = vocabulary.value.book;
+          if (vocabulary.value.warning) this.statsErrors.vocabulary = vocabulary.value.warning;
+        } else {
+          this.statsErrors.vocabulary = vocabulary.status === "rejected"
+            ? String(vocabulary.reason) : "无法读取生词本。";
+        }
+      }
+      if (needHighlights) {
+        if (highlights.status === "fulfilled" && highlights.value) {
+          this.highlightCards = highlights.value;
+        } else {
+          this.statsErrors.highlights = highlights.status === "rejected"
+            ? String(highlights.reason) : "无法读取短句卡片。";
+        }
+      }
+    }
+    if (this.ready && this.state.view === "stats") this.renderStats();
+  }
+
   private renderStats(): void {
     if (!this.shell) return;
     const panel = this.shell.statsPanel;
     panel.empty();
-    const stats = this.stats();
 
     const head = el("div", "lc-stats-head");
     head.appendChild(el("h3", "", "学习统计"));
@@ -857,39 +1273,88 @@ export class HighlightReviewView extends ItemView {
     head.appendChild(back);
     panel.appendChild(head);
 
-    const grid = el("div", "lc-kpi-grid");
-    const kpis: Array<[string, string, string]> = [
-      ["今日复习", `${stats.todayTotal}`, `正确率 ${stats.todayAccuracy}%`],
-      ["连续天数", `${stats.streak}`, "天"],
-      ["累计复习", `${stats.totalReviews}`, `总正确率 ${stats.totalAccuracy}%`],
-      ["已学 / 掌握", `${stats.learned} / ${stats.mastered}`, `共 ${stats.total} 张`],
-      ["已造句", `${stats.sentences}`, "张写了造句"],
-      ["收藏", `${stats.starred}`, "张标记星标"],
-    ];
-    for (const [label, value, hint] of kpis) {
-      const cell = el("div", "lc-kpi");
-      cell.appendChild(el("div", "lc-kpi-label", label));
-      cell.appendChild(el("div", "lc-kpi-value", value));
-      cell.appendChild(el("div", "lc-kpi-hint", hint));
-      grid.appendChild(cell);
+    if ((!this.vocabularyBook && !this.statsErrors.vocabulary) ||
+        (!this.highlightCards && !this.statsErrors.highlights)) {
+      panel.appendChild(el("div", "lc-meta", "正在读取单词和短句的复习数据…"));
+      void this.loadStatsData();
+      return;
     }
-    panel.appendChild(grid);
+
+    const wordStats = this.vocabularyBook
+      ? computeVocabularyReviewStats(this.vocabularyBook, this.host.dailyNewWordLimit(), new Date()) : null;
+    const shortStats = this.highlightCards ? this.stats(this.highlightCards) : null;
+    const addGrid = (title: string, kpis: Array<[string, string, string]>): void => {
+      panel.appendChild(el("h4", "lc-stats-section-title", title));
+      const grid = el("div", "lc-kpi-grid");
+      for (const [label, value, hint] of kpis) {
+        const cell = el("div", "lc-kpi");
+        cell.appendChild(el("div", "lc-kpi-label", label));
+        cell.appendChild(el("div", "lc-kpi-value", value));
+        cell.appendChild(el("div", "lc-kpi-hint", hint));
+        grid.appendChild(cell);
+      }
+      panel.appendChild(grid);
+    };
+
+    addGrid("两种卡片总览", [
+      ["卡片总数", `${(wordStats?.total ?? 0) + (shortStats?.total ?? 0)}`, "单词 + 短句"],
+      ["今日评分", `${(wordStats?.todayReviews ?? 0) + (shortStats?.todayTotal ?? 0)}`, "两种卡片合计"],
+      ["当前到期", `${(wordStats?.due ?? 0) + (shortStats?.dueToday ?? 0)}`, "不包含尚未学习的新卡"],
+    ]);
+    if (this.statsErrors.vocabulary || this.statsErrors.highlights) {
+      panel.appendChild(el("div", "lc-meta", `部分数据读取失败：${[
+        this.statsErrors.vocabulary, this.statsErrors.highlights
+      ].filter(Boolean).join("；")}`));
+    }
+
+    if (wordStats) {
+      const todayRate = wordStats.todayReviews
+        ? Math.round(wordStats.todayPassed / wordStats.todayReviews * 100) : 0;
+      addGrid("单词卡片", [
+        ["总卡片", `${wordStats.total}`, "生词本中的单词"],
+        ["已学", `${wordStats.learned}`, "已开始学习的单词"],
+        ["待复习", `${wordStats.due}`, "学习中 + 已到期"],
+        ["可学新词", `${wordStats.newToday}`, "今日可加入队列"],
+        ["今日评分", `${wordStats.todayReviews}`, `记住 / 熟练 ${todayRate}%`],
+        ["已记录评分", `${wordStats.recordedReviews}`, "旧词可能缺少历史记录"],
+      ]);
+    }
+    if (shortStats) {
+      addGrid("短句卡片", [
+        ["今日复习", `${shortStats.todayTotal}`, `正确率 ${shortStats.todayAccuracy}%`],
+        ["连续天数", `${shortStats.streak}`, "天"],
+        ["累计复习", `${shortStats.totalReviews}`, `总正确率 ${shortStats.totalAccuracy}%`],
+        ["已学 / 掌握", `${shortStats.learned} / ${shortStats.mastered}`, `共 ${shortStats.total} 张`],
+        ["已造句", `${shortStats.sentences}`, "张写了造句"],
+        ["收藏", `${shortStats.starred}`, "张标记星标"],
+      ]);
+    }
 
     const heat = el("div", "lc-heat");
     const head2 = el("div", "lc-stats-head");
-    head2.appendChild(el("h4", "", "复习热力图"));
-    head2.appendChild(el("span", "lc-meta", "最近 26 周"));
+    head2.appendChild(el("h4", "", "两种卡片复习热力图"));
+    head2.appendChild(el("span", "lc-meta", "最近 26 周 · 评分次数"));
     heat.appendChild(head2);
 
     const map = el("div", "lc-heat-map");
-    const data = buildHeatmap(this.getLog(), { today: this.today(), weeks: 26 });
+    const combinedLog: ReviewLog = {};
+    if (shortStats) {
+      for (const [date, day] of Object.entries(this.getLog())) combinedLog[date] = { ...day };
+    }
+    for (const [date, count] of Object.entries(wordStats?.dailyReviews ?? {})) {
+      const day = combinedLog[date];
+      combinedLog[date] = day
+        ? { ...day, total: day.total + count }
+        : { total: count, forgot: 0, fuzzy: 0, know: 0, newIds: [] };
+    }
+    const data = buildHeatmap(combinedLog, { today: this.today(), weeks: 26 });
     const weeksWrap = el("div", "lc-heat-weeks");
     for (let w = 0; w < data.weeks; w++) {
       const col = el("div", "lc-heat-col");
       for (let d = 0; d < 7; d++) {
         const cell = data.cells[w * 7 + d];
         const div = el("div", "lc-heat-cell");
-        div.title = `${cell.date} · ${cell.count} 张`;
+        div.title = `${cell.date} · ${cell.count} 次评分`;
         if (cell.future) div.classList.add("is-future");
         else {
           const ratio = data.max ? cell.count / data.max : 0;
@@ -913,7 +1378,8 @@ export class HighlightReviewView extends ItemView {
     heat.appendChild(map);
     panel.appendChild(heat);
 
-    const sentences = this.cards
+    if (!shortStats) return;
+    const sentences = (this.highlightCards ?? [])
       .filter((c) => {
         const st = this.getStore()[c.id];
         return !!(st && st.sentence && st.sentence.trim());
@@ -921,7 +1387,7 @@ export class HighlightReviewView extends ItemView {
       .slice(-8)
       .reverse();
     const box = el("div", "lc-sentence-list");
-    box.appendChild(el("h4", "", `我的造句（${stats.sentences}）`));
+    box.appendChild(el("h4", "", `短句造句（${shortStats.sentences}）`));
     if (!sentences.length) {
       box.appendChild(el("div", "lc-meta", "还没有造句。翻开任意一张卡，在背面写一句自己的例句吧。"));
     }

@@ -11,10 +11,6 @@ import {
   type StudyProfile
 } from "./study-core";
 import {
-  buildDailyReviewQueue,
-  getDailyReviewSummary,
-  previewVocabularyRating,
-  type ReviewRating,
   type VocabularyBookFile,
   type VocabularyContext,
   type VocabularyEditInput,
@@ -36,7 +32,7 @@ export interface DictionaryLookupContext {
   end: number | null;
 }
 
-type DictionaryTab = "lookup" | "book" | "review" | "highlights";
+type DictionaryTab = "lookup" | "book" | "highlights";
 type VocabularyFilter = "all" | StudyProfile | "due" | "new";
 type HighlightFilter = string;
 
@@ -274,9 +270,6 @@ export class LinguaDictionaryView extends ItemView {
   private vocabularySearch = "";
   private vocabularyFilter: VocabularyFilter = "all";
   private selectedVocabularyId: string | null = null;
-  private reviewEntryId: string | null = null;
-  private reviewRevealed = false;
-  private reviewRefreshTimer: number | null = null;
   private vocabularyExporting = false;
   private vocabularyImageExporting = false;
   private unsubscribeVocabulary: (() => void) | null = null;
@@ -333,10 +326,6 @@ export class LinguaDictionaryView extends ItemView {
     this.unsubscribeVocabulary = null;
     this.unsubscribeHighlights?.();
     this.unsubscribeHighlights = null;
-    if (this.reviewRefreshTimer !== null) {
-      window.clearTimeout(this.reviewRefreshTimer);
-      this.reviewRefreshTimer = null;
-    }
     this.contentEl.empty();
   }
 
@@ -352,13 +341,6 @@ export class LinguaDictionaryView extends ItemView {
     this.activeTab = "book";
     this.selectedVocabularyId = null;
     this.renderShell();
-  }
-
-  openReview(): void {
-    this.activeTab = "review";
-    this.reviewEntryId = null;
-    this.reviewRevealed = false;
-    void this.prepareReviewCard();
   }
 
   openHighlights(): void {
@@ -391,9 +373,6 @@ export class LinguaDictionaryView extends ItemView {
       !this.vocabularyBook.entries[this.selectedVocabularyId]
     ) {
       this.selectedVocabularyId = null;
-    }
-    if (this.reviewEntryId && !this.vocabularyBook.entries[this.reviewEntryId]) {
-      this.reviewEntryId = null;
     }
     this.renderShell();
   }
@@ -428,11 +407,6 @@ export class LinguaDictionaryView extends ItemView {
     this.contentEl.empty();
     this.contentEl.addClass("lingua-dictionary-view");
     this.contentEl.classList.toggle("is-highlights-view", this.activeTab === "highlights");
-    if (this.activeTab !== "review" && this.reviewRefreshTimer !== null) {
-      window.clearTimeout(this.reviewRefreshTimer);
-      this.reviewRefreshTimer = null;
-    }
-
     const header = this.contentEl.createDiv({ cls: "lingua-dictionary-header" });
     header.createEl("h3", { text: this.plugin.manifest.name });
     header.createDiv({
@@ -440,17 +414,9 @@ export class LinguaDictionaryView extends ItemView {
       text: this.plugin.getDictionarySourceLabel()
     });
 
-    const summary = this.vocabularyBook
-      ? getDailyReviewSummary(
-        this.vocabularyBook,
-        this.plugin.settings.dailyNewWordLimit,
-        new Date()
-      )
-      : { total: 0 };
     const tabs = this.contentEl.createDiv({ cls: "lingua-dictionary-tabs", attr: { role: "tablist" } });
     this.createTabButton(tabs, "lookup", "查词");
     this.createTabButton(tabs, "book", "生词本");
-    this.createTabButton(tabs, "review", "今日复习", summary.total);
     if (this.plugin.capabilities.desktop) {
       this.createTabButton(tabs, "highlights", "笔记本", this.highlightBook
         ? Object.keys(this.highlightBook.annotations).length
@@ -476,8 +442,6 @@ export class LinguaDictionaryView extends ItemView {
       this.renderLookup(body);
     } else if (this.activeTab === "book") {
       this.renderVocabularyBook(body);
-    } else if (this.activeTab === "review") {
-      this.renderReview(body);
     } else {
       this.renderHighlights(body);
     }
@@ -503,9 +467,7 @@ export class LinguaDictionaryView extends ItemView {
         cls: "lingua-dictionary-tab-badge",
         text: badgeCount.toLocaleString(),
         attr: {
-          "aria-label": tab === "review"
-            ? `${badgeCount.toLocaleString()} 项待复习`
-            : `${badgeCount.toLocaleString()} 条标注`
+          "aria-label": `${badgeCount.toLocaleString()} 条标注`
         }
       });
     }
@@ -514,13 +476,7 @@ export class LinguaDictionaryView extends ItemView {
       this.selectedVocabularyId = null;
       this.selectedHighlightId = null;
       this.editingHighlightId = null;
-      if (tab === "review") {
-        this.reviewEntryId = null;
-        this.reviewRevealed = false;
-        void this.prepareReviewCard();
-      } else {
-        this.renderShell();
-      }
+      this.renderShell();
     });
   }
 
@@ -567,15 +523,23 @@ export class LinguaDictionaryView extends ItemView {
     });
     const summaryActions = summary.createDiv({ cls: "lingua-highlight-summary-actions" });
     const sort = summaryActions.createEl("button", {
-      cls: "lingua-highlight-sort",
+      cls: "lingua-text-action",
       attr: { type: "button", "aria-label": "切换标注时间排序" }
     });
     const syncSortText = (): void => {
       sort.setText(`按时间 ${this.highlightSortDescending ? "↓" : "↑"}`);
     };
     syncSortText();
+    const reviewButton = summaryActions.createEl("button", {
+      cls: "lingua-text-action",
+      text: "卡片复习",
+      attr: { type: "button", "aria-label": "打开高亮复习卡片" }
+    });
+    reviewButton.addEventListener("click", () => {
+      void this.plugin.openHighlightReview();
+    });
     const exportButton = summaryActions.createEl("button", {
-      cls: "lingua-highlight-sort",
+      cls: "lingua-text-action",
       text: this.highlightExporting ? "导出中…" : "按类别导出",
       attr: { type: "button", "aria-label": "将全部高亮笔记按类别导出为一篇笔记" }
     });
@@ -1128,20 +1092,23 @@ export class LinguaDictionaryView extends ItemView {
     counts.createSpan({ text: `共 ${totalCount} 个生词` });
     counts.createSpan({ text: `当前显示 ${entries.length} 个` });
     const exportActions = stats.createDiv({ cls: "lingua-vocabulary-export-actions" });
+    const reviewButton = exportActions.createEl("button", {
+      cls: "lingua-text-action",
+      text: "卡片复习",
+      attr: { type: "button", "aria-label": "打开单词卡片复习" }
+    });
+    reviewButton.addEventListener("click", () => { void this.plugin.openHighlightReview("vocabulary"); });
     const anyExporting = this.vocabularyExporting || this.vocabularyImageExporting;
     const exportButton = exportActions.createEl("button", {
-      cls: "lingua-vocabulary-export-button",
+      cls: "lingua-text-action",
+      text: this.vocabularyExporting ? "导出中…" : "导出笔记",
       attr: {
         "aria-label": "导出生词本到笔记",
         title: "导出生词本到笔记"
       }
     });
     exportButton.type = "button";
-    const exportIcon = exportButton.createSpan({ cls: "lingua-vocabulary-export-icon" });
-    setIcon(exportIcon, "download");
     if (this.vocabularyExporting) {
-      setIcon(exportIcon, "loader-circle");
-      exportButton.addClass("is-loading");
       exportButton.setAttribute("aria-label", "正在导出生词本笔记");
       exportButton.title = "正在导出生词本笔记";
     }
@@ -1160,8 +1127,7 @@ export class LinguaDictionaryView extends ItemView {
       this.vocabularyExporting = true;
       exportButton.disabled = true;
       imageExportButton.disabled = true;
-      setIcon(exportIcon, "loader-circle");
-      exportButton.addClass("is-loading");
+      exportButton.setText("导出中…");
       exportButton.setAttribute("aria-label", "正在导出生词本笔记");
       exportButton.title = "正在导出生词本笔记";
       void this.plugin.exportVocabularyBookToNote().then((result) => {
@@ -1175,8 +1141,7 @@ export class LinguaDictionaryView extends ItemView {
           imageExportButton.disabled = totalCount === 0
             || this.vocabularyWarning !== null
             || !this.plugin.capabilities.desktop;
-          setIcon(exportIcon, "download");
-          exportButton.removeClass("is-loading");
+          exportButton.setText("导出笔记");
           exportButton.setAttribute("aria-label", "导出生词本到笔记");
           exportButton.title = "导出生词本到笔记";
         }
@@ -1184,7 +1149,8 @@ export class LinguaDictionaryView extends ItemView {
     });
     const imageUnsupportedReason = "移动端暂不支持生词本长图导出，请在电脑端使用";
     const imageExportButton = exportActions.createEl("button", {
-      cls: "lingua-vocabulary-export-button lingua-vocabulary-image-export-button",
+      cls: "lingua-text-action",
+      text: this.vocabularyImageExporting ? "生成中…" : "导出长图",
       attr: {
         "aria-label": "将全部生词导出为长图",
         title: this.plugin.capabilities.desktop
@@ -1193,11 +1159,7 @@ export class LinguaDictionaryView extends ItemView {
       }
     });
     imageExportButton.type = "button";
-    const imageExportIcon = imageExportButton.createSpan({ cls: "lingua-vocabulary-export-icon" });
-    setIcon(imageExportIcon, "image");
     if (this.vocabularyImageExporting) {
-      setIcon(imageExportIcon, "loader-circle");
-      imageExportButton.addClass("is-loading");
       imageExportButton.setAttribute("aria-label", "正在生成生词本长图");
       imageExportButton.title = "正在生成生词本长图";
     }
@@ -1218,8 +1180,7 @@ export class LinguaDictionaryView extends ItemView {
       this.vocabularyImageExporting = true;
       exportButton.disabled = true;
       imageExportButton.disabled = true;
-      setIcon(imageExportIcon, "loader-circle");
-      imageExportButton.addClass("is-loading");
+      imageExportButton.setText("生成中…");
       imageExportButton.setAttribute("aria-label", "正在生成生词本长图");
       imageExportButton.title = "正在生成生词本长图";
       void this.plugin.exportVocabularyBookToImages().then((result) => {
@@ -1239,8 +1200,7 @@ export class LinguaDictionaryView extends ItemView {
           imageExportButton.disabled = totalCount === 0
             || this.vocabularyWarning !== null
             || !this.plugin.capabilities.desktop;
-          setIcon(imageExportIcon, "image");
-          imageExportButton.removeClass("is-loading");
+          imageExportButton.setText("导出长图");
           imageExportButton.setAttribute("aria-label", "将全部生词导出为长图");
           imageExportButton.title = this.plugin.capabilities.desktop
             ? "将全部生词导出为长图"
@@ -1379,10 +1339,7 @@ export class LinguaDictionaryView extends ItemView {
     review.type = "button";
     review.addClass("mod-cta");
     review.addEventListener("click", () => {
-      this.activeTab = "review";
-      this.reviewEntryId = entry.id;
-      this.reviewRevealed = false;
-      void this.ensureIntroducedAndRender(entry.id);
+      void this.plugin.openHighlightReview("vocabulary", entry.id);
     });
     const remove = actions.createEl("button", { text: "删除生词" });
     remove.type = "button";
@@ -1408,171 +1365,6 @@ export class LinguaDictionaryView extends ItemView {
         new Notice(caught instanceof Error ? caught.message : "无法打开视频原句。", 6_000);
       });
     });
-  }
-
-  private renderReview(parent: HTMLElement): void {
-    const book = this.vocabularyBook;
-    if (!book) {
-      parent.createDiv({ cls: "lingua-dictionary-empty", text: "正在读取复习计划…" });
-      return;
-    }
-    const summary = getDailyReviewSummary(book, this.plugin.settings.dailyNewWordLimit, new Date());
-    const header = parent.createDiv({ cls: "lingua-review-summary" });
-    header.createEl("strong", { text: `今日待复习 ${summary.total}` });
-    header.createDiv({
-      text: `学习中 ${summary.dueLearning} · 到期 ${summary.dueReview} · 新词 ${summary.availableNew}`
-    });
-
-    const entry = this.reviewEntryId ? book.entries[this.reviewEntryId] : null;
-    if (!entry) {
-      this.scheduleReviewRefresh(book);
-      if (summary.total === 0) {
-        const complete = parent.createDiv({ cls: "lingua-review-complete" });
-        setIcon(complete.createDiv(), "circle-check");
-        complete.createEl("strong", { text: "今天的复习已完成" });
-        complete.createDiv({ text: "之后到期的单词会自动出现在这里。" });
-      } else {
-        const start = parent.createEl("button", { text: "开始今日复习" });
-        start.type = "button";
-        start.addClass("mod-cta");
-        start.addEventListener("click", () => void this.prepareReviewCard());
-      }
-      return;
-    }
-
-    const card = parent.createDiv({ cls: "lingua-review-card" });
-    card.createDiv({ cls: "lingua-review-card-label", text: "先回忆这个单词的含义" });
-    card.createEl("h2", { text: entry.word, attr: { lang: "en" } });
-    const speak = this.createIconButton(card, "volume-2", `朗读 ${entry.word}`);
-    speak.addEventListener("click", () => this.plugin.speakDictionaryWord(entry.word));
-    if (!this.reviewRevealed) {
-      const reveal = card.createEl("button", { text: "显示答案" });
-      reveal.type = "button";
-      reveal.addClass("mod-cta");
-      reveal.addEventListener("click", () => {
-        this.reviewRevealed = true;
-        this.renderShell();
-      });
-      return;
-    }
-
-    const answer = card.createDiv({ cls: "lingua-review-answer" });
-    if (entry.phonetic) {
-      answer.createDiv({ cls: "lingua-dictionary-phonetic", text: `/ ${entry.phonetic} /` });
-    }
-    if (entry.partOfSpeech) {
-      answer.createDiv({ cls: "lingua-review-part-of-speech", text: entry.partOfSpeech });
-    }
-    this.renderSavedVocabularyTags(answer, entry);
-    answer.createDiv({ cls: "lingua-review-meaning", text: entry.chineseTranslation || "暂无释义" });
-    if (entry.personalNote) {
-      answer.createDiv({ cls: "lingua-review-note", text: entry.personalNote });
-    }
-    const latestContext = entry.contexts.at(-1);
-    if (latestContext) {
-      const context = answer.createDiv({ cls: "lingua-review-context" });
-      context.createDiv({ text: latestContext.sentence, attr: { lang: "en" } });
-      const actions = context.createDiv({ cls: "lingua-review-context-actions" });
-      const open = actions.createEl("button", { text: "回到视频原句" });
-      open.type = "button";
-      open.setAttribute("title", "只定位原句，不播放视频");
-      open.addEventListener("click", () => {
-        void this.plugin.openVocabularyContext(latestContext).catch((caught) => {
-          new Notice(caught instanceof Error ? caught.message : "无法打开视频原句。", 6_000);
-        });
-      });
-    }
-    const ratings = card.createDiv({ cls: "lingua-review-ratings" });
-    const now = new Date();
-    const interval = (rating: ReviewRating): string =>
-      previewVocabularyRating(
-        entry,
-        rating,
-        now,
-        this.plugin.settings.fsrsRequestRetention
-      ).intervalLabel;
-    const options: Array<[ReviewRating, string, string]> = [
-      ["again", "忘记", interval("again")],
-      ["hard", "困难", interval("hard")],
-      ["good", "记得", interval("good")],
-      ["easy", "熟练", interval("easy")]
-    ];
-    for (const [rating, label, interval] of options) {
-      const button = ratings.createEl("button", { cls: `is-${rating}` });
-      button.type = "button";
-      button.createSpan({ text: label });
-      button.createEl("small", { text: interval });
-      button.addEventListener("click", () => void this.rateCurrentEntry(rating));
-    }
-  }
-
-  private async prepareReviewCard(): Promise<void> {
-    const loaded = await this.plugin.loadVocabularyBook();
-    if (!this.opened) {
-      return;
-    }
-    this.vocabularyBook = loaded.book;
-    const queue = buildDailyReviewQueue(
-      loaded.book,
-      this.plugin.settings.dailyNewWordLimit,
-      new Date()
-    );
-    this.reviewEntryId = queue[0] ?? null;
-    this.reviewRevealed = false;
-    if (this.reviewEntryId) {
-      await this.ensureIntroducedAndRender(this.reviewEntryId);
-    } else {
-      this.renderShell();
-    }
-  }
-
-  private async ensureIntroducedAndRender(id: string): Promise<void> {
-    const entry = this.vocabularyBook?.entries[id];
-    if (entry?.review.phase === "new" && entry.review.introducedAt === null) {
-      this.vocabularyBook = await this.plugin.introduceVocabularyEntry(id, new Date());
-    }
-    if (this.opened) {
-      this.renderShell();
-    }
-  }
-
-  private async rateCurrentEntry(rating: ReviewRating): Promise<void> {
-    const id = this.reviewEntryId;
-    if (!id) {
-      return;
-    }
-    try {
-      this.vocabularyBook = await this.plugin.rateVocabularyEntry(id, rating, new Date());
-      this.reviewEntryId = null;
-      this.reviewRevealed = false;
-      await this.prepareReviewCard();
-    } catch (caught) {
-      new Notice(caught instanceof Error ? caught.message : "复习进度保存失败。", 6_000);
-    }
-  }
-
-  private scheduleReviewRefresh(book: VocabularyBookFile): void {
-    if (this.reviewRefreshTimer !== null) {
-      window.clearTimeout(this.reviewRefreshTimer);
-      this.reviewRefreshTimer = null;
-    }
-    const now = Date.now();
-    const nextDue = Object.values(book.entries)
-      .filter((entry) => entry.review.phase !== "new" && Date.parse(entry.review.dueAt) > now)
-      .reduce<number | null>((earliest, entry) => {
-        const due = Date.parse(entry.review.dueAt);
-        return earliest === null || due < earliest ? due : earliest;
-      }, null);
-    if (nextDue === null) {
-      return;
-    }
-    const delay = Math.min(60_000, Math.max(250, nextDue - now + 50));
-    this.reviewRefreshTimer = window.setTimeout(() => {
-      this.reviewRefreshTimer = null;
-      if (this.opened && this.activeTab === "review" && this.reviewEntryId === null) {
-        void this.prepareReviewCard();
-      }
-    }, delay);
   }
 
   private reviewStatusLabel(entry: VocabularyEntry): string {

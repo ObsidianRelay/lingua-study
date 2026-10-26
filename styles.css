@@ -1560,7 +1560,7 @@
 
 .lingua-dictionary-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   margin-bottom: 12px;
   padding: 3px;
@@ -1806,33 +1806,6 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 7px;
-}
-
-.lingua-vocabulary-export-button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px !important;
-  min-height: 32px;
-  padding: 0;
-}
-
-.lingua-vocabulary-export-icon,
-.lingua-vocabulary-export-icon .svg-icon {
-  width: 15px;
-  height: 15px;
-}
-
-.lingua-vocabulary-export-button.is-loading .lingua-vocabulary-export-icon {
-  animation: lingua-vocabulary-export-spin 0.9s linear infinite;
-}
-
-@keyframes lingua-vocabulary-export-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* 导出生词本中的单词使用 Obsidian 原生 callout，并强化为独立学习卡片。 */
@@ -4252,7 +4225,7 @@ body:not(.is-mobile) .setting-page:has(.lingua-study-settings-section) .checkbox
  */
 body.lingua-study-theme-paper:not(.is-mobile) .lingua-dictionary-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
   margin-bottom: 18px;
   padding: 0;
@@ -5013,8 +4986,7 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pa
   -webkit-text-fill-color: var(--lingua-paper-accent) !important;
 }
 
-body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock .evs-transcript-icon-button,
-body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-export-button {
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock .evs-transcript-icon-button {
   --button-bg-color: var(--lingua-paper-control) !important;
   --button-text-color: var(--lingua-paper-accent) !important;
   --button-hover-bg-color: var(--lingua-paper-accent) !important;
@@ -5027,8 +4999,7 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-export-button {
   color: var(--lingua-paper-accent) !important;
 }
 
-body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock .evs-transcript-icon-button:not(:disabled):hover,
-body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-export-button:not(:disabled):hover {
+body:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-segment-action-dock .evs-transcript-icon-button:not(:disabled):hover {
   border-color: var(--lingua-paper-accent) !important;
   background: var(--lingua-paper-accent) !important;
   color: var(--lingua-paper-on-accent) !important;
@@ -5056,7 +5027,6 @@ body:not(.is-mobile) .lingua-dictionary-view :is(
 
 body:not(.is-mobile) :is(
   .evs-root:not(.evs-mobile) .evs-segment-action-dock .evs-transcript-icon-button,
-  .lingua-dictionary-view .lingua-vocabulary-export-button,
   .lingua-dictionary-view .lingua-dictionary-search button.mod-cta,
   .lingua-dictionary-view .lingua-review-card > button,
   .lingua-dictionary-view .lingua-review-card > .lingua-dictionary-icon-button
@@ -6837,19 +6807,11 @@ body.lingua-study-theme-paper:not(.is-mobile)
 
 .lingua-highlight-summary-actions {
   display: flex;
+  flex-wrap: wrap;
   margin-left: auto;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
-}
-
-.lingua-highlight-sort {
-  min-height: 28px;
-  padding: 2px 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  box-shadow: none;
-  font: inherit;
 }
 
 .lingua-highlight-card:hover {
@@ -7048,13 +7010,60 @@ body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highligh
   color: var(--lingua-paper-secondary-text, var(--text-muted));
 }
 
-body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-sort,
-body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-sort:is(:hover, :focus-visible) {
+/* 生词本与笔记本的文字操作共用外观和点击反馈。 */
+.lingua-dictionary-view button.lingua-text-action,
+.lingua-dictionary-view button.lingua-text-action:not(:disabled):is(:hover, :focus-visible) {
+  position: relative;
+  min-height: 28px;
+  padding: 2px 0;
   border: 0 !important;
+  border-radius: 0;
   background: transparent !important;
-  color: var(--text-muted) !important;
   box-shadow: none !important;
-  transform: none;
+  font: inherit;
+  cursor: pointer;
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.lingua-dictionary-view button.lingua-text-action {
+  color: var(--text-muted) !important;
+}
+
+.lingua-dictionary-view button.lingua-text-action::after {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  left: 0;
+  height: 1px;
+  background: currentColor;
+  content: "";
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 180ms ease;
+}
+
+.lingua-dictionary-view button.lingua-text-action:not(:disabled):is(:hover, :focus-visible) {
+  color: var(--interactive-accent) !important;
+  transform: translateY(-2px);
+}
+
+.lingua-dictionary-view button.lingua-text-action:not(:disabled):is(:hover, :focus-visible)::after {
+  transform: scaleX(1);
+}
+
+.lingua-dictionary-view button.lingua-text-action:disabled {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lingua-dictionary-view button.lingua-text-action,
+  .lingua-dictionary-view button.lingua-text-action::after {
+    transition: none;
+  }
+
+  .lingua-dictionary-view button.lingua-text-action:not(:disabled):is(:hover, :focus-visible) {
+    transform: none;
+  }
 }
 
 body:not(.is-mobile) .lingua-dictionary-view.is-highlights-view .lingua-highlight-card {
@@ -7834,6 +7843,13 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pl
   max-height: 100%;
 }
 
+.lc-word-back-term {
+  flex: 0 0 auto;
+  display: block;
+  padding: 0;
+  font-size: clamp(26px, 3vw, 36px);
+}
+
 .lc-front-quote {
   max-height: 30%;
   overflow: auto;
@@ -8206,6 +8222,12 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pl
   border-color: rgba(16, 185, 129, 0.32);
 }
 
+.lc-grade-easy {
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.32);
+}
+
 .theme-dark .lc-grade-forgot {
   color: #fda4af;
 }
@@ -8216,6 +8238,10 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pl
 
 .theme-dark .lc-grade-know {
   color: #6ee7b7;
+}
+
+.theme-dark .lc-grade-easy {
+  color: #93c5fd;
 }
 
 /* ---------------------------------------------------------------- 空/错误状态 */
@@ -8279,6 +8305,13 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pl
 
 .lc-stats-head .lc-mini-btn {
   margin-left: auto;
+}
+
+.lc-stats-section-title {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-normal);
 }
 
 .lc-kpi-grid {
@@ -8435,4 +8468,463 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pl
   .lc-footer {
     justify-content: center;
   }
+}
+
+/* 卡片复习共用的纸感页面：两种模式只在指标和卡片文字上区分。 */
+.lc-root {
+  --lc-paper: #f6f1e7;
+  --lc-paper-card: #fdfaf4;
+  --lc-paper-ink: #27221e;
+  --lc-paper-muted: #8b8276;
+  --lc-paper-line: #ded3bf;
+  --lc-paper-button: #eae3d7;
+  --lc-paper-red: #bc4038;
+  --lc-paper-red-soft: #f7e1de;
+  --lc-paper-yellow: #f4e3a8;
+  --lc-paper-blue: #ccdfed;
+  --lc-paper-green: #dce9e0;
+  box-sizing: border-box;
+  width: min(100%, 1240px);
+  height: min(100%, 900px);
+  margin: 0 auto;
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--lc-paper-line);
+  border-radius: 18px;
+  background: var(--lc-paper) !important;
+  color: var(--lc-paper-ink);
+}
+
+.theme-dark .lc-root {
+  --lc-paper: #292621;
+  --lc-paper-card: #322e28;
+  --lc-paper-ink: #f0e9dd;
+  --lc-paper-muted: #b5a99a;
+  --lc-paper-line: #534a3e;
+  --lc-paper-button: #403a31;
+  --lc-paper-red: #e18c82;
+  --lc-paper-red-soft: #503631;
+  --lc-paper-yellow: #594a29;
+  --lc-paper-blue: #344a5a;
+  --lc-paper-green: #34493d;
+}
+
+.lc-root .lc-top {
+  gap: 0;
+}
+
+.lc-root .lc-title-row {
+  min-height: 62px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--lc-paper-line);
+}
+
+.lc-root .lc-mode-switch {
+  display: flex;
+  align-self: flex-start;
+  gap: 3px;
+  margin: 10px 24px 0;
+  padding: 3px;
+  border: 1px solid var(--lc-paper-line);
+  border-radius: 10px;
+  background: var(--lc-paper-button);
+}
+
+.lc-root .lc-mode-option {
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--lc-paper-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lc-root .lc-mode-option:not(:disabled):hover {
+  background: var(--lc-paper-card);
+  color: var(--lc-paper-ink);
+}
+
+.lc-root .lc-mode-option.is-active,
+.lc-root .lc-mode-option.is-active:not(:disabled):hover {
+  background: var(--lc-paper-ink);
+  color: var(--lc-paper-card);
+}
+
+.lc-root .lc-mode-option:disabled {
+  cursor: default;
+}
+
+.lc-root .lc-title h2 {
+  color: var(--lc-paper-ink);
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 18px;
+}
+
+.lc-root .lc-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--lc-paper-red);
+  box-shadow: none;
+  font-family: Georgia, serif;
+}
+
+.lc-root .lc-sub,
+.lc-root .lc-meta,
+.lc-root .lc-time,
+.lc-root .lc-kind,
+.lc-root .lc-hint,
+.lc-root .lc-progress-text {
+  color: var(--lc-paper-muted);
+}
+
+.lc-root .lc-strip {
+  align-items: center;
+  gap: 10px 22px;
+  min-height: 48px;
+  padding: 12px 24px 4px;
+}
+
+.lc-root .lc-pill {
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--lc-paper-muted);
+}
+
+.lc-root .lc-pill-value {
+  color: var(--lc-paper-ink);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-weight: 700;
+}
+
+.lc-root[data-mode="vocabulary"] .lc-pill:first-child {
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--lc-paper-button);
+}
+
+.lc-root[data-mode="vocabulary"] .lc-pill:nth-child(3) .lc-pill-value,
+.lc-root .lc-pill.warn .lc-pill-value {
+  color: var(--lc-paper-red);
+}
+
+.lc-root[data-mode="vocabulary"] .lc-pill:nth-child(4) .lc-pill-value,
+.lc-root .lc-pill.ok .lc-pill-value {
+  color: #477b60;
+}
+
+.lc-root .lc-filters {
+  justify-content: space-between;
+  padding: 3px 24px 12px;
+}
+
+.lc-root .lc-section-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--lc-paper-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.lc-root .lc-section-label::after {
+  position: absolute;
+  right: 65%;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--lc-paper-red);
+  content: "";
+}
+
+.lc-root .lc-chip {
+  gap: 3px;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  background: var(--lc-paper-button);
+  color: var(--lc-paper-ink);
+  font-weight: 600;
+}
+
+.lc-root .lc-chip-count {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-family: "SFMono-Regular", Menlo, monospace;
+}
+
+.lc-root .lc-chip.is-active,
+.lc-root .lc-chip[data-cat].is-active {
+  border-color: transparent;
+  background: var(--lc-paper-ink);
+  box-shadow: none;
+  color: var(--lc-paper-card);
+}
+
+.lc-root .lc-chip.is-active .lc-chip-count {
+  background: transparent;
+}
+
+.lc-root .lc-chip[data-cat="expression"]:not(.is-active) { background: var(--lc-paper-yellow); }
+.lc-root .lc-chip[data-cat="grammar"]:not(.is-active) { background: var(--lc-paper-blue); }
+.lc-root .lc-chip[data-cat="difficulty"]:not(.is-active) { background: var(--lc-paper-red-soft); }
+
+.lc-root .lc-search,
+.lc-root .lc-source,
+.lc-root .lc-toggle {
+  height: 32px;
+  border: 1px solid var(--lc-paper-line);
+  border-radius: 8px;
+  background: var(--lc-paper-card);
+  color: var(--lc-paper-ink);
+}
+
+.lc-root .lc-toggle.is-active {
+  border-color: var(--lc-paper-red);
+  background: transparent;
+  color: var(--lc-paper-red);
+}
+
+.lc-root .lc-search:focus,
+.lc-root .lc-source:focus-visible,
+.lc-root button:focus-visible {
+  outline: 2px solid var(--lc-paper-red);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.lc-root .lc-progress {
+  padding: 0 24px 14px;
+}
+
+.lc-root .lc-bar {
+  height: 2px;
+  border-radius: 0;
+  background: var(--lc-paper-line);
+}
+
+.lc-root .lc-bar-fill {
+  border-radius: 0;
+  background: var(--lc-paper-red);
+}
+
+.lc-root .lc-progress-text,
+.lc-root .lc-card-foot,
+.lc-root .lc-time {
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.lc-root .lc-stage {
+  padding: 0 24px 20px;
+}
+
+.lc-root .lc-card {
+  width: 100%;
+  height: clamp(360px, 56vh, 640px);
+}
+
+.lc-root .lc-face,
+.theme-dark .lc-root .lc-face {
+  border: 1px solid var(--lc-paper-line);
+  border-radius: 17px;
+  background: var(--lc-paper-card);
+  box-shadow: none;
+}
+
+.lc-root .lc-face::before {
+  display: none;
+}
+
+.lc-root .lc-front {
+  padding: 24px 30px 19px;
+  background-image: none;
+}
+
+.lc-root .lc-tag {
+  border-radius: 6px;
+}
+
+.lc-root .lc-tag-other { background: var(--lc-paper-red-soft); color: var(--lc-paper-red); }
+.lc-root .lc-tag-expression { background: var(--lc-paper-yellow); color: #67521f; }
+.lc-root .lc-tag-grammar { background: var(--lc-paper-blue); color: #35566c; }
+.lc-root .lc-tag-difficulty { background: var(--lc-paper-red-soft); color: var(--lc-paper-red); }
+
+.lc-root .lc-term {
+  color: var(--lc-paper-ink);
+  font-family: var(--font-interface), sans-serif;
+  font-size: clamp(26px, 3vw, 40px);
+  font-weight: 600;
+}
+
+.lc-root .lc-term-word {
+  font-family: Georgia, "Songti SC", serif;
+  font-size: clamp(38px, 4vw, 52px);
+  font-weight: 700;
+}
+
+.lc-root .lc-term-long {
+  font-size: clamp(22px, 2.5vw, 32px);
+}
+
+.lc-root .lc-term-xlong {
+  font-size: 17px;
+}
+
+.lc-root .lc-word-back-term {
+  font-family: Georgia, "Songti SC", serif;
+  font-size: clamp(30px, 3vw, 40px);
+}
+
+.lc-root .lc-context {
+  border-left-color: var(--lc-paper-red);
+  background: color-mix(in srgb, var(--lc-paper-red) 5%, var(--lc-paper-card));
+}
+
+.lc-root .lc-card[data-cat="expression"] .lc-context {
+  border-left-color: #b89442;
+  background: color-mix(in srgb, var(--lc-paper-yellow) 30%, var(--lc-paper-card));
+}
+
+.lc-root .lc-card[data-cat="grammar"] .lc-context {
+  border-left-color: #789ab3;
+  background: color-mix(in srgb, var(--lc-paper-blue) 30%, var(--lc-paper-card));
+}
+
+.lc-root .lc-card[data-cat="difficulty"] .lc-context {
+  border-left-color: var(--lc-paper-red);
+  background: color-mix(in srgb, var(--lc-paper-red) 5%, var(--lc-paper-card));
+}
+
+.lc-root .lc-quote-full,
+.lc-root .lc-writing-input {
+  background: var(--lc-paper);
+}
+
+.lc-root .lc-mini-btn {
+  border-color: var(--lc-paper-line);
+  background: var(--lc-paper-card);
+  color: var(--lc-paper-ink);
+}
+
+.lc-root .lc-front-source {
+  position: static;
+  overflow: hidden;
+  color: var(--lc-paper-muted);
+  font-size: 11px;
+  opacity: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lc-root .lc-card-foot {
+  flex-wrap: nowrap;
+  padding-top: 7px;
+  border-top: 1px solid var(--lc-paper-line);
+  font-size: 10px;
+}
+
+.lc-root .lc-footer {
+  min-height: 82px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--lc-paper-line);
+}
+
+.lc-root .lc-btn {
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--lc-paper-button);
+  color: var(--lc-paper-ink);
+}
+
+.lc-root .lc-btn:hover:not(:disabled) {
+  border-color: var(--lc-paper-line);
+  background: var(--lc-paper-card);
+  color: var(--lc-paper-ink);
+}
+
+.lc-root .lc-flip-btn,
+.lc-root .lc-flip-btn:hover:not(:disabled) {
+  border-color: var(--lc-paper-ink);
+  background: var(--lc-paper-ink);
+  color: var(--lc-paper-card);
+}
+
+.lc-root .lc-extras .lc-btn,
+.lc-root .lc-title-row .lc-btn {
+  border-color: var(--lc-paper-line);
+  background: transparent;
+}
+
+.lc-root .lc-title-row .lc-btn:last-child {
+  background: var(--lc-paper-button);
+}
+
+.lc-root .lc-grade {
+  min-width: 72px;
+  border: 0;
+  border-radius: 10px;
+}
+
+.lc-root .lc-grade-forgot { background: var(--lc-paper-red-soft); color: var(--lc-paper-red); }
+.lc-root .lc-grade-fuzzy { background: var(--lc-paper-yellow); color: #765c22; }
+.lc-root .lc-grade-know { background: var(--lc-paper-green); color: #477b60; }
+.lc-root .lc-grade-easy { background: var(--lc-paper-green); color: #477b60; }
+.lc-root .lc-grade:disabled { opacity: 0.78; }
+
+/* 两种卡片页面的按钮共用轻量反馈，不改变评分颜色或点击逻辑。 */
+.lc-root button:is(.lc-btn, .lc-chip, .lc-toggle, .lc-grade, .lc-mini-btn, .lc-related-item, .lc-mode-option) {
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    filter 160ms ease;
+}
+
+.lc-root button:is(.lc-btn, .lc-chip, .lc-toggle, .lc-grade, .lc-mini-btn, .lc-related-item, .lc-mode-option):not(:disabled):is(:hover, :focus-visible) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--lc-paper-ink) 14%, transparent);
+}
+
+.lc-root button:is(.lc-btn, .lc-chip, .lc-toggle, .lc-grade, .lc-mini-btn, .lc-related-item, .lc-mode-option):not(:disabled):active {
+  transform: translateY(0) scale(0.96);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--lc-paper-ink) 12%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-root button:is(.lc-btn, .lc-chip, .lc-toggle, .lc-grade, .lc-mini-btn, .lc-related-item, .lc-mode-option) {
+    transition: none;
+  }
+
+  .lc-root button:is(.lc-btn, .lc-chip, .lc-toggle, .lc-grade, .lc-mini-btn, .lc-related-item, .lc-mode-option):not(:disabled):is(:hover, :focus-visible, :active) {
+    transform: none;
+  }
+}
+
+.theme-dark .lc-root .lc-tag-expression,
+.theme-dark .lc-root .lc-grade-fuzzy { color: #f2d68c; }
+.theme-dark .lc-root .lc-tag-grammar { color: #b6d4ed; }
+.theme-dark .lc-root .lc-grade-know,
+.theme-dark .lc-root .lc-grade-easy { color: #a8d1b2; }
+
+@media (max-width: 900px) {
+  .lc-root { overflow-y: auto; }
+  .lc-root .lc-mode-switch { margin-left: 14px; margin-right: 14px; }
+  .lc-root .lc-title-row,
+  .lc-root .lc-strip,
+  .lc-root .lc-filters,
+  .lc-root .lc-progress { padding-right: 14px; padding-left: 14px; }
+  .lc-root .lc-stage { flex: 0 0 auto; padding-right: 14px; padding-left: 14px; }
+  .lc-root .lc-card { height: clamp(340px, 48vh, 520px); }
+  .lc-root .lc-front { padding: 18px; }
+  .lc-root .lc-footer { padding: 12px 14px; justify-content: center; }
+  .lc-root .lc-card-foot { flex-wrap: wrap; }
 }

@@ -146,6 +146,15 @@ import {
 import { selectNewestEligibleRenderer } from "./vocabulary-navigation-core";
 import { HighlightStore, type HighlightBookLoadResult } from "./highlight-store";
 import {
+  buildCards,
+  buildTranslationTable,
+  normalizeState,
+  type ReviewCard,
+  type ReviewLog,
+  type ReviewStore
+} from "./highlight-review-core";
+import { HIGHLIGHT_REVIEW_VIEW_TYPE, HighlightReviewView, type HighlightReviewMode } from "./highlight-review-view";
+import {
   writeHighlightExport,
   type HighlightExportStorage,
   type HighlightExportWriteResult
@@ -7284,6 +7293,8 @@ export default class LinguaStudyPlugin extends Plugin {
   private studyCacheStore: StudyCacheStore | null = null;
   private vocabularyStore: VocabularyStore | null = null;
   private highlightStore: HighlightStore | null = null;
+  private highlightReviewStore: ReviewStore = Object.create(null) as ReviewStore;
+  private highlightReviewLog: ReviewLog = Object.create(null) as ReviewLog;
   private readonly offlineDictionary = new OfflineDictionary();
   private fullDictionaryService: FullDictionaryService | null = null;
   private customDictionaryService: CustomDictionaryService | null = null;
@@ -7334,6 +7345,7 @@ export default class LinguaStudyPlugin extends Plugin {
     this.settings = sanitizeSettings(storedSettings);
     if (storedSettings && typeof storedSettings === "object" && !Array.isArray(storedSettings)) {
       this.chatSessions.restore((storedSettings as Record<string, unknown>).studyChatSessions);
+      this.restoreHighlightReviewData((storedSettings as Record<string, unknown>).highlightReview);
     }
     this.applyInterfaceTheme();
     this.translationService = new TranslationService(this.app, () => this.settings);
@@ -7414,6 +7426,25 @@ export default class LinguaStudyPlugin extends Plugin {
       (leaf) => new LinguaDictionaryView(leaf, this)
     );
     this.registerView(STUDY_CHAT_VIEW_TYPE, (leaf) => new StudyChatView(leaf, this));
+    this.registerView(HIGHLIGHT_REVIEW_VIEW_TYPE, (leaf) => new HighlightReviewView(leaf, {
+      settings: { newPerDay: 20, showTranslation: true },
+      getStore: () => this.highlightReviewStore,
+      getLog: () => this.highlightReviewLog,
+      persist: () => this.persistHighlightReview(),
+      loadCards: () => this.loadHighlightReviewCards(),
+      openSource: (card) => { void this.openHighlightReviewSource(card); },
+      openVideo: (card) => { void this.openHighlightReviewVideo(card); },
+      loadVocabulary: () => this.loadVocabularyBook(),
+      rateVocabulary: (id, rating, now) => this.rateVocabularyEntry(id, rating, now),
+      openVocabularyContext: (context) => {
+        void this.openVocabularyContext(context).catch((error: unknown) => {
+          new Notice(error instanceof Error ? error.message : "无法打开视频原句。", 6_000);
+        });
+      },
+      speakWord: (word) => this.speakDictionaryWord(word),
+      dailyNewWordLimit: () => this.settings.dailyNewWordLimit,
+      fsrsRequestRetention: () => this.settings.fsrsRequestRetention
+    }));
     this.youtubeImporter = new YouTubeImportController(
       this.app,
       () => this.settings,
@@ -7510,6 +7541,11 @@ export default class LinguaStudyPlugin extends Plugin {
       id: "open-study-chat",
       name: "打开学习聊天",
       callback: () => { void this.openStudyChat(); }
+    });
+    this.addCommand({
+      id: "open-highlight-review",
+      name: "打开高亮复习卡片",
+      callback: () => { void this.openHighlightReview(); }
     });
 
     this.addCommand({
@@ -7609,7 +7645,7 @@ export default class LinguaStudyPlugin extends Plugin {
       id: "start-vocabulary-review",
       name: "开始今日生词复习",
       callback: () => {
-        void this.openDictionarySection("review");
+        void this.openHighlightReview("vocabulary");
       }
     });
 
@@ -8049,6 +8085,58 @@ export default class LinguaStudyPlugin extends Plugin {
     }
   }
 
+  private restoreHighlightReviewData(raw: unknown): void {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const data = raw as Record<string, unknown>;
+    const savedStore = data.store;
+    if (savedStore && typeof savedStore === "object" && !Array.isArray(savedStore)) {
+      for (const [id, value] of Object.entries(savedStore as Record<string, unknown>)) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+        this.highlightReviewStore[id] = normalizeState(value);
+      }
+    }
+    const savedLog = data.log;
+    if (savedLog && typeof savedLog === "object" && !Array.isArray(savedLog)) {
+      for (const [day, value] of Object.entries(savedLog as Record<string, unknown>)) {
+        if (!/^\d{4}-\d{2}-\d{2}$/u.test(day) || !value || typeof value !== "object" || Array.isArray(value)) continue;
+        const entry = value as Record<string, unknown>;
+        const count = (field: string): number => {
+          const number = Number(entry[field]);
+          return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+        };
+        this.highlightReviewLog[day] = {
+          total: count("total"),
+          forgot: count("forgot"),
+          fuzzy: count("fuzzy"),
+          know: count("know"),
+          newIds: Array.isArray(entry.newIds)
+            ? entry.newIds.filter((id): id is string => typeof id === "string").slice(0, 500)
+            : []
+        };
+      }
+    }
+  }
+
+  private persistHighlightReview(): void {
+    const snapshot = {
+      store: structuredClone(this.highlightReviewStore),
+      log: structuredClone(this.highlightReviewLog)
+    };
+    const task = this.settingsUpdateQueue.catch(() => undefined).then(async () => {
+      await this.backupMalformedSettingsData();
+      const stored: unknown = await this.loadData();
+      const data = stored && typeof stored === "object" && !Array.isArray(stored)
+        ? { ...(stored as Record<string, unknown>) } : {};
+      data.highlightReview = snapshot;
+      await this.saveData(data);
+    });
+    this.settingsUpdateQueue = task;
+    void task.catch((error: unknown) => {
+      console.warn("Lingua Study: 高亮复习进度保存失败。", error);
+      new Notice("高亮复习进度保存失败，请检查磁盘空间或文件权限。", 8_000);
+    });
+  }
+
   async onExternalSettingsChange(): Promise<void> {
     try {
       await this.updateSettings({});
@@ -8368,7 +8456,7 @@ export default class LinguaStudyPlugin extends Plugin {
     }
   }
 
-  async openDictionarySection(section: "book" | "review" | "highlights"): Promise<void> {
+  async openDictionarySection(section: "book" | "highlights"): Promise<void> {
     if (section === "highlights" && !this.capabilities.desktop) {
       new Notice("高亮笔记库第一版仅支持电脑端。", 4_000);
       return;
@@ -8376,8 +8464,6 @@ export default class LinguaStudyPlugin extends Plugin {
     const view = await this.ensureDictionaryView();
     if (section === "book") {
       view.openVocabularyBook();
-    } else if (section === "review") {
-      view.openReview();
     } else {
       view.openHighlights();
     }
@@ -8416,6 +8502,19 @@ export default class LinguaStudyPlugin extends Plugin {
       await this.app.workspace.revealLeaf(leaf);
     } catch (error) {
       new Notice(error instanceof Error ? error.message : "聊天页面打开失败。", 6_000);
+    }
+  }
+
+  async openHighlightReview(mode: HighlightReviewMode = "highlights", wordId?: string): Promise<void> {
+    try {
+      const existing = this.app.workspace.getLeavesOfType(HIGHLIGHT_REVIEW_VIEW_TYPE)[0];
+      const leaf = existing ?? this.app.workspace.getLeaf("tab");
+      if (!existing) await leaf.setViewState({ type: HIGHLIGHT_REVIEW_VIEW_TYPE, active: true });
+      if (!(leaf.view instanceof HighlightReviewView)) throw new Error("卡片页面尚未准备好，请重新加载插件。");
+      await leaf.view.showMode(mode, wordId);
+      await this.app.workspace.revealLeaf(leaf);
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : "高亮复习卡片打开失败。", 7_000);
     }
   }
 
@@ -8756,6 +8855,54 @@ export default class LinguaStudyPlugin extends Plugin {
 
   async loadHighlightBook(): Promise<HighlightBookLoadResult> {
     return this.getHighlightStore().load();
+  }
+
+  private async loadHighlightReviewCards(): Promise<ReviewCard[] | null> {
+    const loaded = await this.getHighlightStore().load();
+    if (loaded.warning) {
+      new Notice(loaded.warning, 8_000);
+      return null;
+    }
+    const annotations = Object.values(loaded.book.annotations);
+    const transcripts: Record<string, TranscriptFile> = Object.create(null) as Record<string, TranscriptFile>;
+    const translations: Record<string, ReturnType<typeof buildTranslationTable>> =
+      Object.create(null) as Record<string, ReturnType<typeof buildTranslationTable>>;
+    const paths = [...new Set(annotations.map((annotation) => annotation.transcriptPath))];
+    await Promise.all(paths.map(async (path) => {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile)) return;
+      try {
+        const transcript = validateTranscript(JSON.parse(await this.app.vault.cachedRead(file)) as unknown);
+        transcripts[path] = transcript;
+        const cache = await this.loadTranslationCache(path, transcript.videoId);
+        translations[path] = buildTranslationTable({ translations: cache.translations });
+      } catch (error) {
+        console.warn(`Lingua Study: 高亮复习无法读取字幕或翻译：${path}`, error);
+      }
+    }));
+    return buildCards({ annotations, transcripts, translations }).cards;
+  }
+
+  private async openHighlightReviewSource(card: ReviewCard): Promise<void> {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(card.sourcePath);
+      if (!(file instanceof TFile)) throw new Error("来源笔记已不存在。");
+      await this.openVocabularyExportFile(file);
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : "来源笔记打开失败。", 6_000);
+    }
+  }
+
+  private async openHighlightReviewVideo(card: ReviewCard): Promise<void> {
+    try {
+      const loaded = await this.getHighlightStore().load();
+      if (loaded.warning) throw new Error(loaded.warning);
+      const annotation = loaded.book.annotations[card.id];
+      if (!annotation) throw new Error("这条高亮已不存在，请刷新复习卡片。");
+      await this.openHighlightContext(annotation);
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : "视频定位失败。", 6_000);
+    }
   }
 
   async exportHighlightBookToNote(): Promise<HighlightExportWriteResult> {

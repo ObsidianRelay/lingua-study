@@ -5,7 +5,7 @@
 Turn English YouTube and Bilibili videos, plus public podcast episodes, into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 2.1.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 2.2.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
 ## Join the QQ Group
 
@@ -14,7 +14,9 @@ Scan the QR code below to join the Lingua Study QQ group:
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 1124526985" width="320"></p>
 <p align="center"><strong>QQ group number: 1124526985</strong></p>
 
-## Recent updates (1.3.0–2.1.0)
+## Recent updates (1.3.0–2.2.0)
+
+- **Card review (2.2.0)**: switch between vocabulary and short-sentence cards on one page, open them from the vocabulary book or highlight notebook, and view both card types in one statistics page and review heatmap
 
 - **Desktop player positioning (2.1.0)**: hold the pin button to move the player inside Obsidian; unpin to return it to the note, with smoothly scaling Lingua Paper controls
 - **Local-model study chat (2.1.0)**: connect to an already running local compatible service, enter its model ID, and test the connection in settings; translation and study cards keep their existing providers

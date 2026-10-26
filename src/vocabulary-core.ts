@@ -836,3 +836,52 @@ export function getDailyReviewSummary(
     total: dueLearning + dueReview + availableNew
   };
 }
+
+export interface VocabularyReviewStats {
+  total: number;
+  learned: number;
+  due: number;
+  newToday: number;
+  todayReviews: number;
+  recordedReviews: number;
+  todayPassed: number;
+  recordedPassed: number;
+  dailyReviews: Record<string, number>;
+}
+
+/** 只统计生词本实际保留的评分日志；旧词条可能没有完整的历史日志。 */
+export function computeVocabularyReviewStats(
+  book: VocabularyBookFile,
+  dailyNewLimit: number,
+  now: Date = new Date()
+): VocabularyReviewStats {
+  const entries = Object.values(book.entries);
+  const today = localDateKey(now);
+  const summary = getDailyReviewSummary(book, dailyNewLimit, now);
+  const stats: VocabularyReviewStats = {
+    total: entries.length,
+    learned: 0,
+    due: summary.dueLearning + summary.dueReview,
+    newToday: summary.availableNew,
+    todayReviews: 0,
+    recordedReviews: 0,
+    todayPassed: 0,
+    recordedPassed: 0,
+    dailyReviews: {}
+  };
+  for (const entry of entries) {
+    if (entry.review.introducedAt !== null || entry.review.phase !== "new") stats.learned += 1;
+    for (const log of entry.review.reviewLogs ?? []) {
+      const day = localDateKey(new Date(log.review));
+      const passed = log.rating === Rating.Good || log.rating === Rating.Easy;
+      stats.recordedReviews += 1;
+      if (passed) stats.recordedPassed += 1;
+      stats.dailyReviews[day] = (stats.dailyReviews[day] ?? 0) + 1;
+      if (day === today) {
+        stats.todayReviews += 1;
+        if (passed) stats.todayPassed += 1;
+      }
+    }
+  }
+  return stats;
+}

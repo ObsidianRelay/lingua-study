@@ -84,6 +84,7 @@ export interface ReviewCard {
   id: string;
   kind: CardKind;
   category: CardCategory;
+  categoryIds: string[];
   categoryLabel: string;
   /** 完整的原始高亮文本 */
   quote: string;
@@ -137,7 +138,7 @@ const CJK_START_RE = /^[\u4e00-\u9fff]/;
 /* ------------------------------------------------------------------ 文本工具 */
 
 export function collapse(value: unknown): string {
-  return String(value == null ? "" : value)
+  return (typeof value === "string" || typeof value === "number" ? String(value) : "")
     .replace(/\u00a0/g, " ")
     .replace(/[ \t\u3000]+/g, " ")
     .replace(/\s*\n\s*/g, " ")
@@ -198,7 +199,7 @@ function extractLatinQuoted(quote: string): string {
 
 /** 中文句子里出现的第一段英文（"可用 vibe 替换 atmosphere" → "vibe"） */
 function firstLatinRun(quote: string): string {
-  const m = /[A-Za-z][A-Za-z0-9'’\-]*(?:\s+[A-Za-z0-9'’\-+]+){0,4}/.exec(quote);
+  const m = /[A-Za-z][A-Za-z0-9'’-]*(?:\s+[A-Za-z0-9'’+-]+){0,4}/.exec(quote);
   if (!m) return "";
   const run = m[0].trim().replace(/[.,;:，。；：]+$/, "");
   return run.length >= 3 ? run : "";
@@ -361,7 +362,7 @@ function buildContext(
   transcript: TranscriptFile | null,
   translations: TranslationTable | null
 ): CardContext {
-  const segments = transcript && Array.isArray(transcript.segments) ? transcript.segments : [];
+  const segments: readonly TranscriptSegment[] = transcript?.segments ?? [];
   const index = findSegmentIndex(annotation, segments);
   const seg = index >= 0 ? segments[index] : null;
   const text = seg ? collapse(seg.text) : "";
@@ -416,8 +417,8 @@ export function buildCards(input: BuildCardsInput): BuildCardsResult {
     seen.add(id);
 
     const kind: CardKind = annotation.targetType === "transcript" ? "sentence" : "point";
-    const categoryKey =
-      Array.isArray(annotation.categoryIds) && annotation.categoryIds.length ? annotation.categoryIds[0] : "other";
+    const categoryIds = annotation.categoryIds ? [...annotation.categoryIds] : [];
+    const categoryKey = categoryIds[0] ?? "other";
     const meta = categoryMeta(categoryKey);
 
     const parts: Pick<SplitQuoteResult, "front" | "gloss" | "explain" | "frontSource"> =
@@ -435,6 +436,7 @@ export function buildCards(input: BuildCardsInput): BuildCardsResult {
       id,
       kind,
       category: meta.key,
+      categoryIds,
       categoryLabel: meta.label,
       quote,
       front: parts.front || quote,
@@ -645,7 +647,7 @@ export interface QueueResult {
 function matchSearch(card: ReviewCard, needle: string): boolean {
   if (!needle) return true;
   const q = needle.toLowerCase();
-  const hay = [card.front, card.gloss, card.explain, card.quote, card.sourceAlias, card.categoryLabel]
+  const hay = [card.front, card.gloss, card.explain, card.quote, card.note, card.sourceAlias, card.categoryLabel]
     .join(" ")
     .toLowerCase();
   return hay.includes(q);
@@ -665,7 +667,7 @@ export function buildReviewQueue(cards: readonly ReviewCard[], store: ReviewStor
   const search = options.search || "";
 
   const pool = cards.filter((card) => {
-    if (category && card.category !== category) return false;
+    if (category && !card.categoryIds.includes(category)) return false;
     if (sourcePath && card.sourcePath !== sourcePath) return false;
     if (starredOnly) {
       const st = store[card.id];
@@ -709,7 +711,7 @@ export function buildReviewQueue(cards: readonly ReviewCard[], store: ReviewStor
         const sb = store[b.id];
         return String(sa ? sa.last : "").localeCompare(String(sb ? sb.last : ""));
       });
-    queue.push(...rest);
+    queue.push(...fresh.slice(newAllowed), ...rest);
   }
 
   return {

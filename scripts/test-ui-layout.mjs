@@ -115,7 +115,7 @@ try {
       <div class="lingua-dictionary-body" id="dictionary-body">
         <form class="lingua-dictionary-search"><input value="antidepressants"><button class="mod-cta">查询</button></form>
         <div class="lingua-dictionary-profile"><label>学习目标</label><select><option>四级</option></select></div>
-        <div class="lingua-vocabulary-stats"><div class="lingua-vocabulary-export-actions"><button class="lingua-vocabulary-export-button" id="vocabulary-export-button"><svg class="svg-icon"></svg></button></div></div>
+        <div class="lingua-vocabulary-stats"><div class="lingua-vocabulary-export-actions"><button class="lingua-text-action" id="vocabulary-export-button">导出笔记</button></div></div>
         <div class="lingua-dictionary-result">
           <div class="lingua-dictionary-word-row"><div><h2>antidepressant</h2><div class="lingua-dictionary-phonetic">/ˌæntidɪˈpresənt/</div></div><div class="lingua-dictionary-word-actions"><button class="lingua-dictionary-icon-button"></button><button class="lingua-dictionary-icon-button is-saved" aria-label="更新到生词本" aria-pressed="true"><svg class="svg-icon"></svg></button></div></div>
           <div class="lingua-dictionary-tags"><span class="is-current">四级</span><span>雅思</span></div>
@@ -317,7 +317,7 @@ try {
           check(getComputedStyle(dictionaryBrand).color === "rgb(33, 30, 26)", "Obsidian 外观主题污染了 Lingua Study 品牌标题色");
           check(getComputedStyle(dictionaryWord).color === "rgb(33, 30, 26)", "Obsidian 外观主题污染了词典单词标题色");
           check(getComputedStyle(reviewWord).color === "rgb(33, 30, 26)", "Obsidian 外观主题污染了复习单词标题色");
-          check(getComputedStyle(vocabularyExportButton).backgroundColor === "rgb(231, 229, 225)", "Obsidian 外观主题污染了生词导出按钮底色");
+          check(getComputedStyle(vocabularyExportButton).backgroundColor === "rgba(0, 0, 0, 0)", "生词导出文字按钮仍有背景色");
           check(getComputedStyle(reviewRevealButton).backgroundColor === "rgb(33, 30, 26)", "Obsidian 外观主题污染了显示答案按钮底色");
           check(transcriptActionButtons.every((button) => getComputedStyle(button).backgroundColor === "rgb(231, 229, 225)"), "Obsidian 外观主题污染了字幕操作按钮底色");
           check(dictionaryTabs.length === 4, "词典右侧栏没有完整显示四个页签");
@@ -397,7 +397,7 @@ try {
           check(lightDictionaryColor !== darkDictionaryColor, "词典没有跟随深浅主题变量");
           check(getComputedStyle(dictionaryTabs[0]).backgroundColor !== getComputedStyle(dictionaryTabs[1]).backgroundColor, "深色主题下当前词典页面高亮不明显");
           document.body.classList.replace("theme-dark", "theme-light");
-          dictionaryBody.innerHTML = '<div class="lingua-vocabulary-controls"><input type="search" placeholder="搜索生词或释义"><select aria-label="筛选生词"><option value="all">全部</option><option value="due">今日到期</option></select></div><div class="lingua-vocabulary-stats"><div class="lingua-vocabulary-stats-counts"><span>共 4 个生词</span><span>当前显示 4 个</span></div><div class="lingua-vocabulary-export-actions"><button class="lingua-vocabulary-export-button" aria-label="导出生词本到笔记"><span class="lingua-vocabulary-export-icon"></span></button><button class="lingua-vocabulary-export-button lingua-vocabulary-image-export-button" aria-label="将全部生词导出为长图"><span class="lingua-vocabulary-export-icon"></span></button></div></div><div class="lingua-vocabulary-list">' + ['wisdom', 'bother', 'anything', 'focus'].map((word) => '<button class="lingua-vocabulary-list-item"><div class="lingua-vocabulary-list-heading"><strong>' + word + '</strong><span>下次 2026/8/22</span></div><div class="lingua-vocabulary-list-meaning">n. 这是一条用于验证列表不会互相覆盖的完整释义</div><div class="lingua-vocabulary-list-meta"><span>1 个语境</span><span>四级 · 六级 · 雅思</span></div></button>').join('') + '</div>';
+          dictionaryBody.innerHTML = '<div class="lingua-vocabulary-controls"><input type="search" placeholder="搜索生词或释义"><select aria-label="筛选生词"><option value="all">全部</option><option value="due">今日到期</option></select></div><div class="lingua-vocabulary-stats"><div class="lingua-vocabulary-stats-counts"><span>共 4 个生词</span><span>当前显示 4 个</span></div><div class="lingua-vocabulary-export-actions"><button class="lingua-text-action">卡片复习</button><button class="lingua-text-action" aria-label="导出生词本到笔记">导出笔记</button><button class="lingua-text-action" aria-label="将全部生词导出为长图">导出长图</button></div></div><div class="lingua-vocabulary-list">' + ['wisdom', 'bother', 'anything', 'focus'].map((word) => '<button class="lingua-vocabulary-list-item"><div class="lingua-vocabulary-list-heading"><strong>' + word + '</strong><span>下次 2026/8/22</span></div><div class="lingua-vocabulary-list-meaning">n. 这是一条用于验证列表不会互相覆盖的完整释义</div><div class="lingua-vocabulary-list-meta"><span>1 个语境</span><span>四级 · 六级 · 雅思</span></div></button>').join('') + '</div>';
           const vocabularyControls = dictionaryBody.querySelector(".lingua-vocabulary-controls");
           const vocabularyFilter = vocabularyControls.querySelector("select");
           check(vocabularyControls.scrollWidth <= vocabularyControls.clientWidth + 1, "生词搜索和筛选控件溢出侧栏");
@@ -413,12 +413,10 @@ try {
           check(getComputedStyle(vocabularyFilter).boxShadow === "none", "生词筛选框点击后仍保留焦点阴影");
           const vocabularyStats = dictionaryBody.querySelector(".lingua-vocabulary-stats");
           const vocabularyExportActions = dictionaryBody.querySelector(".lingua-vocabulary-export-actions");
-          const vocabularyExportButtons = Array.from(dictionaryBody.querySelectorAll(".lingua-vocabulary-export-button"));
-          const vocabularyExportButton = vocabularyExportButtons[0];
+          const vocabularyExportButtons = Array.from(vocabularyExportActions.querySelectorAll(".lingua-text-action"));
+          const vocabularyExportButton = vocabularyExportButtons[1];
           check(vocabularyExportButton !== null, "生词本缺少导出笔记按钮");
-          check(vocabularyExportButtons.length === 2, "生词本没有同时显示笔记和长图导出按钮");
-          check(vocabularyExportButtons.every((button) => button.textContent.trim() === ""), "生词导出按钮仍显示文字");
-          check(vocabularyExportButtons.every((button) => button.getBoundingClientRect().width === 32), "纯图标导出按钮宽度不是 32px");
+          check(vocabularyExportButtons.map((button) => button.textContent.trim()).join("|") === "卡片复习|导出笔记|导出长图", "生词本三个文字操作未完整显示");
           check(vocabularyStats.scrollWidth <= vocabularyStats.clientWidth + 1, "生词统计和导出按钮产生横向溢出");
           check(vocabularyExportActions.scrollWidth <= vocabularyExportActions.clientWidth + 1, "生词导出按钮组产生横向溢出");
           check(vocabularyExportButtons.every((button) => button.clientHeight + 1 >= button.scrollHeight), "生词导出按钮被固定高度裁切");

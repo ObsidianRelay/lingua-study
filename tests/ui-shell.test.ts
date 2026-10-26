@@ -771,7 +771,8 @@ test("离线词典使用右侧独立视图且字幕与知识点共用双击查�
   assert.match(dictionaryView, /class LinguaDictionaryView extends ItemView/u);
   assert.match(dictionaryView, /"查词"/u);
   assert.match(dictionaryView, /"生词本"/u);
-  assert.match(dictionaryView, /this\.createTabButton\(tabs, "review", "今日复习", summary\.total\)/u);
+  assert.doesNotMatch(dictionaryView, /this\.createTabButton\(tabs, "review"/u);
+  assert.match(dictionaryView, /this\.plugin\.openHighlightReview\("vocabulary", entry\.id\)/u);
   assert.match(dictionaryView, /lingua-dictionary-tab-badge/u);
   assert.match(dictionaryView, /lingua-dictionary-definition-card/u);
   assert.match(dictionaryView, /lingua-dictionary-reference-grid/u);
@@ -793,9 +794,12 @@ test("生词本使用独立串行存储、导出笔记与长图并注册两个�
   const imageExportCore = await readFile("src/vocabulary-image-export-core.ts", "utf8");
   const imageExport = await readFile("src/vocabulary-image-export.ts", "utf8");
   const dictionaryView = await readFile("src/dictionary-view.ts", "utf8");
+  const cardView = await readFile("src/highlight-review-view.ts", "utf8");
   const css = await readFile("styles.css", "utf8");
   assert.match(source, /id: "open-vocabulary-book"/u);
   assert.match(source, /id: "start-vocabulary-review"/u);
+  assert.match(source, /id: "start-vocabulary-review"[\s\S]*?openHighlightReview\("vocabulary"\)/u);
+  assert.doesNotMatch(dictionaryView, /private renderReview\(/u);
   assert.match(source, /private vocabularyStore: VocabularyStore/u);
   assert.match(source, /registerStudyRenderer/u);
   assert.match(source, /navigateToVocabularyContext/u);
@@ -810,13 +814,13 @@ test("生词本使用独立串行存储、导出笔记与长图并注册两个�
   assert.doesNotMatch(source, /vocabularyPlaybackStopAt|shouldStopVocabularyPlayback/u);
   assert.match(dictionaryView, /openVocabularyContext/u);
   assert.match(dictionaryView, /"导出生词本到笔记"/u);
-  assert.match(dictionaryView, /"download"/u);
+  assert.match(dictionaryView, /text: this\.vocabularyExporting \? "导出中…" : "导出笔记"/u);
   assert.match(dictionaryView, /this\.vocabularyExporting/u);
   assert.match(dictionaryView, /this\.plugin\.exportVocabularyBookToNote\(\)/u);
   assert.match(dictionaryView, /"将全部生词导出为长图"/u);
   assert.match(dictionaryView, /"正在生成生词本长图"/u);
-  assert.match(dictionaryView, /"loader-circle"/u);
-  assert.doesNotMatch(dictionaryView, /text:\s*this\.vocabularyImageExporting/u);
+  assert.match(dictionaryView, /text: this\.vocabularyImageExporting \? "生成中…" : "导出长图"/u);
+  assert.doesNotMatch(dictionaryView, /lingua-vocabulary-export-button|lingua-vocabulary-export-icon/u);
   assert.match(dictionaryView, /移动端暂不支持生词本长图导出/u);
   assert.match(dictionaryView, /this\.plugin\.exportVocabularyBookToImages\(\)/u);
   assert.match(dictionaryView, /!this\.plugin\.capabilities\.desktop/u);
@@ -833,7 +837,7 @@ test("生词本使用独立串行存储、导出笔记与长图并注册两个�
   assert.match(core, /FSRS_ALGORITHM_VERSION = "FSRS-6"/u);
   assert.match(core, /default_w\.length !== 21/u);
   assert.match(core, /serializeFsrsReviewLog/u);
-  assert.match(dictionaryView, /previewVocabularyRating/u);
+  assert.match(cardView, /previewVocabularyRating/u);
   assert.match(exportCore, /Lingua Study\/Vocabulary\/生词本\.md/u);
   assert.match(exportCore, /lingua-study-vocabulary-export/u);
   assert.match(exportCore, /\[!lingua-word\]/u);
@@ -859,9 +863,9 @@ test("生词本使用独立串行存储、导出笔记与长图并注册两个�
   assert.match(source, /this\.app\.workspace\.getLeavesOfType\(viewType\)/u);
   assert.match(source, /view\.file\?\.path === file\.path/u);
   assert.match(source, /this\.app\.workspace\.getLeaf\("tab"\)/u);
-  assert.match(css, /\.lingua-vocabulary-export-button \{[\s\S]*?width: 32px;[\s\S]*?height: 32px !important;/u);
+  assert.match(css, /\.lingua-dictionary-view button\.lingua-text-action/u);
   assert.match(css, /\.lingua-vocabulary-export-actions \{[\s\S]*?flex-wrap: wrap;/u);
-  assert.match(css, /\.lingua-vocabulary-export-button\.is-loading[\s\S]*?animation: lingua-vocabulary-export-spin/u);
+  assert.doesNotMatch(css, /\.lingua-vocabulary-export-button/u);
   assert.match(css, /\.lingua-vocabulary-export-note \.callout\[data-callout="lingua-word"\] \{/u);
   assert.match(css, /--callout-icon: lucide-book-open;/u);
   assert.match(css, /\.callout\[data-callout="lingua-word"\] > \.callout-content/u);
@@ -1049,7 +1053,7 @@ test("高亮笔记使用独立数据文件、稳定类别 ID 和电脑端高亮�
   assert.match(store, /请检查附件管理或同步插件/u);
   assert.match(settings, /sanitizeHighlightCategories\(next\)/u);
   assert.match(settings, /migrateHighlightCategory\(category\.id, replacementId\)/u);
-  assert.match(view, /type DictionaryTab = "lookup" \| "book" \| "review" \| "highlights"/u);
+  assert.match(view, /type DictionaryTab = "lookup" \| "book" \| "highlights"/u);
   assert.match(view, /this\.plugin\.capabilities\.desktop/u);
   assert.match(view, /this\.createTabButton\(tabs, "highlights", "笔记本"/u);
   assert.match(view, /搜索标注、笔记或原句/u);
@@ -1093,7 +1097,7 @@ test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", a
   assert.match(css, /--button-bg-color: var\(--lingua-paper-accent\) !important;/u);
   assert.match(css, /--button-text-color: var\(--lingua-paper-on-accent\) !important;/u);
   assert.match(css, /\.lingua-dictionary-header h3,[\s\S]*?\.lingua-review-card h2[\s\S]*?color: var\(--lingua-paper-accent\) !important;/u);
-  assert.match(css, /\.evs-segment-action-dock \.evs-transcript-icon-button,[\s\S]*?\.lingua-vocabulary-export-button[\s\S]*?background: var\(--lingua-paper-control\) !important;/u);
+  assert.match(css, /\.evs-segment-action-dock \.evs-transcript-icon-button \{[\s\S]*?background: var\(--lingua-paper-control\) !important;/u);
   assert.match(css, /\.lingua-review-card > button\.mod-cta,[\s\S]*?background: var\(--lingua-paper-accent\) !important;/u);
   assert.match(css, /经典主题只借用设置页的卡片排版/u);
   assert.match(css, /body:not\(\.is-mobile\) :is\([\s\S]*?\.lingua-study-settings,[\s\S]*?\.lingua-study-selection-translation-popover[\s\S]*?\) \{[\s\S]*?--lingua-paper-bg: var\(--background-primary\);[\s\S]*?--lingua-paper-card: var\(--background-primary\);/u);
@@ -1106,7 +1110,7 @@ test("纸张 UI 统一圆角按钮、外置置顶入口和独立设置卡片", a
   assert.match(css, /\.evs-speed-label\.is-active \{[\s\S]*?color: #fff !important;/u);
   assert.match(css, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.evs-root:not\(\.evs-mobile\) \.evs-player-utilities \{[\s\S]*?top: 14px;[\s\S]*?right: 14px;/u);
   assert.match(css, /\.evs-player-frame \{[\s\S]*?overflow: hidden;[\s\S]*?border-radius: inherit;/u);
-  assert.match(css, /\.lingua-dictionary-tabs \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
+  assert.match(css, /\.lingua-dictionary-tabs \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/u);
   assert.match(css, /\.lingua-dictionary-tabs button\.is-active \{[\s\S]*?border-radius: 999px;/u);
   assert.match(css, /\.lingua-dictionary-empty,[\s\S]*?\.lingua-dictionary-missing \{[\s\S]*?background: transparent;/u);
   assert.match(css, /\.lingua-study-settings-home-group \{[\s\S]*?display: block;[\s\S]*?border: 0;/u);

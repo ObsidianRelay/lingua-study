@@ -211,6 +211,24 @@ test("buildCards: 排序按分类顺序再按创建时间", () => {
   );
 });
 
+test("buildCards: 保留同一条高亮的全部类别与个人笔记", () => {
+  const [card] = buildCards({
+    annotations: [annotation({
+      id: "multi",
+      quote: "out of shape",
+      categoryIds: ["expression", "grammar"],
+      note: "表示身体状态不佳",
+    })],
+  }).cards;
+  assert.ok(card);
+  assert.deepEqual(card.categoryIds, ["expression", "grammar"]);
+  assert.equal(card.note, "表示身体状态不佳");
+  assert.deepEqual(
+    buildReviewQueue([card], {}, { category: "grammar" }).queue.map((item) => item.id),
+    ["multi"]
+  );
+});
+
 /* ------------------------------------------------------------------ 调度 */
 
 test("applyGrade: 忘记回到第 0 档且当天再来一次", () => {
@@ -283,7 +301,7 @@ test("buildReviewQueue: 关闭「只看到期」时把其余卡片接在到期�
     "highlight-out-of-shape": { ...emptyState(), reps: 2, level: 3, due: "2026-11-20", last: "2026-10-01" },
     "highlight-out-of-breath": { ...emptyState(), reps: 1, level: 2, due: "2026-11-21", last: "2026-10-20" },
   };
-  // newPerDay=0：今天不再引入新卡，只剩自由复习的余地
+  // newPerDay=0：到期模式不引入新卡，自由复习仍可浏览全部卡片
   const strict = buildReviewQueue(cards, store, { today: "2026-10-25", newPerDay: 0, onlyDue: true });
   assert.deepEqual(strict.queue, []);
   assert.equal(strict.counts.later, 2);
@@ -291,8 +309,18 @@ test("buildReviewQueue: 关闭「只看到期」时把其余卡片接在到期�
   const relaxed = buildReviewQueue(cards, store, { today: "2026-10-25", newPerDay: 0, onlyDue: false });
   assert.deepEqual(
     relaxed.queue.map((c) => c.id),
-    ["highlight-out-of-shape", "highlight-out-of-breath"] // 按上次复习时间升序（最久没复习的在前）
+    ["highlight-scrape", "highlight-out-of-shape", "highlight-out-of-breath"]
   );
+});
+
+test("buildReviewQueue: 自由复习包含超过每日限额的新卡", () => {
+  const cards = buildFixtureCards();
+  const result = buildReviewQueue(cards, {}, {
+    today: "2026-10-25",
+    newPerDay: 0,
+    onlyDue: false,
+  });
+  assert.equal(result.queue.length, cards.length);
 });
 
 test("buildReviewQueue: 分类 / 来源 / 收藏 / 搜索筛选", () => {

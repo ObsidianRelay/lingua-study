@@ -5,7 +5,7 @@
 在 Obsidian 中把 YouTube、哔哩哔哩英文视频和公开 Podcast 节目变成可跟读、可听写、可查词、可复习的学习材料。支持 RSS 订阅、学习聊天、高亮笔记、带时间戳字幕、本地缓存播放、逐句翻译、离线词典和生词本。
 
 > [!IMPORTANT]
-> Lingua Study 2.1.0 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
+> Lingua Study 2.2.0 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
 
 ## 加入 QQ 交流群
 
@@ -14,7 +14,9 @@
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ 群二维码，群号 1124526985" width="320"></p>
 <p align="center"><strong>QQ群号：1124526985</strong></p>
 
-## 近期更新（1.3.0–2.1.0）
+## 近期更新（1.3.0–2.2.0）
+
+- **卡片复习（2.2.0）**：在同一页面切换单词卡片与短句卡片；可从生词本或高亮笔记进入，并在统一统计页查看两类卡片的数据和复习热力图
 
 - **桌面播放器定位（2.1.0）**：长按置顶按钮可在 Obsidian 窗口内移动播放器；取消置顶后回到笔记原位，Paper 主题工具栏随播放器宽度连续缩放
 - **本地模型学习聊天（2.1.0）**：可连接本机已运行的兼容服务，手动填写模型 ID，并在设置中测试连接；翻译和知识卡不受此选项影响

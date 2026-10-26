@@ -4,6 +4,7 @@ import type { DictionaryEntry } from "../src/dictionary-core";
 import {
   addVocabularyEntry,
   buildDailyReviewQueue,
+  computeVocabularyReviewStats,
   createEmptyVocabularyBook,
   getDailyReviewSummary,
   introduceVocabularyEntry,
@@ -195,6 +196,29 @@ test("每日队列优先到期词并限制新词数量", () => {
   const reordered = buildDailyReviewQueue(reviewed, 10, now);
   assert.equal(reordered[0], queue[0]);
   assert.equal(reordered.length, 11);
+});
+
+test("单词统计只汇总已保存的评分日志，并按本地日期计入热力图", () => {
+  const yesterday = new Date(2026, 9, 25, 10);
+  const now = new Date(2026, 9, 26, 10);
+  let book = introduceVocabularyEntry(oneEntryBook(yesterday), "study", yesterday);
+  book = rateVocabularyEntry(book, "study", "good", yesterday);
+  book = rateVocabularyEntry(book, "study", "again", now);
+
+  const stats = computeVocabularyReviewStats(book, 10, now);
+  assert.equal(stats.total, 1);
+  assert.equal(stats.learned, 1);
+  assert.equal(stats.todayReviews, 1);
+  assert.equal(stats.todayPassed, 0);
+  assert.equal(stats.recordedReviews, 2);
+  assert.equal(stats.recordedPassed, 1);
+  assert.deepEqual(stats.dailyReviews, { "2026-10-25": 1, "2026-10-26": 1 });
+
+  const legacy = JSON.parse(JSON.stringify(book)) as VocabularyBookFile;
+  delete legacy.entries.study!.review.reviewLogs;
+  const legacyStats = computeVocabularyReviewStats(legacy, 10, now);
+  assert.equal(legacyStats.learned, 1);
+  assert.equal(legacyStats.recordedReviews, 0);
 });
 
 test("备注更新和确认后的删除只影响目标条目", () => {

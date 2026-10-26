@@ -2,6 +2,20 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 2.2.0 - 2026-10-26
+
+### Added
+
+- Review saved highlight notes as short-sentence cards with flip, scheduling, filters, and source links
+- Review vocabulary and short-sentence cards from one card page, with direct entry points in the vocabulary book and highlight notebook
+- Open one statistics page from either card type to see combined activity, separate card summaries, and a shared review heatmap
+
+### Changed
+
+- Give both card types a consistent paper-style review layout and interactive buttons
+
+Vocabulary and highlight review progress continue to use their existing separate data files. Older vocabulary entries may lack detailed rating logs, so historical rating totals and the heatmap include only recorded ratings.
+
 ## 2.1.1 - 2026-10-24
 
 ### Added
