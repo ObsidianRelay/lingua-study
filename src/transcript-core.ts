@@ -34,10 +34,12 @@ export function validateTranscript(value: unknown): TranscriptFile {
     throw new Error("videoId 格式不正确，应为 11 位 YouTube ID、有效的 B站 BV 号或 Podcast 节目 ID。");
   }
   const sourceUrl = typeof data.sourceUrl === "string" ? data.sourceUrl : "";
+  const isPodcast = data.videoId.startsWith("podcast-");
   const validSourceUrl = sourceUrl.startsWith("https://") ||
+    (isPodcast && /^http:\/\/[^/\s]+\//u.test(sourceUrl)) ||
     /^lingua-local:\/\/[A-Za-z0-9_-]{11}$/u.test(sourceUrl);
   if (!validSourceUrl) {
-    throw new Error("sourceUrl 缺失，或不是受支持的 HTTPS/本地视频来源。");
+    throw new Error("sourceUrl 缺失，或不是受支持的 HTTPS/播客 HTTP/本地视频来源。");
   }
   if (typeof data.language !== "string" || data.language.trim() === "") {
     throw new Error("language 不能为空。");

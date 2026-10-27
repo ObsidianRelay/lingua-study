@@ -188,7 +188,9 @@ import {
 import { getPlatformCapabilities, type PlatformCapabilities } from "./platform";
 import type { YtDlpTranscriptFetcher } from "./yt-dlp-core";
 import {
+  buildDictationCorrectionAnswer,
   compareDictation,
+  tokenizeDictationText,
   type DictationResult
 } from "./dictation-core";
 import {
@@ -1196,12 +1198,12 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     return root;
   }
 
-  private createPlayerDock(root: HTMLElement): HTMLElement {
+  private createPlayerDock(root: HTMLElement, resizable = true): HTMLElement {
     const dock = root.createDiv({ cls: "evs-player-dock" });
     this.playerDockEl = dock;
     this.applyDesktopPlayerWidth();
     if (!this.plugin.capabilities.mobile) {
-      this.createPlayerResizeCorners(dock, root);
+      if (resizable) this.createPlayerResizeCorners(dock, root);
       const viewWindow = dock.ownerDocument.defaultView ?? window;
       this.registerDomEvent(viewWindow, "resize", () => this.clampDetachedPlayer(dock));
       this.playerDockResizeObserver?.disconnect();
@@ -1492,13 +1494,13 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
   }
 
-  private createFloatingToggle(parent: HTMLElement, dock: HTMLElement): HTMLButtonElement {
+  private createFloatingToggle(parent: HTMLElement, dock: HTMLElement, mediaLabel = "视频"): HTMLButtonElement {
     const button = parent.createEl("button", {
       cls: "evs-button evs-icon-button evs-floating-toggle"
     });
     button.type = "button";
     button.setAttribute("aria-pressed", "false");
-    this.setControlIcon(button, "pin", "让视频保持在当前画面中");
+    this.setControlIcon(button, "pin", `让${mediaLabel}保持在当前画面中`);
     let suppressNextClick = false;
     const setFloating = (floating: boolean, recenter = true): void => {
       if (!floating) {
@@ -1509,7 +1511,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       this.setControlIcon(
         button,
         floating ? "pin-off" : "pin",
-        floating ? "取消视频悬浮" : "让视频保持在当前画面中"
+        floating ? `取消${mediaLabel}悬浮` : `让${mediaLabel}保持在当前画面中`
       );
       this.scheduleTranscriptLayout(recenter);
     };
@@ -1947,14 +1949,87 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.cachedVideoOffsets = [0];
     this.cachedVideoDurations = [0];
     this.cachedVideoIndex = 0;
-    const root = this.createRoot("evs-local-file-root");
-    const playerDock = this.createPlayerDock(root);
-    const playerFrame = this.createPlayerStage(playerDock);
-    const audio = playerFrame.createEl("audio", {
-      cls: "evs-player-host evs-local-video",
-      attr: { controls: "", preload: "metadata", title: "播客播放器" }
+    const root = this.createRoot("evs-local-file-root evs-podcast-root");
+    const playerDock = this.createPlayerDock(root, false);
+    const audioRow = playerDock.createDiv({ cls: "evs-podcast-audio-row" });
+    const audio = audioRow.createEl("audio", {
+      cls: "evs-podcast-audio",
+      attr: { preload: "metadata", title: "播客播放器" }
     });
     this.localVideoEl = audio;
+    const timeLabel = audioRow.createSpan({ cls: "evs-podcast-time", text: "00:00 / 00:00" });
+    const progress = audioRow.createEl("input", {
+      cls: "evs-podcast-progress",
+      attr: { type: "range", min: "0", max: "1", step: "0.1", value: "0", "aria-label": "播客播放进度" }
+    });
+    progress.disabled = true;
+    const volumeControl = audioRow.createDiv({ cls: "evs-podcast-volume-control" });
+    const volumeButton = volumeControl.createEl("button", { cls: "evs-button evs-icon-button evs-podcast-volume-button" });
+    volumeButton.type = "button";
+    volumeButton.setAttribute("aria-expanded", "false");
+    const volumePanel = volumeControl.createDiv({ cls: "evs-podcast-volume-panel" });
+    volumePanel.id = `evs-podcast-volume-${Math.random().toString(36).slice(2)}`;
+    volumeButton.setAttribute("aria-controls", volumePanel.id);
+    const volume = volumePanel.createEl("input", {
+      cls: "evs-podcast-volume",
+      attr: { type: "range", min: "0", max: "1", step: "0.05", value: "1", "aria-label": "播客音量" }
+    });
+    volume.disabled = true;
+    let volumeOpen = false;
+    const updateProgress = (): void => {
+      const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      const current = Math.min(duration, audio.currentTime || 0);
+      timeLabel.setText(`${formatTimestamp(current)} / ${formatTimestamp(duration)}`);
+      progress.disabled = duration <= 0;
+      progress.max = String(Math.max(1, duration));
+      progress.value = String(current);
+      progress.style.setProperty("--evs-podcast-progress", `${duration > 0 ? current / duration * 100 : 0}%`);
+      progress.setAttribute("aria-valuetext", `${formatTimestamp(current)} / ${formatTimestamp(duration)}`);
+    };
+    const updateVolume = (): void => {
+      const current = audio.muted ? 0 : audio.volume;
+      volume.value = String(current);
+      volume.style.setProperty("--evs-podcast-volume", `${current * 100}%`);
+      this.setControlIcon(volumeButton, current === 0 ? "volume-x" : "volume-2", volumeOpen ? "收起音量控制" : "显示音量控制");
+    };
+    const setVolumeOpen = (open: boolean): void => {
+      volumeOpen = open;
+      volumePanel.classList.toggle("is-open", open);
+      volumeButton.setAttribute("aria-expanded", String(open));
+      volume.disabled = !open;
+      updateVolume();
+    };
+    progress.addEventListener("input", () => {
+      void this.seekLocalVideoTo(Number(progress.value), false);
+      updateProgress();
+    });
+    volumeButton.addEventListener("click", () => setVolumeOpen(!volumeOpen));
+    volume.addEventListener("input", () => {
+      audio.volume = Number(volume.value);
+      audio.muted = audio.volume === 0;
+    });
+    this.registerDomEvent(audioRow.ownerDocument, "pointerdown", (event) => {
+      if (volumeOpen && !volumeControl.contains(event.target as Node)) setVolumeOpen(false);
+    });
+    this.registerDomEvent(audioRow.ownerDocument, "keydown", (event) => {
+      if (volumeOpen && event.key === "Escape") {
+        setVolumeOpen(false);
+        volumeButton.focus();
+      }
+    });
+    audio.addEventListener("volumechange", updateVolume);
+    audio.addEventListener("durationchange", updateProgress);
+    audio.addEventListener("seeked", updateProgress);
+    updateVolume();
+    if (!this.plugin.capabilities.mobile) this.createFloatingToggle(audioRow, playerDock, "播客播放器");
+    const toolbar = playerDock.createDiv({ cls: "evs-toolbar evs-podcast-toolbar" });
+    toolbar.setAttribute("aria-label", "播客播放控制");
+    const primaryControls = toolbar.createDiv({ cls: "evs-primary-controls" });
+    this.createSeekButton(primaryControls, "后退 5 秒", "rotate-ccw", () => this.seekBy(-5));
+    this.playPauseButton = this.createControlButton(primaryControls, "播放", "play", () => this.togglePlayback(), "evs-play-button");
+    this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
+    this.createSpeedControls(toolbar);
+    this.createSentenceLoopButton(toolbar);
     this.statusEl = root.createDiv({ cls: "evs-status evs-local-status" });
     this.statusEl.setAttribute("role", "status");
     this.runtimeErrorEl = root.createDiv({ cls: "evs-runtime-error" });
@@ -1964,6 +2039,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       if (this.destroyed) return;
       this.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
       this.currentTime = audio.currentTime;
+      updateProgress();
       this.activateControls(`播客音频已就绪 · ${asset.title}`, true);
     });
     audio.addEventListener("play", () => { if (!this.destroyed) this.onPlayerStateChange(PLAYER_STATE_PLAYING); });
@@ -1971,6 +2047,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     audio.addEventListener("timeupdate", () => {
       this.currentTime = audio.currentTime;
       this.lastTimeUpdateAt = Date.now();
+      updateProgress();
       if (this.sentenceLoopIndex !== null) this.updateActiveSegment();
     });
     audio.addEventListener("ended", () => {
@@ -3746,7 +3823,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.setTranscriptActionLabel(button, label);
   }
 
-  private startDictation(index: number): void {
+  private startDictation(index: number, previousResult?: DictationResult): void {
     const segment = this.transcript?.segments[index];
     const row = this.segmentRows[index];
     const content = row?.querySelector<HTMLElement>(".evs-segment-content");
@@ -3771,11 +3848,18 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
     this.stopSentenceLoop();
     this.selectSegmentForActions(index, true);
+    const correctionWordCount = previousResult?.operations.filter((operation) =>
+      operation.kind === "substitution" || operation.kind === "deletion"
+    ).length ?? 0;
     const panel = content.createDiv({ cls: "evs-dictation-panel" });
     panel.setAttribute("aria-label", `第 ${index + 1} 句听写`);
     panel.createDiv({
       cls: "evs-dictation-prompt",
-      text: "请听音频并输入完整句子"
+      text: previousResult
+        ? correctionWordCount > 0
+          ? "再听一遍，只填写错写或漏写的词；按回车进入下一格"
+          : "多写的词会自动移除，直接提交订正"
+        : "请听音频逐词填写；按回车进入下一格"
     });
     const sourcePlayer = panel.createDiv({ cls: "evs-shadowing-source-player" });
     sourcePlayer.setAttribute("role", "group");
@@ -3822,17 +3906,11 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       { seek: true }
     );
     const sourceTimeEl = sourcePlayer.createSpan({ cls: "evs-shadowing-source-time" });
-    const input = panel.createEl("textarea", {
-      cls: "evs-dictation-input",
-      attr: {
-        rows: "2",
-        placeholder: "输入你听到的英文句子……",
-        "aria-label": `输入第 ${index + 1} 句听写答案`,
-        autocapitalize: "off",
-        autocomplete: "off",
-        spellcheck: "false"
-      }
-    });
+    const wordLine = panel.createDiv({ cls: "evs-dictation-correction" });
+    wordLine.setAttribute("role", "group");
+    wordLine.setAttribute("aria-label", previousResult
+      ? "按原句顺序填写错写或漏写的词" : `逐词填写第 ${index + 1} 句`);
+    const wordInputs: HTMLInputElement[] = [];
     const actions = panel.createDiv({ cls: "evs-dictation-actions" });
     const submitButton = actions.createEl("button", {
       cls: "evs-button mod-cta",
@@ -3849,7 +3927,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.dictationSession = {
       index,
       panelEl: panel,
-      inputEl: input,
+      inputEl: null,
       submitButton,
       sourceTimeEl,
       sourcePlayButton,
@@ -3866,32 +3944,93 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.updateShadowingActionAvailability();
 
     const submit = (): void => {
-      const answer = input.value.trim();
-      if (!answer || this.dictationSession?.index !== index) {
+      const answer = previousResult
+        ? buildDictationCorrectionAnswer(previousResult.operations,
+          wordInputs.map((slot) => slot.value.trim()).join(" "))
+        : wordInputs.map((slot) => slot.value.trim()).filter(Boolean).join(" ");
+      if (!answer || this.dictationSession?.index !== index || submitButton.disabled) {
         return;
       }
       this.stopDictationPlayback();
-      this.renderDictationResult(index, answer, compareDictation(segment.text, answer));
+      this.renderDictationResult(index, answer, compareDictation(segment.text, answer), !!previousResult);
     };
-    input.addEventListener("input", () => {
-      submitButton.disabled = input.value.trim().length === 0;
-    });
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        submit();
+    const updateSubmitAvailability = (): void => {
+      const wordCounts = wordInputs.map((slot) => tokenizeDictationText(slot.value).length);
+      submitButton.disabled = previousResult
+        ? wordCounts.some((count) => count !== 1)
+        : !wordCounts.includes(1) || wordCounts.some((count) => count > 1);
+    };
+    const addWordInput = (title?: string): HTMLInputElement => {
+      const slotIndex = wordInputs.length;
+      const slot = wordLine.createEl("input", {
+        cls: "evs-dictation-correction-slot",
+        attr: {
+          type: "text",
+          placeholder: "____",
+          "aria-label": previousResult
+            ? `第 ${slotIndex + 1} 个错写或漏写的词`
+            : `第 ${index + 1} 句第 ${slotIndex + 1} 个词`,
+          autocomplete: "off",
+          autocapitalize: "off",
+          spellcheck: "false"
+        }
+      });
+      if (title) slot.setAttribute("title", title);
+      wordInputs.push(slot);
+      slot.addEventListener("input", () => {
+        slot.style.width = `${Math.max(7, Math.min(24, slot.value.length + 2))}ch`;
+        updateSubmitAvailability();
+      });
+      slot.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (event.metaKey || event.ctrlKey) {
+            submit();
+            return;
+          }
+          if (tokenizeDictationText(slot.value).length === 1) {
+            const next = wordInputs[slotIndex + 1] ??
+              (previousResult ? submitButton : addWordInput());
+            next.focus();
+          }
+        }
+      });
+      return slot;
+    };
+    if (previousResult) {
+      previousResult.operations.forEach((operation) => {
+        if (operation.kind === "match") {
+          wordLine.createSpan({
+            cls: "evs-dictation-correct-word",
+            text: operation.expected ?? ""
+          });
+        } else if (operation.kind !== "insertion") {
+          addWordInput(operation.kind === "deletion"
+            ? "漏写的词" : `错写了 ${operation.actual ?? ""}`);
+        }
+      });
+    } else {
+      const wordCount = tokenizeDictationText(segment.text).length;
+      for (let wordIndex = 0; wordIndex < Math.max(1, wordCount); wordIndex += 1) {
+        addWordInput();
       }
-    });
+    }
+    updateSubmitAvailability();
     submitButton.addEventListener("click", submit);
     exitButton.addEventListener("click", () => this.closeDictation());
 
     this.startDictationUiTimer(this.dictationSession);
     this.playDictationSegment(index);
-    input.focus({ preventScroll: true });
+    wordInputs[0]?.focus({ preventScroll: true });
     this.scheduleTranscriptLayout(true);
   }
 
-  private renderDictationResult(index: number, answer: string, result: DictationResult): void {
+  private renderDictationResult(
+    index: number,
+    answer: string,
+    result: DictationResult,
+    isCorrection = false
+  ): void {
     const session = this.dictationSession;
     const row = this.segmentRows[index];
     if (!session || session.index !== index || !row) {
@@ -3918,7 +4057,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       text: result.score === 100 ? "完全正确" : `共 ${result.distance} 处需要调整`
     });
 
-    session.panelEl.createDiv({ cls: "evs-dictation-answer-label", text: "你的答案" });
+    session.panelEl.createDiv({
+      cls: "evs-dictation-answer-label",
+      text: isCorrection ? "本轮补全后的句子" : "你的答案"
+    });
     session.panelEl.createDiv({ cls: "evs-dictation-answer", text: answer });
     session.panelEl.createDiv({ cls: "evs-dictation-answer-label", text: "逐词对照" });
     const comparison = session.panelEl.createDiv({ cls: "evs-dictation-comparison" });
@@ -3947,12 +4089,12 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     const actions = session.panelEl.createDiv({ cls: "evs-dictation-actions" });
     const retryButton = actions.createEl("button", {
       cls: "evs-button mod-cta",
-      text: "重新听写"
+      text: result.distance > 0 ? "只练错词" : "重新听写整句"
     });
     retryButton.type = "button";
     retryButton.addEventListener("click", () => {
       this.closeDictation(false);
-      this.startDictation(index);
+      this.startDictation(index, result.distance > 0 ? result : undefined);
     });
 
     const nextIndex = index + 1;
@@ -7704,13 +7846,13 @@ export default class LinguaStudyPlugin extends Plugin {
 
     this.addCommand({
       id: "import-podcast-rss",
-      name: "从 podcast RSS 创建学习内容",
+      name: "导入播客节目或单集（Spotify / Apple / RSS）",
       checkCallback: (checking) => {
         if (!this.capabilities.desktop) return false;
         if (!checking) {
           const view = this.getManualImportView();
           if (!view?.editor) {
-            new Notice("请先打开一篇 Markdown 笔记，再从 podcast RSS 创建学习内容。", 6_000);
+            new Notice("请先打开一篇 Markdown 笔记，再导入播客节目或单集。", 6_000);
             return true;
           }
           void this.getPodcastImporter().importFromEditor(view.editor, view);

@@ -2,6 +2,26 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## 2.2.1 - 2026-10-27
+
+### Added
+
+- Accept Spotify show and episode links in the podcast import dialog and RSS sidebar when a matching public podcast feed can be found
+- Give podcast audio a compact player with seek, volume, playback speed, sentence loop, and pin controls
+
+### Changed
+
+- Use unnumbered word slots for both initial dictation and wrong-word retry; Enter advances to the next slot
+- On a vocabulary card's front, a rating click flips the card first; rating after the flip records the result
+- Keep podcast audio controls at a fixed width instead of showing an empty video frame or resize corners
+
+### Fixed
+
+- Accept public HTTP podcast media source links when preparing transcripts
+- Limit the second dictation pass to words missed or spelled incorrectly on the first pass
+
+Spotify links are resolved to public podcast feeds. Episodes that cannot be matched to a public feed remain unavailable through this import path.
+
 ## 2.2.0 - 2026-10-26
 
 ### Added

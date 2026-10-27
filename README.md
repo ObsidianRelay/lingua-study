@@ -5,7 +5,7 @@
 在 Obsidian 中把 YouTube、哔哩哔哩英文视频和公开 Podcast 节目变成可跟读、可听写、可查词、可复习的学习材料。支持 RSS 订阅、学习聊天、高亮笔记、带时间戳字幕、本地缓存播放、逐句翻译、离线词典和生词本。
 
 > [!IMPORTANT]
-> Lingua Study 2.2.0 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
+> Lingua Study 2.2.1 仅支持桌面版 Obsidian。移动端仍处于测试阶段，不包含在本次正式发布范围内。当前主要面向“英文视频字幕 → 简体中文学习”的场景。公开 YouTube 字幕导入使用非官方公开接口，因为 [YouTube 官方字幕下载 API](https://developers.google.com/youtube/v3/docs/captions/download) 只能下载用户有权编辑的视频字幕。YouTube 与哔哩哔哩的公开接口可能随时变化。本插件不会绕过登录、地区、嵌入、会员或反机器人限制。
 
 ## 加入 QQ 交流群
 
@@ -14,7 +14,10 @@
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ 群二维码，群号 1124526985" width="320"></p>
 <p align="center"><strong>QQ群号：1124526985</strong></p>
 
-## 近期更新（1.3.0–2.2.0）
+## 近期更新（1.3.0–2.2.1）
+
+- **播客与听写（2.2.1）**：可从导入入口或 RSS 面板粘贴 Spotify 节目及单集链接，使用公开 RSS 音频建立学习内容；播客采用精简音频播放器。首遍与错词重听使用无编号逐词输入框，按回车跳到下一词。
+- **卡片复习（2.2.1）**：在单词卡正面误点评分时先翻面，翻面后再次评分才会记录复习结果。
 
 - **卡片复习（2.2.0）**：在同一页面切换单词卡片与短句卡片；可从生词本或高亮笔记进入，并在统一统计页查看两类卡片的数据和复习热力图
 
@@ -64,7 +67,7 @@
 - 在线字幕获取失败时，可导入本地 SRT/VTT 字幕
 - 电脑端可直接导入本地 MP4，并自动匹配同目录下的同名 SRT/VTT 字幕
 - 只有播放器的哔哩哔哩学习块可通过“添加字幕”入口后续补充文字稿
-- 粘贴 Apple Podcasts 节目分享链接即可选择节目；也兼容公开 Podcast RSS / Atom feed，优先读取发布者标注的英文 VTT/SRT，缺失时在本机用 Whisper Base English 生成字幕
+- 粘贴 Spotify 节目或单集、Apple Podcasts 节目分享链接即可选择播客；也兼容公开 Podcast RSS / Atom feed，优先读取发布者标注的英文 VTT/SRT，缺失时在本机用 Whisper Base English 生成字幕
 - 可导入并编辑 PDF、DOCX、TXT、Markdown 或直接粘贴的双语文稿
 - 可选使用本地 Whisper Base English，在设备上完成文稿与视频时间轴对齐
 - 支持播放、暂停、前进或后退 5 秒
@@ -190,10 +193,10 @@ Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的�
 ### 在右侧栏订阅播客和 YouTube 频道
 
 1. 点击右侧栏的 **Lingua Study 订阅** 标签，或从命令面板运行“在右侧打开 podcast / YouTube 订阅”。
-2. 粘贴公开 Podcast RSS/Atom 地址，或 YouTube 官方频道 RSS 地址（`https://www.youtube.com/feeds/videos.xml?channel_id=频道ID`）。选择订阅源后可浏览最近条目，并手动刷新；也可在设置中开启每小时自动刷新。
+2. 点击 **＋ 添加订阅**，粘贴 Spotify / Apple Podcasts 节目或单集分享链接、公开 Podcast RSS/Atom 地址，或 YouTube 频道链接。解析后核对节目预览并确认订阅；单集链接会订阅其所属的整档节目。订阅后可浏览最近条目并手动刷新，也可在设置中开启每小时自动刷新。
 3. 点击“开始学习”，插件会为该集或视频创建独立笔记并沿用现有导入流程；以后点击“打开学习笔记”会复用原笔记。导入中途失败或取消时，保留笔记草稿以便重试。
 
-订阅与条目清单保存在库内的 `Lingua Study/Subscriptions/subscriptions.json`，学习笔记保存在 `Lingua Study/Subscriptions/Notes`；取消订阅不会删除已创建的学习笔记、字幕或音频缓存。此面板仅支持电脑端，只接受 YouTube 频道 RSS 地址，不支持频道主页、频道搜索或在侧栏内播放。自动刷新默认关闭。
+Spotify 链接需能匹配到同名的公开播客 RSS；若有多个同名节目、没有公开音频或单集无法在 RSS 中确认，请改用节目公开 RSS 地址。订阅与条目清单保存在库内的 `Lingua Study/Subscriptions/subscriptions.json`，学习笔记保存在 `Lingua Study/Subscriptions/Notes`；取消订阅不会删除已创建的学习笔记、字幕或音频缓存。此面板仅支持电脑端，不在侧栏内播放。自动刷新默认关闭。
 
 ### 学习聊天与高亮笔记
 
@@ -205,10 +208,10 @@ Lingua Study 会直接读取哔哩哔哩的独立字幕轨道，并把公开的�
 ### 导入 Podcast
 
 1. 打开要插入学习内容的 Markdown 笔记。
-2. 从命令面板运行 **从 podcast RSS 创建学习内容**。
-3. 粘贴 Apple Podcasts 的节目分享链接，选择一集节目。
+2. 从命令面板运行 **导入播客节目或单集（Spotify / Apple / RSS）**。
+3. 粘贴 Spotify 节目或单集、Apple Podcasts 节目分享链接，或公开 RSS 地址，再选择要导入的单集。
 
-插件会自动从 Apple Podcasts 目录取得该节目的 RSS；不使用 Apple Podcasts 时，也可以直接粘贴公开 RSS 或 Atom feed 地址。节目音频缓存到操作系统目录（macOS 为 `~/Library/Caches/Lingua Study/Podcasts`），不会写入 Obsidian 仓库或同步。若节目提供 Podcasting 2.0 标记的英文 `.vtt` / `.srt` 文稿，会直接使用；否则首次使用会确认下载本地 Whisper Base English 模型，再在设备上生成英文时间轴。单集音频上限为 512 MB；同一节目在当前笔记中不会重复插入。
+Spotify 链接会先用标题查找同名的公开播客音频，确认来源后再从 Apple Podcasts 目录取得该节目的 RSS；它不会下载 Spotify 的音频或视频。Spotify 独家节目、未公开 RSS 或不同平台标题不一致时可能无法匹配，可改为粘贴节目公开 RSS。Spotify 视频单集导入的是公开音频版本，播放时间轴可能不同。Apple Podcasts 链接会直接查找该节目的 RSS；也可以直接粘贴公开 RSS 或 Atom feed 地址。节目音频缓存到操作系统目录（macOS 为 `~/Library/Caches/Lingua Study/Podcasts`），不会写入 Obsidian 仓库或同步。若节目提供 Podcasting 2.0 标记的英文 `.vtt` / `.srt` 文稿，会直接使用；否则首次使用会确认下载本地 Whisper Base English 模型，再在设备上生成英文时间轴。单集音频上限为 512 MB；同一节目在当前笔记中不会重复插入。
 
 ### 导入本地视频与字幕
 

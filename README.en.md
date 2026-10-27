@@ -5,7 +5,7 @@
 Turn English YouTube and Bilibili videos, plus public podcast episodes, into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 2.2.0 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 2.2.1 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
 ## Join the QQ Group
 
@@ -14,7 +14,10 @@ Scan the QR code below to join the Lingua Study QQ group:
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 1124526985" width="320"></p>
 <p align="center"><strong>QQ group number: 1124526985</strong></p>
 
-## Recent updates (1.3.0–2.2.0)
+## Recent updates (1.3.0–2.2.1)
+
+- **Podcasts and dictation (2.2.1)**: paste a Spotify show or episode link in the import dialog or RSS sidebar to use its public podcast feed; podcasts use a compact audio player. Both initial dictation and wrong-word retry use unnumbered word slots, with Enter moving to the next slot.
+- **Card review (2.2.1)**: rating a vocabulary card on its front first flips it; only a second rating on its back records the review.
 
 - **Card review (2.2.0)**: switch between vocabulary and short-sentence cards on one page, open them from the vocabulary book or highlight notebook, and view both card types in one statistics page and review heatmap
 
@@ -64,7 +67,7 @@ Scan the QR code below to join the Lingua Study QQ group:
 - Local SRT/VTT import when public captions cannot be fetched
 - Desktop import for one local MP4 or a folder of MP4 files, with automatic same-name SRT/VTT matching
 - A follow-up **Add transcript** entry on player-only Bilibili blocks
-- Paste an Apple Podcasts show link to import a public podcast; RSS and Atom remain supported for advanced use, with publisher-provided English VTT/SRT preferred over desktop-local Whisper Base English
+- Paste a Spotify or Apple Podcasts show or episode link to import a public podcast through its RSS feed; RSS and Atom links remain supported, with publisher-provided English VTT/SRT preferred over desktop-local Whisper Base English
 - Editable PDF, DOCX, TXT, Markdown, and pasted bilingual transcript import
 - Optional local Whisper Base English alignment that keeps media and transcripts on the device
 - Play, pause, seek backward or forward by five seconds

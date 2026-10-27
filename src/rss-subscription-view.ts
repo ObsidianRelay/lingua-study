@@ -149,10 +149,10 @@ class AddSubscriptionModal extends Modal {
   private render(): void {
     this.titleEl.setText("添加订阅");
     const root = this.contentEl; root.empty(); root.addClass("lingua-rss-modal");
-    root.createEl("p", { cls: "lingua-rss-modal-intro", text: "粘贴 YouTube 频道、播客节目或 RSS 地址。" });
+    root.createEl("p", { cls: "lingua-rss-modal-intro", text: "粘贴 YouTube 频道、Spotify / Apple Podcasts 节目或单集链接，或公开 RSS 地址。单集链接会订阅所属节目。" });
     const form = root.createEl("form", { cls: "lingua-rss-modal-form" });
     const input = form.createEl("input", { type: "url", placeholder: "https://www.youtube.com/@TED",
-      attr: { "aria-label": "频道或 RSS 地址" } });
+      attr: { "aria-label": "频道、播客或 RSS 地址" } });
     input.value = this.input; input.required = true; input.disabled = this.busy;
     input.addEventListener("input", () => { this.input = input.value; this.preview = null; this.resolvedInput = ""; });
     const resolve = form.createEl("button", { text: this.busy ? "正在解析…" : "解析链接" });

@@ -7,12 +7,23 @@ import type { LocalWhisperService } from "./local-whisper";
 import { PodcastCacheService, type CachedPodcastEpisode } from "./podcast-cache";
 import { PodcastImportLog } from "./podcast-import-log";
 import { parsePodcastFeed, selectEnglishPodcastTranscript, type PodcastEpisode, type PodcastFeed } from "./podcast-rss-core";
-import { buildApplePodcastLookupUrl, parseApplePodcastFeedUrl, parsePodcastSourceInput } from "./podcast-source-core";
+import {
+  buildApplePodcastLookupUrl,
+  buildApplePodcastSearchUrl,
+  buildSpotifyOEmbedUrl,
+  findSpotifyPodcastEpisode,
+  parseApplePodcastCandidates,
+  parseApplePodcastFeedUrl,
+  parsePodcastSourceInput,
+  parseSpotifyOEmbed,
+  type SpotifyPodcastCandidate
+} from "./podcast-source-core";
 import type { LinguaStudySettings } from "./settings";
 import { validateTranscript, type TranscriptSegment } from "./transcript-core";
 
 const MAX_FEED_BYTES = 10 * 1024 * 1024;
 const MAX_TRANSCRIPT_BYTES = 10 * 1024 * 1024;
+const MAX_CATALOG_BYTES = 1024 * 1024;
 
 class PodcastUrlModal extends Modal {
   private resolved = false;
@@ -20,9 +31,9 @@ class PodcastUrlModal extends Modal {
   constructor(app: App, private readonly resolveValue: (value: string | null) => void) { super(app); }
 
   onOpen(): void {
-    this.titleEl.setText("导入 podcast RSS");
-    this.contentEl.createEl("p", { text: "粘贴 apple podcasts 节目链接，或公开播客 RSS / atom 地址。" });
-    const input = this.contentEl.createEl("input", { type: "url", placeholder: "https://podcasts.apple.com/… 或 https://example.com/podcast.xml" });
+    this.titleEl.setText("导入播客节目");
+    this.contentEl.createEl("p", { text: "粘贴播客节目或单集的分享链接，或公开 RSS 地址。" });
+    const input = this.contentEl.createEl("input", { type: "url", placeholder: "https://open.spotify.com/episode/…" });
     input.focus();
     const actions = this.contentEl.createDiv({ cls: "lingua-study-import-actions" });
     actions.createEl("button", { text: "取消" }).addEventListener("click", () => this.finish(null));
@@ -37,6 +48,40 @@ class PodcastUrlModal extends Modal {
   private finish(value: string | null): void { if (!this.resolved) { this.resolved = true; this.resolveValue(value); this.close(); } }
 }
 
+class SpotifyPodcastCandidateModal extends Modal {
+  private resolved = false;
+
+  constructor(
+    app: App,
+    private readonly title: string,
+    private readonly candidates: SpotifyPodcastCandidate[],
+    private readonly isVideo: boolean,
+    private readonly resolveValue: (value: SpotifyPodcastCandidate | null) => void
+  ) { super(app); }
+
+  onOpen(): void {
+    this.titleEl.setText("确认播客来源");
+    this.contentEl.createEl("p", { text: `Spotify 标题：${this.title}` });
+    this.contentEl.createEl("p", { text: this.isVideo
+      ? "下列是其他平台公开发布的音频版本；Spotify 视频画面不会导入，时间轴也可能不同。请核对节目名称。"
+      : "下列是其他平台公开发布的音频版本。请核对节目名称，避免导入同名节目。" });
+    const list = this.contentEl.createDiv({ cls: "lingua-study-local-import-list" });
+    for (const candidate of this.candidates) {
+      list.createEl("button", {
+        text: candidate.episodeTitle
+          ? `${candidate.episodeTitle} · ${candidate.collectionName}`
+          : candidate.collectionName
+      }).addEventListener("click", () => this.finish(candidate));
+    }
+    this.contentEl.createEl("button", { text: "取消" }).addEventListener("click", () => this.finish(null));
+  }
+
+  onClose(): void { this.contentEl.empty(); if (!this.resolved) this.finish(null); }
+  private finish(value: SpotifyPodcastCandidate | null): void {
+    if (!this.resolved) { this.resolved = true; this.resolveValue(value); this.close(); }
+  }
+}
+
 class PodcastEpisodeModal extends Modal {
   private resolved = false;
 
@@ -44,7 +89,9 @@ class PodcastEpisodeModal extends Modal {
 
   onOpen(): void {
     this.titleEl.setText(this.feed.title);
-    this.contentEl.createEl("p", { text: `选择节目（共 ${this.feed.episodes.length} 条）。` });
+    this.contentEl.createEl("p", { text: this.feed.episodes.length === 1
+      ? "确认要导入的单集；点击标题后才会开始缓存音频和生成字幕。"
+      : `选择节目（共 ${this.feed.episodes.length} 条）。` });
     const list = this.contentEl.createDiv({ cls: "lingua-study-local-import-list" });
     for (const episode of this.feed.episodes) {
       const button = list.createEl("button", { text: episode.publishedAt ? `${episode.title} · ${episode.publishedAt}` : episode.title });
@@ -69,12 +116,32 @@ export class PodcastImportController {
     const url = await new Promise<string | null>((resolve) => new PodcastUrlModal(this.app, resolve).open());
     if (!url) return;
     const log = new PodcastImportLog();
-    const progress = new Notice("正在读取播客 RSS…", 0);
+    let progress = new Notice("正在读取播客来源…", 0);
     try {
       const source = parsePodcastSourceInput(url);
-      const feedUrl = source.kind === "apple"
-        ? await this.resolveApplePodcastFeedUrl(source.collectionId, log, progress)
-        : source.feedUrl;
+      let spotifyCandidate: SpotifyPodcastCandidate | null = null;
+      let feedUrl: string;
+      if (source.kind === "spotify") {
+        progress.setMessage("正在识别 Spotify 播客并查找公开音频源…");
+        const metadata = await this.getCatalogResponse(buildSpotifyOEmbedUrl(source), "Spotify 节目信息");
+        const spotify = parseSpotifyOEmbed(metadata);
+        const search = await this.getCatalogResponse(
+          buildApplePodcastSearchUrl(spotify.title, source.entity), "Apple Podcasts 搜索结果");
+        const candidates = parseApplePodcastCandidates(search, spotify.title, source.entity);
+        if (candidates.length === 0) {
+          throw new Error("未找到同名的公开播客音频。请粘贴该节目的 RSS 地址；仅在 Spotify 提供的内容无法生成本地播放器和字幕。");
+        }
+        progress.hide();
+        spotifyCandidate = await new Promise<SpotifyPodcastCandidate | null>((resolve) =>
+          new SpotifyPodcastCandidateModal(this.app, spotify.title, candidates, spotify.isVideo, resolve).open());
+        if (!spotifyCandidate) return;
+        progress = new Notice("正在读取匹配节目的 RSS…", 0);
+        feedUrl = await this.resolveApplePodcastFeedUrl(spotifyCandidate.collectionId, log, progress);
+      } else if (source.kind === "apple") {
+        feedUrl = await this.resolveApplePodcastFeedUrl(source.collectionId, log, progress);
+      } else {
+        feedUrl = source.feedUrl;
+      }
       await log.write("start", `读取 RSS：${new URL(feedUrl).origin}`);
       const feedResponse = await requestUrl({ url: feedUrl, method: "GET", throw: false });
       if (feedResponse.status < 200 || feedResponse.status >= 300) throw new Error(`播客 RSS 请求失败（HTTP ${feedResponse.status}）。`);
@@ -82,7 +149,14 @@ export class PodcastImportController {
       const feed = parsePodcastFeed(feedResponse.text, feedUrl);
       await log.write("feed", `解析成功，节目数 ${feed.episodes.length}`);
       progress.hide();
-      const episode = await new Promise<PodcastEpisode | null>((resolve) => new PodcastEpisodeModal(this.app, feed, resolve).open());
+      const matchedEpisode = spotifyCandidate?.episodeTitle
+        ? feed.episodes[findSpotifyPodcastEpisode(feed.episodes, spotifyCandidate)] ?? null : null;
+      if (spotifyCandidate?.episodeTitle && !matchedEpisode) {
+        throw new Error("已找到节目 RSS，但里面没有可确认的这集音频。请改用节目 RSS 选择单集。");
+      }
+      const selectableFeed = matchedEpisode ? { ...feed, episodes: [matchedEpisode] } : feed;
+      const episode = await new Promise<PodcastEpisode | null>((resolve) =>
+        new PodcastEpisodeModal(this.app, selectableFeed, resolve).open());
       if (!episode) return;
       await this.importEpisode(editor, view, episode);
     } catch (error) {
@@ -91,6 +165,17 @@ export class PodcastImportController {
       await log.write("error", error instanceof Error && error.stack ? `${message}\n${error.stack}` : message);
       new Notice(message, 9_000);
     }
+  }
+
+  private async getCatalogResponse(url: string, label: string): Promise<string> {
+    const response = await requestUrl({ url, method: "GET", throw: false });
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`${label}读取失败（HTTP ${response.status}）。请改用公开 RSS 地址。`);
+    }
+    if (response.arrayBuffer.byteLength > MAX_CATALOG_BYTES) {
+      throw new Error(`${label}超过 1 MB，已停止读取。`);
+    }
+    return response.text;
   }
 
   async importEpisode(editor: Editor, view: MarkdownView, episode: PodcastEpisode): Promise<boolean> {

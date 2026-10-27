@@ -744,6 +744,30 @@
   line-height: 1.55;
 }
 
+.evs-dictation-correction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.55;
+}
+
+.evs-dictation-correct-word {
+  color: var(--text-normal);
+}
+
+.evs-dictation-correction-slot {
+  width: 7ch;
+  min-width: 7ch;
+  padding: 5px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
+  text-align: center;
+  font: inherit;
+}
+
 .evs-dictation-actions {
   display: flex;
   flex-wrap: wrap;
@@ -8927,4 +8951,182 @@ body.lingua-study-theme-paper:not(.is-mobile) .evs-root:not(.evs-mobile) .evs-pl
   .lc-root .lc-front { padding: 18px; }
   .lc-root .lc-footer { padding: 12px 14px; justify-content: center; }
   .lc-root .lc-card-foot { flex-wrap: wrap; }
+}
+
+/* 播客只有音频：播放进度与控制栏共用一张卡片。 */
+.evs-root.evs-podcast-root .evs-player-dock {
+  width: min(calc(100% - 48px), 640px);
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--background-primary);
+}
+
+.evs-root.evs-podcast-root .evs-podcast-audio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 54px;
+  padding: 0 10px;
+  background: var(--background-primary);
+}
+
+.evs-root.evs-podcast-root .evs-podcast-audio {
+  display: none;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-time {
+  flex: 0 0 auto;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.evs-root.evs-podcast-root :is(.evs-podcast-progress, .evs-podcast-volume) {
+  appearance: none;
+  height: 24px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-progress {
+  flex: 1 1 auto;
+  min-width: 50px;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-progress::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--text-normal) 0 var(--evs-podcast-progress, 0%),
+    var(--background-modifier-border) var(--evs-podcast-progress, 0%) 100%);
+  transition: height 160ms ease;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-progress:is(:hover, :focus-visible)::-webkit-slider-runnable-track {
+  height: 7px;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-volume-control {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 28px;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-volume-panel {
+  width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: width 160ms ease, margin-left 160ms ease, opacity 160ms ease;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-volume-panel.is-open {
+  width: 72px;
+  margin-left: 6px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-volume {
+  display: block;
+  width: 72px;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-volume::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--text-normal) 0 var(--evs-podcast-volume, 100%),
+    var(--background-modifier-border) var(--evs-podcast-volume, 100%) 100%);
+}
+
+.evs-root.evs-podcast-root :is(.evs-podcast-progress, .evs-podcast-volume)::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+.evs-root.evs-podcast-root :is(.evs-podcast-progress, .evs-podcast-volume):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-progress:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-volume-button {
+  flex: 0 0 28px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+}
+
+.evs-root.evs-podcast-root .evs-podcast-audio-row .evs-floating-toggle {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-normal);
+}
+
+.evs-root.evs-podcast-root .evs-podcast-audio-row .evs-floating-toggle[aria-pressed="true"] {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.evs-root.evs-podcast-root .evs-podcast-toolbar {
+  justify-content: center;
+  margin-top: 0;
+  border: 0;
+  border-top: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  background: var(--background-primary);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root.evs-podcast-root .evs-player-dock {
+  width: min(calc(100% - 48px), 640px);
+  overflow: hidden;
+  border: 1px solid var(--lingua-paper-line);
+  border-radius: 12px;
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root.evs-podcast-root .evs-podcast-toolbar {
+  margin-top: 0;
+  border: 0;
+  border-top: 1px solid var(--lingua-paper-line);
+  border-radius: 0;
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root.evs-podcast-root .evs-podcast-audio-row {
+  background: var(--lingua-paper-card);
+}
+
+body.lingua-study-theme-paper:not(.is-mobile) .evs-root.evs-podcast-root .evs-podcast-audio-row .evs-floating-toggle {
+  border-color: var(--lingua-paper-line);
+}
+
+body:not(.is-mobile) .evs-root.evs-podcast-root .evs-player-dock.is-detached {
+  width: min(var(--evs-detached-width), calc(100vw - 16px));
 }
