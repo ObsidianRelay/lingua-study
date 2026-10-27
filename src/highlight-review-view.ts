@@ -256,6 +256,7 @@ export class HighlightReviewView extends ItemView {
   /* ------------------------------------------------------------------ 数据 */
 
   async reload(): Promise<void> {
+    if (this.ratingVocabulary) return;
     const generation = ++this.loadingGeneration;
     this.ready = false;
     this.loadError = "";
@@ -491,6 +492,7 @@ export class HighlightReviewView extends ItemView {
   }
 
   private rebuild(): void {
+    if (this.ratingVocabulary) return;
     if (!this.ready) {
       this.renderStatus();
       return;
@@ -728,7 +730,7 @@ export class HighlightReviewView extends ItemView {
         const interval = entry ? previewVocabularyRating(entry, rating, new Date(), this.host.fsrsRequestRetention()).intervalLabel : key;
         button.appendChild(el("span", "lc-grade-hint", interval));
         button.title = `${key} · ${label}`;
-        button.disabled = !entry || !this.state.back || this.ratingVocabulary;
+        button.disabled = !entry || this.ratingVocabulary;
         button.addEventListener("click", () => { void this.gradeVocabulary(rating); });
         grades.appendChild(button);
       }
@@ -745,7 +747,7 @@ export class HighlightReviewView extends ItemView {
         extras.appendChild(sourceButton);
       }
       footer.appendChild(extras);
-      for (const button of [prev, flip, next]) button.disabled = !entry;
+      for (const button of [prev, flip, next]) button.disabled = !entry || this.ratingVocabulary;
       return;
     }
 
@@ -893,7 +895,7 @@ export class HighlightReviewView extends ItemView {
     const foot = el("div", "lc-card-foot");
     foot.appendChild(el("span", "lc-meta", entry.review.phase === "new"
       ? "新词 · 第一次见" : `已复习 ${entry.review.reviewCount} 次 · 下次 ${entry.review.dueAt.slice(0, 10)}`));
-    foot.appendChild(el("span", "lc-hint", "空格 / 点击翻面 · → 下一张 · 1/2/3/4 评分"));
+    foot.appendChild(el("span", "lc-hint", "正面点评分只翻面 · 背面点评分才记录 · 空格翻面"));
     front.appendChild(foot);
     return front;
   }
@@ -1041,7 +1043,7 @@ export class HighlightReviewView extends ItemView {
   }
 
   private flip(): void {
-    if (!this.currentCard()) return;
+    if (!this.currentCard() || this.ratingVocabulary) return;
     this.state.back = !this.state.back;
     const wrap = this.shell ? this.shell.stage.querySelector(".lc-card") : null;
     if (wrap) wrap.classList.toggle("is-flipped", this.state.back);
@@ -1051,6 +1053,7 @@ export class HighlightReviewView extends ItemView {
   }
 
   private next(): void {
+    if (this.ratingVocabulary) return;
     if (!this.state.queue.length) return;
     if (this.state.index >= this.state.queue.length - 1) {
       new Notice("已经是最后一张了。关掉「只看到期」可以自由复习。");
@@ -1062,6 +1065,7 @@ export class HighlightReviewView extends ItemView {
   }
 
   private prev(): void {
+    if (this.ratingVocabulary) return;
     if (this.state.index <= 0) {
       new Notice("已经是第一张。");
       return;
@@ -1095,7 +1099,11 @@ export class HighlightReviewView extends ItemView {
 
   private async gradeVocabulary(rating: ReviewRating): Promise<void> {
     const entry = this.currentWord();
-    if (!entry || !this.state.back || this.ratingVocabulary) return;
+    if (!entry || this.ratingVocabulary) return;
+    if (!this.state.back) {
+      this.flip();
+      return;
+    }
     const nextId = this.state.queue[this.state.index + 1]?.id;
     const oldIndex = this.state.index;
     this.ratingVocabulary = true;

@@ -14,6 +14,19 @@ export interface DictationResult {
   operations: DictationOperation[];
 }
 
+/** 把一次输入的错词按原句位置填回去，保留正确词并移除上轮多写词。 */
+export function buildDictationCorrectionAnswer(
+  operations: DictationOperation[],
+  correctionText: string
+): string {
+  const corrections = tokenizeDictationEntries(correctionText).map((token) => token.display);
+  let correctionIndex = 0;
+  return operations.map((operation) =>
+    operation.kind === "match" ? operation.expected ?? "" :
+    operation.kind === "insertion" ? "" : corrections[correctionIndex++] ?? ""
+  ).filter(Boolean).join(" ");
+}
+
 interface DictationToken {
   normalized: string;
   display: string;

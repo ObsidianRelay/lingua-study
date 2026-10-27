@@ -14,7 +14,17 @@ import {
   type RssSubscriptionData,
   type SubscriptionItem
 } from "./rss-subscription-core";
-import { buildApplePodcastLookupUrl, parseApplePodcastFeedUrl, parsePodcastSourceInput } from "./podcast-source-core";
+import {
+  buildApplePodcastLookupUrl,
+  buildApplePodcastSearchUrl,
+  buildSpotifyOEmbedUrl,
+  findSpotifyPodcastEpisode,
+  parseApplePodcastCandidates,
+  parseApplePodcastFeedUrl,
+  parsePodcastSourceInput,
+  parseSpotifyOEmbed,
+  type SpotifyPodcastCandidate
+} from "./podcast-source-core";
 import { parseYouTubeChannelLink, parseYouTubeChannelPage, youtubeFeedUrl } from "./rss-subscription-source-core";
 import { RssSubscriptionStore, type CategoryChoice } from "./rss-subscription-store";
 import { validateTranscript } from "./transcript-core";
@@ -22,6 +32,7 @@ import type { YouTubeImportController } from "./youtube-import";
 
 const MAX_FEED_BYTES = 10 * 1024 * 1024;
 const MAX_CHANNEL_PAGE_BYTES = 5 * 1024 * 1024;
+const MAX_CATALOG_BYTES = 1024 * 1024;
 
 class FeedRequestError extends Error {}
 
@@ -87,13 +98,41 @@ export class RssSubscriptionController {
     if (["youtube.com", "www.youtube.com", "m.youtube.com"].includes(parsed.hostname) &&
       parsed.pathname !== "/feeds/videos.xml") throw new Error("请粘贴 YouTube 频道链接，而不是视频或播放列表链接。");
     const source = parsePodcastSourceInput(canonical);
-    let feedUrl = source.kind === "feed" ? source.feedUrl : "";
-    if (source.kind === "apple") {
-      const response = await requestUrl({ url: buildApplePodcastLookupUrl(source.collectionId), method: "GET", throw: false });
-      if (response.status < 200 || response.status >= 300) throw new Error(`Apple Podcasts 查询失败（HTTP ${response.status}）。`);
-      feedUrl = parseApplePodcastFeedUrl(response.text);
+    let spotifyCandidate: SpotifyPodcastCandidate | null = null;
+    let spotifyIsVideo = false;
+    if (source.kind === "spotify") {
+      const spotify = parseSpotifyOEmbed(await this.catalogResponse(buildSpotifyOEmbedUrl(source), "Spotify 节目信息"));
+      spotifyIsVideo = spotify.isVideo;
+      const candidates = parseApplePodcastCandidates(
+        await this.catalogResponse(buildApplePodcastSearchUrl(spotify.title, source.entity), "播客目录搜索结果"),
+        spotify.title, source.entity
+      );
+      if (candidates.length === 0) throw new Error("未找到同名的公开播客音频。请填写该节目的公开 RSS 地址。");
+      if (candidates.length > 1) throw new Error("找到多个同名播客，无法安全确认来源。请填写该节目的公开 RSS 地址。");
+      spotifyCandidate = candidates[0];
     }
-    return { feed: await this.fetch(feedUrl), warning: null };
+    let feedUrl = source.kind === "feed" ? source.feedUrl : "";
+    const collectionId = source.kind === "apple" ? source.collectionId : spotifyCandidate?.collectionId;
+    if (collectionId) {
+      feedUrl = parseApplePodcastFeedUrl(await this.catalogResponse(buildApplePodcastLookupUrl(collectionId), "Apple Podcasts 查询结果"));
+    }
+    const feed = await this.fetch(feedUrl);
+    if (spotifyCandidate?.episodeTitle &&
+      findSpotifyPodcastEpisode(feed.items.filter((item): item is Extract<SubscriptionItem, { kind: "podcast" }> =>
+        item.kind === "podcast"), spotifyCandidate) < 0) {
+      throw new Error("已找到节目 RSS，但无法确认它包含这集音频。请填写该节目的公开 RSS 地址。");
+    }
+    const warning = source.kind === "spotify"
+      ? `${source.entity === "episode" ? "已找到该单集所属节目；订阅后会持续接收整档节目的新单集。" : "已找到同名公开节目，请核对节目名称。"}${spotifyIsVideo ? " Spotify 视频画面不会进入播放器；学习时使用公开音频版本。" : ""}`
+      : null;
+    return { feed, warning };
+  }
+
+  private async catalogResponse(url: string, label: string): Promise<string> {
+    const response = await requestUrl({ url, method: "GET", throw: false });
+    if (response.status < 200 || response.status >= 300) throw new Error(`${label}读取失败（HTTP ${response.status}）。请填写公开 RSS 地址。`);
+    if (response.arrayBuffer.byteLength > MAX_CATALOG_BYTES) throw new Error(`${label}超过 1 MB，已停止读取。`);
+    return response.text;
   }
 
   addPreview(preview: SubscriptionPreview, category: CategoryChoice): Promise<RssSubscriptionData> {

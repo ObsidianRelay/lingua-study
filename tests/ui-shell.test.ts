@@ -60,7 +60,7 @@ test("Podcast RSS 命令创建桌面本地播放器与字幕学习块", async ()
     readFile("src/podcast-import.ts", "utf8")
   ]);
   assert.match(main, /id: "import-podcast-rss"/u);
-  assert.match(main, /name: "从 podcast RSS 创建学习内容"/u);
+  assert.match(main, /name: "导入播客节目或单集（Spotify \/ Apple \/ RSS）"/u);
   assert.match(main, /id: "import-podcast-rss"[\s\S]*?checkCallback:/u);
   assert.match(main, /if \(config\.kind === "podcast"\)/u);
   assert.match(main, /this\.renderPodcastPlayer\(cached, transcriptData\)/u);
@@ -518,9 +518,11 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.match(fullWidthMethod, /if \(this\.plugin\.capabilities\.mobile\)/u);
   assert.match(source, /restoreContainerLayout\(\)/u);
   assert.match(source, /list\.scrollHeight <= list\.clientHeight \+ 1/u);
-  assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 5);
-  assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 5);
-  assert.equal(source.match(/this\.createFloatingToggle\(/gu)?.length, 2);
+  assert.equal(source.match(/this\.createPlayerDock\(root\)/gu)?.length, 4);
+  assert.equal(source.match(/this\.createPlayerStage\(playerDock\)/gu)?.length, 4);
+  assert.match(source, /this\.createPlayerDock\(root, false\)/u);
+  assert.match(source, /const audioRow = playerDock\.createDiv\(\{ cls: "evs-podcast-audio-row" \}\)/u);
+  assert.equal(source.match(/this\.createFloatingToggle\(/gu)?.length, 3);
   assert.equal(source.match(/this\.createMobileFloatingToggle\(/gu)?.length, 3);
   const createPlayerDockMethod = source.slice(
     source.indexOf("private createPlayerDock"),
@@ -571,7 +573,7 @@ test("播放器铺满阅读视图并完整释放观察器", async () => {
   assert.doesNotMatch(source, /evs-speed-button|evs-speed-value/u);
   assert.doesNotMatch(source, /speedToggleButton|aria-haspopup/u);
   assert.match(source, /setIcon,/u);
-  assert.match(source, /this\.setControlIcon\(button, "pin", "让视频保持在当前画面中"\)/u);
+  assert.match(source, /this\.setControlIcon\(button, "pin", `让\$\{mediaLabel\}保持在当前画面中`\)/u);
   assert.match(source, /floating \? "pin-off" : "pin"/u);
   assert.doesNotMatch(source, /text: "悬浮视频"/u);
   assert.doesNotMatch(source, /playPauseButton.*setText/u);
@@ -1237,8 +1239,9 @@ test("单句听写原位隐藏、评分并在句尾停止播放", async () => {
   const source = await readFile("src/main.ts", "utf8");
   const css = await readFile("styles.css", "utf8");
 
-  assert.match(source, /private startDictation\(index: number\)/u);
-  assert.match(source, /text: "请听音频并输入完整句子"/u);
+  assert.match(source, /private startDictation\(index: number, previousResult\?: DictationResult\)/u);
+  assert.match(source, /: "请听音频逐词填写；按回车进入下一格"/u);
+  assert.match(source, /再听一遍，只填写错写或漏写的词；按回车进入下一格/u);
   assert.match(source, /"当前听写句后退 2 秒"/u);
   assert.match(source, /"当前听写句前进 2 秒"/u);
   assert.match(source, /private toggleDictationSourcePlayback\(\)/u);
@@ -1248,9 +1251,14 @@ test("单句听写原位隐藏、评分并在句尾停止播放", async () => {
   assert.match(source, /evs-shadowing-source-time/u);
   assert.doesNotMatch(source, /text: "再听一次"/u);
   assert.match(source, /text: "提交听写"/u);
-  assert.match(source, /event\.key === "Enter" && \(event\.metaKey \|\| event\.ctrlKey\)/u);
+  assert.match(source, /event\.key === "Enter"/u);
+  assert.match(source, /event\.metaKey \|\| event\.ctrlKey/u);
   assert.match(source, /compareDictation\(segment\.text, answer\)/u);
-  assert.match(source, /text: "重新听写"/u);
+  assert.match(source, /text: result\.distance > 0 \? "只练错词" : "重新听写整句"/u);
+  assert.match(source, /buildDictationCorrectionAnswer\(previousResult\.operations,[\s\S]*?wordInputs\.map\(\(slot\) => slot\.value\.trim\(\)\)\.join\(" "\)\)/u);
+  assert.match(source, /wordLine\.createEl\("input"/u);
+  assert.match(source, /wordInputs\[slotIndex \+ 1\]/u);
+  assert.match(source, /previousResult \? submitButton : addWordInput\(\)/u);
   assert.match(source, /text: "下一句"/u);
   assert.match(source, /shouldStopDictationPlayback\(this\.getEstimatedCurrentTime\(\), stopAt\)/u);
   assert.match(source, /this\.sendCommand\("pauseVideo"\)/u);
@@ -1264,6 +1272,7 @@ test("单句听写原位隐藏、评分并在句尾停止播放", async () => {
   assert.match(css, /\.evs-dictation-token\.is-substitution/u);
   assert.match(css, /\.evs-dictation-token\.is-deletion/u);
   assert.match(css, /\.evs-dictation-token\.is-insertion/u);
+  assert.match(css, /\.evs-dictation-correction-slot \{/u);
 });
 
 test("暂停视频时不会在五秒后强制恢复字幕跟随", async () => {

@@ -44,7 +44,7 @@ test("字幕校验接受插件生成的本地视频来源但拒绝任意协议",
   assert.equal(local.sourceUrl, "lingua-local://abcdefghijk");
   assert.throws(
     () => validateTranscript({ ...transcript, sourceUrl: "file:///Users/test/video.mp4" }),
-    /HTTPS\/本地视频来源/u
+    /HTTPS\/播客 HTTP\/本地视频来源/u
   );
 });
 
@@ -55,4 +55,15 @@ test("字幕校验接受公开 HTTPS Podcast 节目 ID", () => {
     sourceUrl: "https://dcs-cached.megaphone.fm/episode.mp3"
   });
   assert.equal(podcast.videoId, "podcast-drmw5siPhseMEpsfLMNrDo");
+});
+
+test("播客 RSS 的 HTTP 音频地址可保存为字幕来源，视频仍需 HTTPS", () => {
+  const sourceUrl = "http://open.live.bbc.co.uk/mediaselector/audio/episode.mp3";
+  const podcast = validateTranscript({
+    ...transcript,
+    videoId: "podcast-giukJNJTBO7ay6P0FtNq64",
+    sourceUrl
+  });
+  assert.equal(podcast.sourceUrl, sourceUrl);
+  assert.throws(() => validateTranscript({ ...transcript, sourceUrl }), /sourceUrl 缺失/u);
 });

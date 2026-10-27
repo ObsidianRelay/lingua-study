@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compareDictation, tokenizeDictationText } from "../src/dictation-core";
+import { buildDictationCorrectionAnswer, compareDictation, tokenizeDictationText } from "../src/dictation-core";
 
 test("完全一致的听写得到 100 分", () => {
   const result = compareDictation("I really like this game.", "I really like this game.");
@@ -135,4 +135,27 @@ test("句尾存在精确答案时仍优先保留精确匹配", () => {
     expected: "normal",
     actual: "normal"
   });
+});
+
+test("第二遍只补错写和漏写词，多写词留空后恢复完整句子", () => {
+  const reference = "I really like this game";
+  const first = compareDictation(reference, "I very really love this game");
+  assert.deepEqual(first.operations.map((operation) => operation.kind), [
+    "match", "insertion", "match", "substitution", "match", "match"
+  ]);
+  const corrected = buildDictationCorrectionAnswer(first.operations, "like");
+  assert.equal(corrected, reference);
+  assert.equal(compareDictation(reference, corrected).score, 100);
+
+  const missing = compareDictation("I really like this", "I like this");
+  assert.equal(buildDictationCorrectionAnswer(missing.operations, "really"),
+    "I really like this");
+
+  const extraOnly = compareDictation("I like this", "I very like this");
+  assert.equal(buildDictationCorrectionAnswer(extraOnly.operations, ""), "I like this");
+
+  const manyMissing = compareDictation("And people are surprised to learn we don't know", "And people");
+  assert.equal(buildDictationCorrectionAnswer(manyMissing.operations,
+    "are surprised to learn we don't know"),
+  "And people are surprised to learn we don't know");
 });
