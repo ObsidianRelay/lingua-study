@@ -102,16 +102,16 @@ class CategoryManagerModal extends Modal {
     for (const category of this.data?.categories ?? []) {
       const row = root.createDiv({ cls: "lingua-rss-category-manage-row" });
       row.createSpan({ cls: `lingua-rss-card-tag ${colorClass(category.color)}`, text: category.name });
-      row.createSpan({ text: `${this.data?.feeds.filter((feed) => feed.categoryId === category.id).length ?? 0} 个订阅源` });
+      row.createSpan({ text: `${this.data?.feeds.filter((feed) => feed.categoryIds.includes(category.id)).length ?? 0} 个订阅源` });
       row.createEl("button", { text: "编辑" }).addEventListener("click", () =>
         new CategoryModal(this.app, this.controller, category, async () => { await this.reload(); await this.onChanged(); }).open());
       row.createEl("button", { text: "删除" }).addEventListener("click", () =>
-        new ConfirmModal(this.app, "删除标签？", `删除“${category.name}”后，频道和节目会变为“无标签”；不会删除订阅或学习笔记。`, "删除标签",
+        new ConfirmModal(this.app, "删除标签？", `删除“${category.name}”后，只会从订阅源移除这个标签；不会删除订阅或学习笔记。`, "删除标签",
           async () => { await this.controller.store.deleteCategory(category.id); await this.reload(); await this.onChanged(); }).open());
     }
     root.createEl("button", { cls: "mod-cta", text: "＋ 创建标签" }).addEventListener("click", () =>
       new CategoryModal(this.app, this.controller, null, async () => { await this.reload(); await this.onChanged(); }).open());
-    root.createEl("p", { cls: "lingua-rss-modal-hint", text: "一个频道或节目目前可选择一个彩色标签。删除标签不会删除订阅源。" });
+    root.createEl("p", { cls: "lingua-rss-modal-hint", text: "一个订阅源可选择多个标签。删除标签不会删除订阅源。" });
   }
 }
 
@@ -126,12 +126,53 @@ function renderColorChoices(root: HTMLElement, selected: SubscriptionColor, choo
   }
 }
 
+function renderTagChoices(root: HTMLElement, categories: readonly SubscriptionCategory[], selected: Set<string>): void {
+  const choices = root.createDiv({ cls: "lingua-rss-tag-choices" });
+  for (const category of categories) {
+    const label = choices.createEl("label", { cls: "lingua-rss-tag-choice" });
+    const checkbox = label.createEl("input", { type: "checkbox", attr: { "aria-label": category.name } });
+    checkbox.checked = selected.has(category.id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selected.add(category.id);
+      else selected.delete(category.id);
+    });
+    label.createSpan({ cls: `lingua-rss-card-tag ${colorClass(category.color)}`, text: category.name });
+  }
+}
+
+class FeedTagsModal extends Modal {
+  private readonly selected: Set<string>;
+  constructor(app: ItemView["app"], private readonly controller: RssSubscriptionController,
+    private readonly feed: RssSubscription, private readonly categories: readonly SubscriptionCategory[],
+    private readonly onSaved: () => Promise<void>) {
+    super(app); this.selected = new Set(feed.categoryIds);
+  }
+  onOpen(): void {
+    this.modalEl.addClass("lingua-rss-paper-modal");
+    this.titleEl.setText(`调整标签 · ${this.feed.title}`);
+    const root = this.contentEl; root.empty(); root.addClass("lingua-rss-modal");
+    root.createEl("p", { cls: "lingua-rss-modal-hint", text: "可同时选择多个标签；全部取消即为无标签。" });
+    renderTagChoices(root, this.categories, this.selected);
+    const actions = root.createDiv({ cls: "lingua-rss-modal-actions" });
+    actions.createEl("button", { text: "取消" }).addEventListener("click", () => this.close());
+    const save = actions.createEl("button", { cls: "mod-cta", text: "保存标签" });
+    save.addEventListener("click", () => {
+      save.disabled = true;
+      void this.controller.setFeedCategories(this.feed.id, [...this.selected])
+        .then(async () => { await this.onSaved(); this.close(); })
+        .catch((error) => { save.disabled = false; new Notice(errorText(error), 8_000); });
+    });
+  }
+  onClose(): void { this.contentEl.empty(); }
+}
+
 class AddSubscriptionModal extends Modal {
   private data: RssSubscriptionData | null = null;
   private preview: SubscriptionPreview | null = null;
   private input = "";
   private resolvedInput = "";
-  private categoryId = "";
+  private readonly categoryIds = new Set<string>();
+  private createNewCategory = false;
   private newName = "";
   private color: SubscriptionColor = "blue";
   private busy = false;
@@ -177,14 +218,14 @@ class AddSubscriptionModal extends Modal {
     card.createEl("p", { text: `${this.preview.feed.kind === "youtube" ? "YouTube" : "播客"} · ${this.preview.feed.items.length} 条内容` });
     card.createEl("small", { text: `RSS：${this.preview.feed.url}` });
     if (this.preview.warning) card.createEl("p", { cls: "lingua-rss-warning", text: this.preview.warning });
-    root.createEl("label", { text: "频道或节目标签（可选）" });
-    const selector = root.createEl("select", { attr: { "aria-label": "订阅标签" } });
-    selector.createEl("option", { value: "", text: "无标签" });
-    for (const entry of this.data?.categories ?? []) selector.createEl("option", { value: entry.id, text: entry.name });
-    selector.createEl("option", { value: "__new", text: "＋ 创建新标签" });
-    selector.value = this.categoryId;
-    selector.addEventListener("change", () => { this.categoryId = selector.value; this.render(); });
-    if (this.categoryId === "__new") {
+    root.createEl("label", { text: "频道或节目标签（可多选）" });
+    renderTagChoices(root, this.data?.categories ?? [], this.categoryIds);
+    const createLabel = root.createEl("label", { cls: "lingua-rss-tag-choice" });
+    const createCheckbox = createLabel.createEl("input", { type: "checkbox", attr: { "aria-label": "创建新标签" } });
+    createCheckbox.checked = this.createNewCategory;
+    createLabel.createSpan({ text: "＋ 创建新标签" });
+    createCheckbox.addEventListener("change", () => { this.createNewCategory = createCheckbox.checked; this.render(); });
+    if (this.createNewCategory) {
       const name = root.createEl("input", { type: "text", placeholder: "新标签名称", attr: { "aria-label": "新标签名称", maxlength: "40" } });
       name.value = this.newName;
       name.addEventListener("input", () => { this.newName = name.value; });
@@ -199,8 +240,9 @@ class AddSubscriptionModal extends Modal {
         new Notice("链接已改变，请重新解析后再订阅。", 6_000);
         return;
       }
-      const choice: CategoryChoice = this.categoryId === "__new"
-        ? { name: this.newName, color: this.color } : { existingId: this.categoryId || null };
+      const existingIds = [...this.categoryIds];
+      const choice: CategoryChoice = this.createNewCategory
+        ? { existingIds, name: this.newName, color: this.color } : { existingIds };
       const preview = this.preview;
       save.disabled = true;
       void this.controller.addPreview(preview, choice).then(async () => { await this.onSaved(preview.feed); this.close(); })
@@ -241,7 +283,7 @@ export class RssSubscriptionHomeView extends ItemView {
     try {
       this.data = await this.controller.read();
       if (this.categoryId !== "__all" && this.categoryId !== "" && !this.data.categories.some((category) => category.id === this.categoryId)) this.categoryId = "__all";
-      if (this.categoryId === "" && !this.data.feeds.some((feed) => feed.categoryId === null)) {
+      if (this.categoryId === "" && !this.data.feeds.some((feed) => feed.categoryIds.length === 0)) {
         this.categoryId = "__all";
         this.feedId = "__all";
       }
@@ -282,10 +324,10 @@ export class RssSubscriptionHomeView extends ItemView {
     const categories = tagFilters.createDiv({ cls: "lingua-rss-categories" });
     const filters = categories.createDiv({ cls: "lingua-rss-filter-list", attr: { "aria-label": "订阅标签筛选" } });
     this.categoryButton(filters, "__all", "全部标签", null, data.feeds.length);
-    const uncategorizedCount = data.feeds.filter((feed) => feed.categoryId === null).length;
+    const uncategorizedCount = data.feeds.filter((feed) => feed.categoryIds.length === 0).length;
     if (uncategorizedCount > 0) this.categoryButton(filters, "", "无标签", null, uncategorizedCount);
     for (const category of data.categories) {
-      const count = data.feeds.filter((feed) => feed.categoryId === category.id).length;
+      const count = data.feeds.filter((feed) => feed.categoryIds.includes(category.id)).length;
       if (count > 0) this.categoryButton(filters, category.id, category.name, category.color, count);
     }
     filters.scrollLeft = this.categoryScrollLeft;
@@ -345,8 +387,9 @@ export class RssSubscriptionHomeView extends ItemView {
         const child = row.createEl("button", { cls: "lingua-rss-tree-feed", attr: { "aria-expanded": String(feedExpanded) } });
         setIcon(child, feedExpanded ? "chevron-down" : "chevron-right");
         child.createSpan({ cls: "lingua-rss-tree-feed-name", text: feed.title });
-        const tag = data.categories.find((entry) => entry.id === feed.categoryId);
-        if (tag) child.createSpan({ cls: `lingua-rss-card-tag ${colorClass(tag.color)}`, text: tag.name });
+        for (const tag of data.categories.filter((entry) => feed.categoryIds.includes(entry.id))) {
+          child.createSpan({ cls: `lingua-rss-card-tag ${colorClass(tag.color)}`, text: tag.name });
+        }
         child.createSpan({ cls: "lingua-rss-tree-count", text: String(feed.items.length) });
         if (feedExpanded) child.addClass("is-active");
         child.addEventListener("click", () => {
@@ -396,20 +439,18 @@ export class RssSubscriptionHomeView extends ItemView {
     const info = row.createDiv({ cls: "lingua-rss-source-info" });
     info.createEl("strong", { text: feed.title });
     info.createEl("small", { text: `${feed.kind === "youtube" ? "YouTube" : "播客"} · ${feed.status === "pending" ? "待刷新" : `已累计 ${feed.items.length} 条内容`}` });
-    this.createTagSelector(row, data, feed);
-    const remove = row.createEl("button", { text: "退订" }); remove.disabled = this.busy;
+    this.createTagButton(row, data, feed);
+    const remove = row.createEl("button", { cls: "lingua-rss-unsubscribe-button", text: "退订" }); remove.disabled = this.busy;
     remove.addEventListener("click", () => new ConfirmModal(this.app, "取消订阅？",
       `将移除“${feed.title}”。已有学习笔记、字幕和缓存不会删除。`, "取消订阅",
       async () => { await this.controller.remove(feed.id); await this.reload(); }).open());
   }
-  private createTagSelector(parent: HTMLElement, data: RssSubscriptionData, feed: RssSubscription, cls = ""): HTMLSelectElement {
-    const selector = parent.createEl("select", { cls, attr: { "aria-label": `调整 ${feed.title} 的标签`, title: `调整 ${feed.title} 的标签` } });
-    selector.createEl("option", { value: "", text: "无标签" });
-    for (const category of data.categories) selector.createEl("option", { value: category.id, text: category.name });
-    selector.value = feed.categoryId ?? "";
-    selector.disabled = this.busy;
-    selector.addEventListener("change", () => void this.run(async () => { await this.controller.setFeedCategory(feed.id, selector.value || null); }));
-    return selector;
+  private createTagButton(parent: HTMLElement, data: RssSubscriptionData, feed: RssSubscription): void {
+    const names = data.categories.filter((category) => feed.categoryIds.includes(category.id)).map((category) => category.name);
+    const button = parent.createEl("button", { cls: "lingua-rss-feed-tags-button", text: names.join(" · ") || "无标签",
+      attr: { "aria-label": `调整 ${feed.title} 的标签`, title: names.join("、") || "无标签" } });
+    button.disabled = this.busy;
+    button.addEventListener("click", () => new FeedTagsModal(this.app, this.controller, feed, data.categories, () => this.reload()).open());
   }
   private renderCard(parent: HTMLElement, data: RssSubscriptionData, feed: RssSubscription, item: SubscriptionItem,
     showSource = true): void {
@@ -437,11 +478,13 @@ export class RssSubscriptionHomeView extends ItemView {
     const title = body.createEl("button", { cls: "lingua-rss-card-title lingua-rss-detail-trigger", text: item.title,
       attr: { "aria-label": `查看${item.title}的简介` } });
     title.type = "button"; title.addEventListener("click", showDetails);
-    const category = data.categories.find((entry) => entry.id === feed.categoryId);
-    if (showSource || category) {
+    const categories = data.categories.filter((entry) => feed.categoryIds.includes(entry.id));
+    if (showSource || categories.length) {
       const meta = body.createDiv({ cls: "lingua-rss-card-meta" });
       if (showSource) meta.createSpan({ cls: "lingua-rss-card-source", text: feed.title });
-      if (category) meta.createSpan({ cls: `lingua-rss-card-tag ${showSource ? "" : "lingua-rss-card-tag-overview"} ${colorClass(category.color)}`, text: category.name });
+      for (const category of categories) {
+        meta.createSpan({ cls: `lingua-rss-card-tag ${showSource ? "" : "lingua-rss-card-tag-overview"} ${colorClass(category.color)}`, text: category.name });
+      }
     }
     const details = body.createDiv({ cls: "lingua-rss-card-details" });
     if (item.publishedAt) {
@@ -476,7 +519,7 @@ export class RssSubscriptionView extends ItemView {
     root.createEl("p", { text: "频道、播客与学习内容集中在订阅主页。" });
     root.createEl("button", { cls: "mod-cta", text: "打开订阅主页" }).addEventListener("click", () => void this.openHome());
     for (const category of this.data?.categories ?? []) {
-      const count = this.data?.feeds.filter((feed) => feed.categoryId === category.id).length ?? 0;
+      const count = this.data?.feeds.filter((feed) => feed.categoryIds.includes(category.id)).length ?? 0;
       root.createDiv({ cls: `lingua-rss-sidebar-category ${colorClass(category.color)}`, text: `${category.name} · ${count}` });
     }
     if (!this.data?.feeds.length) root.createEl("p", { cls: "lingua-rss-empty", text: "还没有订阅源。" });

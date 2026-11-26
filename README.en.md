@@ -5,7 +5,7 @@
 Turn English YouTube and Bilibili videos, plus public podcast episodes, into materials you can shadow, dictate, look up, and review inside Obsidian. Lingua Study combines timestamped transcripts, cached playback, per-segment translation, an offline dictionary, and a vocabulary book.
 
 > [!IMPORTANT]
-> Lingua Study 2.2.1 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
+> Lingua Study 2.2.2 is desktop-only. Mobile support remains experimental and is not included in this public release. The plugin focuses on English video transcripts translated into Simplified Chinese. Public YouTube caption import uses an unofficial interface because the [official captions download API](https://developers.google.com/youtube/v3/docs/captions/download) only works for videos the user can edit. YouTube and Bilibili public interfaces can change without notice. The plugin does not bypass login, regional, embedding, membership, or anti-bot restrictions.
 
 ## Join the QQ Group
 
@@ -14,7 +14,10 @@ Scan the QR code below to join the Lingua Study QQ group:
 <p align="center"><img src="./assets/community/qq-group-invite.jpg" alt="Lingua Study QQ group QR code, group number 1124526985" width="320"></p>
 <p align="center"><strong>QQ group number: 1124526985</strong></p>
 
-## Recent updates (1.3.0–2.2.1)
+## Recent updates (1.3.0–2.2.2)
+
+- **Subscriptions and podcast links (2.2.2)**. Apply multiple tags to a feed and keep existing subscriptions. This release fixes the layout in narrow sidebars and improves public RSS matching for Spotify show links.
+- **Word highlighting and playback speed (2.2.2)**. Follow individual words when the transcript provides word-level timestamps, or generate them for English podcasts with local Whisper. Playback speeds are 0.5×, 0.75×, 1×, 1.25×, and 1.5×.
 
 - **Podcasts and dictation (2.2.1)**: paste a Spotify show or episode link in the import dialog or RSS sidebar to use its public podcast feed; podcasts use a compact audio player. Both initial dictation and wrong-word retry use unnumbered word slots, with Enter moving to the next slot.
 - **Card review (2.2.1)**: rating a vocabulary card on its front first flips it; only a second rating on its back records the review.

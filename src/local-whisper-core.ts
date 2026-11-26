@@ -127,7 +127,12 @@ export function whisperTokensToTranscriptSegments(
     const text = (token.spokenText ?? token.text).trim();
     return Number.isFinite(token.start) && Number.isFinite(token.end) &&
       token.start >= 0 && token.end > token.start && text !== ""
-      ? [{ start: token.start, end: token.end, text }]
+      ? [{
+        start: token.start,
+        end: token.end,
+        text,
+        words: [{ start: token.start, end: token.end, text }]
+      }]
       : [];
   }).sort((left, right) => left.start - right.start || left.end - right.end);
   const wordSegments: TranscriptSegment[] = [];
@@ -142,7 +147,11 @@ export function whisperTokensToTranscriptSegments(
     if (segment.end <= previous.end) {
       continue;
     }
-    wordSegments.push({ ...segment, start: previous.end });
+    wordSegments.push({
+      ...segment,
+      start: previous.end,
+      words: [{ start: previous.end, end: segment.end, text: segment.text }]
+    });
   }
   if (wordSegments.length === 0) {
     throw new Error("本地语音识别没有生成可保存的英文字幕。");

@@ -2,8 +2,16 @@ export interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
+  /** 可选的真实词级时间；旧字幕只含整句时间，仍可正常读取。 */
+  words?: TranscriptWord[];
   /** 首次手工编辑前的原始字幕，用于随时恢复。 */
   originalText?: string;
+}
+
+export interface TranscriptWord {
+  start: number;
+  end: number;
+  text: string;
 }
 
 export interface TranscriptFile {
@@ -60,6 +68,7 @@ export function validateTranscript(value: unknown): TranscriptFile {
     const start = segment.start;
     const end = segment.end;
     const text = segment.text;
+    const rawWords = segment.words;
     const originalText = segment.originalText;
 
     if (typeof start !== "number" || !Number.isFinite(start) || start < 0) {
@@ -83,10 +92,35 @@ export function validateTranscript(value: unknown): TranscriptFile {
       throw new Error(`第 ${index + 1} 条字幕的 originalText 必须是非空文本。`);
     }
     const normalizedOriginal = typeof originalText === "string" ? originalText.trim() : "";
+    let words: TranscriptWord[] | undefined;
+    if (rawWords !== undefined) {
+      if (!Array.isArray(rawWords) || rawWords.length === 0) {
+        throw new Error(`第 ${index + 1} 条字幕的 words 必须是非空数组。`);
+      }
+      let previousWordEnd = start;
+      words = rawWords.map((rawWord, wordIndex) => {
+        if (!rawWord || typeof rawWord !== "object") {
+          throw new Error(`第 ${index + 1} 条字幕的第 ${wordIndex + 1} 个词无效。`);
+        }
+        const word = rawWord as Record<string, unknown>;
+        if (
+          typeof word.start !== "number" || !Number.isFinite(word.start) ||
+          typeof word.end !== "number" || !Number.isFinite(word.end) ||
+          typeof word.text !== "string" || word.text.trim() === "" ||
+          word.start < previousWordEnd - 0.001 || word.end <= word.start ||
+          word.end > end + 0.001
+        ) {
+          throw new Error(`第 ${index + 1} 条字幕的第 ${wordIndex + 1} 个词时间或文字无效。`);
+        }
+        previousWordEnd = word.end;
+        return { start: word.start, end: word.end, text: word.text.trim() };
+      });
+    }
     segments.push({
       start,
       end,
       text: normalizedText,
+      ...(words ? { words } : {}),
       ...(normalizedOriginal !== "" && normalizedOriginal !== normalizedText
         ? { originalText: normalizedOriginal }
         : {})
@@ -123,7 +157,7 @@ export function updateTranscriptSegmentText(
     const originalText = segment.originalText ?? segment.text;
     return normalized === originalText
       ? { start: segment.start, end: segment.end, text: normalized }
-      : { ...segment, text: normalized, originalText };
+      : { ...segment, words: undefined, text: normalized, originalText };
   });
   return validateTranscript({ ...transcript, segments });
 }

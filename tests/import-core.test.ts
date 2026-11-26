@@ -33,6 +33,7 @@ import {
   parseYouTubeLink,
   planStudyBlockAppend,
   removeMatchingVideoLinkFromLine,
+  replacePodcastStudyBlockTranscript,
   replaceLocalVideoPathInStudyBlock,
   removeVisibleBilibiliLinksFromMarkdown,
   sanitizeTranscriptFolder,
@@ -353,6 +354,17 @@ test("播客学习代码块保存稳定节目 ID 和字幕路径", () => {
   );
 });
 
+test("已有播客补生成字幕只改对应学习块，并保留其他笔记内容", () => {
+  const id = "podcast-BJwphKXEFqTgXgR6I5ET4I";
+  const oldPath = "Lingua Study/Transcripts/old.json";
+  const newPath = "Lingua Study/Transcripts/new-$&.json";
+  const original = `# 原笔记\n${buildPodcastStudyBlock({ sourceId: id, transcriptPath: oldPath })}\n我的学习记录`;
+  assert.equal(replacePodcastStudyBlockTranscript(original, id, oldPath, newPath),
+    original.replace(`transcript: ${oldPath}`, () => `transcript: ${newPath}`));
+  assert.throws(() => replacePodcastStudyBlockTranscript(original, id, "missing.json", newPath), /已经变化/u);
+  assert.throws(() => replacePodcastStudyBlockTranscript(`${original}\n${buildPodcastStudyBlock({ sourceId: id, transcriptPath: oldPath })}`, id, oldPath, newPath), /已经变化/u);
+});
+
 test("优先选择人工英文字幕，其次英文自动字幕", () => {
   const manual = { baseUrl: "https://www.youtube.com/api/timedtext?id=1", languageCode: "en-US" };
   const automatic = {
@@ -397,6 +409,28 @@ test("解析 JSON3 并清理实体、标签、重复片段和重叠时间轴", (
   assert.throws(() => parseJson3Captions("not-json"), /无法解析/);
 });
 
+test("YouTube JSON3 的逐词偏移会保留到整句，缺失偏移时保持整句字幕", () => {
+  const segments = parseJson3Captions(JSON.stringify({ events: [
+    { tStartMs: 0, dDurationMs: 1200, segs: [
+      { utf8: "Hello" }, { utf8: " world.", tOffsetMs: 400 }
+    ] },
+    { tStartMs: 1200, dDurationMs: 1000, segs: [
+      { utf8: "Next" }, { utf8: " word.", tOffsetMs: 500 }
+    ] }
+  ] }));
+  assert.deepEqual(segments[0]?.words, [
+    { text: "Hello", start: 0, end: 0.4 },
+    { text: "world.", start: 0.4, end: 1.2 }
+  ]);
+  assert.equal(groupTranscriptSegmentsIntoSentences(segments)[0]?.words?.length, 2);
+  const withoutOffsets = parseJson3Captions(JSON.stringify({ events: [
+    { tStartMs: 0, dDurationMs: 1200, segs: [
+      { utf8: "Hello" }, { utf8: " world." }
+    ] }
+  ] }));
+  assert.equal(withoutOffsets[0]?.words, undefined);
+});
+
 test("解析 YouTube timedtext XML", () => {
   assert.deepEqual(
     parseTimedTextXml(
@@ -419,9 +453,18 @@ test("解析 SRT 和 VTT，本地无效字幕不会生成内容", () => {
 
   const vtt = "WEBVTT\n00:00:00.000 --> 00:00:01.250 align:start\nHello\n\nNOTE ignored\nmetadata\n\n00:01.250 --> 00:02.000\nWorld";
   assert.deepEqual(parseSubtitleFile(vtt), [
-    { start: 0, end: 1.25, text: "Hello" },
-    { start: 1.25, end: 2, text: "World" }
+    { start: 0, end: 1.25, text: "Hello", words: [{ text: "Hello", start: 0, end: 1.25 }] },
+    { start: 1.25, end: 2, text: "World", words: [{ text: "World", start: 1.25, end: 2 }] }
   ]);
+  const wordCues = parseSubtitleFile("WEBVTT\n\n00:00:00.000 --> 00:00:00.300\nHello\n\n00:00:00.300 --> 00:00:00.800\nworld.");
+  assert.deepEqual(groupTranscriptSegmentsIntoSentences(wordCues)[0]?.words, [
+    { text: "Hello", start: 0, end: 0.3 },
+    { text: "world.", start: 0.3, end: 0.8 }
+  ]);
+  const mixedCues = parseSubtitleFile("WEBVTT\n\n00:00:00.000 --> 00:00:00.300\nHello\n\n00:00:00.300 --> 00:00:01.500\nthere everyone.");
+  assert.equal(groupTranscriptSegmentsIntoSentences(mixedCues)[0]?.words, undefined);
+  assert.equal(parseSubtitleFile("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nA full sentence.")[0]?.words, undefined);
+  assert.equal(parseSubtitleFile("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nこんにちは")[0]?.words, undefined);
   assert.throws(() => parseSubtitleFile("WEBVTT\n\nnot a cue"), /没有识别/);
 });
 

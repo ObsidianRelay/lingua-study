@@ -94,7 +94,7 @@ test("分类颜色选择器覆盖 Obsidian 默认按钮背景", async () => {
 test("没有无标签订阅时隐藏筛选并退出空筛选", async () => {
   const view = await readFile("src/rss-subscription-view.ts", "utf8");
   assert.match(view, /if \(uncategorizedCount > 0\) this\.categoryButton\(filters, "", "无标签", null, uncategorizedCount\)/u);
-  assert.match(view, /if \(this\.categoryId === "" && !this\.data\.feeds\.some\(\(feed\) => feed\.categoryId === null\)\) \{\s*this\.categoryId = "__all";\s*this\.feedId = "__all";/u);
+  assert.match(view, /if \(this\.categoryId === "" && !this\.data\.feeds\.some\(\(feed\) => feed\.categoryIds\.length === 0\)\) \{\s*this\.categoryId = "__all";\s*this\.feedId = "__all";/u);
 });
 
 test("目录刷新当前标签的订阅源，后台定时刷新由插件管理生命周期", async () => {
@@ -128,9 +128,11 @@ test("订阅目录固定视频和播客两级结构，并能给各频道选择�
   assert.match(view, /for \(const kind of \["youtube", "podcast"\] as const\)/u);
   assert.match(view, /const label = kind === "youtube" \? "视频" : "播客"/u);
   assert.match(view, /const row = children\.createDiv\(\{ cls: "lingua-rss-tree-feed-row" \}\)/u);
-  assert.match(view, /this\.createTagSelector\(row, data, feed\)/u);
+  assert.match(view, /this\.createTagButton\(row, data, feed\)/u);
+  assert.match(view, /renderTagChoices\(root, this\.data\?\.categories \?\? \[\], this\.categoryIds\)/u);
+  assert.match(view, /new FeedTagsModal\(this\.app, this\.controller, feed, data\.categories, \(\) => this\.reload\(\)\)/u);
   assert.match(view, /actions\.createEl\("button", \{ cls: "lingua-rss-manage-button", text: "管理标签" \}\)/u);
-  assert.match(view, /this\.controller\.setFeedCategory\(feed\.id, selector\.value \|\| null\)/u);
+  assert.match(view, /this\.controller\.setFeedCategories\(this\.feed\.id, \[\.\.\.this\.selected\]\)/u);
   assert.match(view, /filters\.scrollLeft = this\.categoryScrollLeft;/u);
   assert.match(styles, /\.lingua-rss-filter-list,\s*\.lingua-rss-filter-actions \{ display: contents; \}/u);
   assert.match(styles, /body\.lingua-study-theme-paper:not\(\.is-mobile\) \.lingua-rss-source-tree\s*\{[^}]*background: var\(--rss-paper-card\);/u);

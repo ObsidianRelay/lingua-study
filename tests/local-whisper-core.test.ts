@@ -80,8 +80,20 @@ test("Whisper 单词时间轴会生成可读的完整英文字幕", () => {
     { text: "welcome", spokenText: "Welcome", start: 1, end: 1.4 },
     { text: "back!", spokenText: "back!", start: 1.4, end: 1.8 }
   ]), [
-    { text: "Hello everyone.", start: 0, end: 0.8 },
-    { text: "Welcome back!", start: 1, end: 1.8 }
+    {
+      text: "Hello everyone.", start: 0, end: 0.8,
+      words: [
+        { text: "Hello", start: 0, end: 0.3 },
+        { text: "everyone.", start: 0.3, end: 0.8 }
+      ]
+    },
+    {
+      text: "Welcome back!", start: 1, end: 1.8,
+      words: [
+        { text: "Welcome", start: 1, end: 1.4 },
+        { text: "back!", start: 1.4, end: 1.8 }
+      ]
+    }
   ]);
 });
 
@@ -93,7 +105,19 @@ test("Whisper 重叠或倒序的词级时间轴会被安全整理后保存", () 
     { text: "Next", spokenText: "Next", start: 1.2, end: 1.5 },
     { text: "one.", spokenText: "one.", start: 1.5, end: 1.8 }
   ]), [
-    { text: "Hello world.", start: 0, end: 0.9 },
-    { text: "Next one.", start: 1.2, end: 1.8 }
+    {
+      text: "Hello world.", start: 0, end: 0.9,
+      words: [
+        { text: "Hello", start: 0, end: 0.4 },
+        { text: "world.", start: 0.4, end: 0.9 }
+      ]
+    },
+    {
+      text: "Next one.", start: 1.2, end: 1.8,
+      words: [
+        { text: "Next", start: 1.2, end: 1.5 },
+        { text: "one.", start: 1.5, end: 1.8 }
+      ]
+    }
   ]);
 });

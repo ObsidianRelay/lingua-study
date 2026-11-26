@@ -22,12 +22,12 @@ export interface RssSubscription {
   url: string;
   title: string;
   items: SubscriptionItem[];
-  categoryId: string | null;
+  categoryIds: string[];
   status: "ready" | "pending";
 }
 
 export interface RssSubscriptionData {
-  version: 2;
+  version: 3;
   feeds: RssSubscription[];
   imports: Record<string, string>;
   categories: SubscriptionCategory[];
@@ -39,16 +39,16 @@ export function selectSubscriptionSources(
 ): RssSubscription[] {
   return feeds.filter((feed) =>
     (kind === "__all" || feed.kind === kind) &&
-    (categoryId === "__all" || (feed.categoryId ?? "") === categoryId) &&
+    (categoryId === "__all" || (categoryId === "" ? feed.categoryIds.length === 0 : feed.categoryIds.includes(categoryId))) &&
     (feedId === "__all" || feed.id === feedId));
 }
 
-export type CategoryChoice = { existingId: string | null } | { name: string; color: SubscriptionColor };
+export type CategoryChoice = { existingIds: string[] } | { existingIds: string[]; name: string; color: SubscriptionColor };
 
 const MAX_STORED_ITEMS = 200;
 
 export function emptySubscriptionData(): RssSubscriptionData {
-  return { version: 2, feeds: [], imports: {}, categories: [] };
+  return { version: 3, feeds: [], imports: {}, categories: [] };
 }
 
 export function canonicalFeedUrl(value: string): string {
@@ -106,7 +106,7 @@ export function parseYouTubeSubscription(xml: string, sourceUrl: string): RssSub
   return {
     id: feedId(url), kind: "youtube", url,
     title: xmlTagText(head, "title") ?? "未命名 YouTube 频道",
-    items, categoryId: null, status: "ready"
+    items, categoryIds: [], status: "ready"
   };
 }
 
@@ -121,7 +121,7 @@ export function pendingYouTubeSubscription(urlInput: string, title: string): Rss
   if (!isYouTubeFeed(url) || !/^UC[A-Za-z0-9_-]{22}$/u.test(new URL(url).searchParams.get("channel_id") ?? "")) {
     throw new Error("待刷新订阅必须是可确认的 YouTube 频道。");
   }
-  return { id: feedId(url), kind: "youtube", url, title: title.trim() || "YouTube 频道", items: [], categoryId: null, status: "pending" };
+  return { id: feedId(url), kind: "youtube", url, title: title.trim() || "YouTube 频道", items: [], categoryIds: [], status: "pending" };
 }
 
 function feedId(url: string): string {
@@ -135,7 +135,7 @@ export function parseSubscriptionFeed(xml: string, sourceUrl: string): RssSubscr
   return {
     id: feedId(url), kind: "podcast", url,
     title: feed.title,
-    categoryId: null, status: "ready",
+    categoryIds: [], status: "ready",
     items: feed.episodes.slice(0, MAX_STORED_ITEMS).map((episode) => ({
       ...episode, kind: "podcast" as const, id: episode.sourceId
     }))
@@ -156,7 +156,7 @@ export function mergeSubscription(previous: RssSubscription | undefined, next: R
     seen.add(key);
     return true;
   }).slice(0, MAX_STORED_ITEMS);
-  return { ...next, categoryId: previous.categoryId, status: next.status === "pending" && previous.items.length > 0 ? "ready" : next.status, items };
+  return { ...next, categoryIds: [...previous.categoryIds], status: next.status === "pending" && previous.items.length > 0 ? "ready" : next.status, items };
 }
 
 export function addSubscriptionCategory(data: RssSubscriptionData, nameInput: string, color: SubscriptionColor): RssSubscriptionData {
@@ -178,27 +178,32 @@ export function updateSubscriptionCategory(data: RssSubscriptionData, id: string
 export function removeSubscriptionCategory(data: RssSubscriptionData, id: string): RssSubscriptionData {
   if (!data.categories.some((category) => category.id === id)) throw new Error("找不到此分类。");
   return { ...data, categories: data.categories.filter((category) => category.id !== id),
-    feeds: data.feeds.map((feed) => feed.categoryId === id ? { ...feed, categoryId: null } : feed) };
+    feeds: data.feeds.map((feed) => ({ ...feed, categoryIds: feed.categoryIds.filter((categoryId) => categoryId !== id) })) };
 }
 
-export function assignSubscriptionCategory(data: RssSubscriptionData, feedIdValue: string, categoryId: string | null): RssSubscriptionData {
-  if (categoryId !== null && !data.categories.some((category) => category.id === categoryId)) throw new Error("找不到此分类。");
+function validateCategorySelection(data: RssSubscriptionData, categoryIds: readonly string[]): void {
+  const available = new Set(data.categories.map((category) => category.id));
+  if (new Set(categoryIds).size !== categoryIds.length || categoryIds.some((id) => !available.has(id))) {
+    throw new Error("所选标签无效或重复。");
+  }
+}
+
+export function assignSubscriptionCategories(data: RssSubscriptionData, feedIdValue: string, categoryIds: readonly string[]): RssSubscriptionData {
+  validateCategorySelection(data, categoryIds);
   if (!data.feeds.some((feed) => feed.id === feedIdValue)) throw new Error("找不到此订阅源。");
-  return { ...data, feeds: data.feeds.map((feed) => feed.id === feedIdValue ? { ...feed, categoryId } : feed) };
+  return { ...data, feeds: data.feeds.map((feed) => feed.id === feedIdValue ? { ...feed, categoryIds: [...categoryIds] } : feed) };
 }
 
 export function addNewSubscriptionData(data: RssSubscriptionData, feed: RssSubscription, category: CategoryChoice): RssSubscriptionData {
   if (data.feeds.some((entry) => entry.id === feed.id)) throw new Error("这个订阅源已经添加；请在现有订阅中调整分类。");
   let next = data;
-  let categoryId: string | null;
-  if ("existingId" in category) {
-    categoryId = category.existingId;
-    if (categoryId !== null && !data.categories.some((entry) => entry.id === categoryId)) throw new Error("所选分类已不存在。");
-  } else {
+  validateCategorySelection(data, category.existingIds);
+  let categoryIds = [...category.existingIds];
+  if ("name" in category) {
     next = addSubscriptionCategory(data, category.name, category.color);
-    categoryId = next.categories[next.categories.length - 1].id;
+    categoryIds = [...categoryIds, next.categories[next.categories.length - 1].id];
   }
-  return upsertSubscriptionData(next, { ...feed, categoryId });
+  return upsertSubscriptionData(next, { ...feed, categoryIds });
 }
 
 export function subscriptionItemKey(item: SubscriptionItem): string {
@@ -267,15 +272,16 @@ export function renameImportedNote(data: RssSubscriptionData, oldPath: string, n
 
 export function parseSubscriptionData(value: unknown): RssSubscriptionData {
   if (!value || typeof value !== "object") throw new Error("订阅数据格式无效，未覆盖原文件。");
-  const data = value as { version?: number; feeds?: RssSubscription[]; imports?: Record<string, string>; categories?: SubscriptionCategory[] };
-  if ((data.version !== 1 && data.version !== 2) || !Array.isArray(data.feeds) || !data.imports ||
+  const data = value as { version?: number; feeds?: (RssSubscription & { categoryId?: string | null })[];
+    imports?: Record<string, string>; categories?: SubscriptionCategory[] };
+  if ((data.version !== 1 && data.version !== 2 && data.version !== 3) || !Array.isArray(data.feeds) || !data.imports ||
     typeof data.imports !== "object" || Array.isArray(data.imports)) {
     throw new Error("订阅数据版本或结构不受支持，未覆盖原文件。");
   }
-  if (data.version === 2 && !Array.isArray(data.categories)) {
+  if (data.version >= 2 && !Array.isArray(data.categories)) {
     throw new Error("订阅数据版本或结构不受支持，未覆盖原文件。");
   }
-  const categories = data.version === 2 ? data.categories! : [];
+  const categories = data.version >= 2 ? data.categories! : [];
   const categoryIds = new Set<string>();
   const categoryNames = new Set<string>();
   for (const category of categories) {
@@ -292,8 +298,12 @@ export function parseSubscriptionData(value: unknown): RssSubscriptionData {
     if (!feed || typeof feed.id !== "string" || typeof feed.title !== "string" ||
       typeof feed.url !== "string" || !Array.isArray(feed.items) ||
       (feed.kind !== "podcast" && feed.kind !== "youtube") ||
-      (data.version === 2 && ((feed.categoryId !== null && !categoryIds.has(feed.categoryId)) ||
-        (feed.status !== "ready" && feed.status !== "pending")))) {
+      (data.version === 2 && (feed.categoryId === undefined ||
+        (feed.categoryId !== null && !categoryIds.has(feed.categoryId)))) ||
+      (data.version === 3 && (!Array.isArray(feed.categoryIds) ||
+        new Set(feed.categoryIds).size !== feed.categoryIds.length ||
+        feed.categoryIds.some((id: unknown) => typeof id !== "string" || !categoryIds.has(id)))) ||
+      (data.version >= 2 && feed.status !== "ready" && feed.status !== "pending")) {
       throw new Error("订阅数据包含无效订阅源，未覆盖原文件。");
     }
     try {
@@ -303,7 +313,7 @@ export function parseSubscriptionData(value: unknown): RssSubscriptionData {
     } catch {
       throw new Error("订阅数据包含无效订阅源，未覆盖原文件。");
     }
-    if (data.version === 2 && feed.status === "pending" && (feed.kind !== "youtube" || feed.items.length !== 0)) {
+    if (data.version >= 2 && feed.status === "pending" && (feed.kind !== "youtube" || feed.items.length !== 0)) {
       throw new Error("订阅数据包含无效待刷新频道，未覆盖原文件。");
     }
     for (const item of feed.items) {
@@ -329,8 +339,11 @@ export function parseSubscriptionData(value: unknown): RssSubscriptionData {
       throw new Error("订阅数据包含无效笔记路径，未覆盖原文件。");
     }
   }
-  return { version: 2, feeds: data.feeds.map((feed) => ({ ...feed,
-    categoryId: data.version === 1 ? null : feed.categoryId,
-    status: data.version === 1 ? "ready" as const : feed.status
-  })), imports: data.imports, categories };
+  return { version: 3, feeds: data.feeds.map((feed) => {
+    const { categoryId: legacyCategoryId, ...rest } = feed;
+    return { ...rest,
+      categoryIds: data.version === 3 ? [...feed.categoryIds] : legacyCategoryId ? [legacyCategoryId] : [],
+      status: data.version === 1 ? "ready" as const : feed.status
+    };
+  }), imports: data.imports, categories };
 }

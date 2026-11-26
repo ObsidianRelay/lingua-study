@@ -662,6 +662,14 @@
   background: var(--evs-accent-soft);
 }
 
+.evs-playback-word.is-current {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 .evs-segment.is-action-target:not(.is-active) {
   background: color-mix(in srgb, var(--background-secondary) 72%, transparent);
 }
@@ -5308,6 +5316,7 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-controls .lingua
 .lingua-rss-home-header h2 { margin: 0; }
 .lingua-rss-home-header p { margin: 6px 0 0; color: var(--text-muted); }
 .lingua-rss-home-header button { flex: 0 0 auto; }
+.lingua-rss-home-header { margin-bottom: 16px; }
 
 .lingua-rss-categories {
   display: flex;
@@ -5462,6 +5471,17 @@ body:not(.is-mobile) .lingua-dictionary-view .lingua-vocabulary-controls .lingua
 .lingua-rss-source-info strong { overflow-wrap: anywhere; }
 .lingua-rss-source-info small { color: var(--text-muted); }
 .lingua-rss-source-row select { max-width: 180px; }
+.lingua-rss-feed-tags-button {
+  flex: 0 1 160px;
+  min-width: 100px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lingua-rss-tag-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.lingua-rss-tag-choice { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.lingua-rss-tag-choice input { margin: 0; }
 .lingua-rss-toolbar { margin: 4px 0 14px; }
 .lingua-rss-toolbar h3 { margin: 0; }
 .lingua-rss-toolbar select { max-width: 220px; }
@@ -5780,11 +5800,17 @@ body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-toolbar select {
   background: var(--rss-paper-card);
   color: var(--rss-paper-ink);
 }
-body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-source-row > button {
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-source-row > .lingua-rss-unsubscribe-button {
   border: 1px solid var(--rss-paper-line);
   border-radius: 999px;
   background: var(--rss-paper-card);
   color: var(--text-error);
+}
+body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-feed-tags-button {
+  border: 1px solid var(--rss-paper-line);
+  border-radius: 999px;
+  background: var(--rss-paper-card);
+  color: var(--rss-paper-ink);
 }
 body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-toolbar { margin: 18px 0 14px; }
 body.lingua-study-theme-paper:not(.is-mobile) .lingua-rss-toolbar-overview { display: none; }

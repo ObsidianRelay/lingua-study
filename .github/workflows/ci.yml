@@ -23,6 +23,9 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        env:
+          # Whisper runs on WebAssembly and the CI runner does not need native CUDA binaries.
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
         run: npm ci
 
       - name: Verify tracked files are safe
