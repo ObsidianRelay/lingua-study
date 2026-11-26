@@ -1,6 +1,6 @@
 import { App, Editor, MarkdownView, Modal, Notice, normalizePath, requestUrl, TFile, TFolder } from "obsidian";
 import { addStudyBlockExitLine } from "./live-preview-core";
-import { buildPodcastStudyBlock, chooseAvailableTranscriptPath, extractPodcastSourceIdsFromStudyBlocks, groupTranscriptSegmentsIntoSentences, parseSubtitleFile, sanitizeTranscriptFolder } from "./import-core";
+import { buildPodcastStudyBlock, chooseAvailableTranscriptPath, extractPodcastSourceIdsFromStudyBlocks, groupTranscriptSegmentsIntoSentences, parseSubtitleFile, replacePodcastStudyBlockTranscript, sanitizeTranscriptFolder } from "./import-core";
 import { confirmLocalWhisperDownload } from "./document-transcript-import";
 import { whisperTokensToTranscriptSegments } from "./local-whisper-core";
 import type { LocalWhisperService } from "./local-whisper";
@@ -10,16 +10,15 @@ import { parsePodcastFeed, selectEnglishPodcastTranscript, type PodcastEpisode, 
 import {
   buildApplePodcastLookupUrl,
   buildApplePodcastSearchUrl,
-  buildSpotifyOEmbedUrl,
   findSpotifyPodcastEpisode,
   parseApplePodcastCandidates,
   parseApplePodcastFeedUrl,
   parsePodcastSourceInput,
-  parseSpotifyOEmbed,
+  readSpotifyPodcastMetadata,
   type SpotifyPodcastCandidate
 } from "./podcast-source-core";
 import type { LinguaStudySettings } from "./settings";
-import { validateTranscript, type TranscriptSegment } from "./transcript-core";
+import { validateTranscript, type TranscriptFile, type TranscriptSegment } from "./transcript-core";
 
 const MAX_FEED_BYTES = 10 * 1024 * 1024;
 const MAX_TRANSCRIPT_BYTES = 10 * 1024 * 1024;
@@ -104,6 +103,36 @@ class PodcastEpisodeModal extends Modal {
   private finish(value: PodcastEpisode | null): void { if (!this.resolved) { this.resolved = true; this.resolveValue(value); this.close(); } }
 }
 
+type PodcastTranscriptTimingChoice = "publisher" | "whisper";
+
+class PodcastTranscriptTimingModal extends Modal {
+  private resolved = false;
+
+  constructor(app: App, private readonly resolveChoice: (choice: PodcastTranscriptTimingChoice | null) => void) { super(app); }
+
+  onOpen(): void {
+    this.titleEl.setText("这份播客字幕只有整句时间");
+    this.contentEl.createEl("p", {
+      text: "发布者字幕没有逐词时间。你可以保留发布者原文并按整句高亮，或用本地 Whisper 重新识别音频，生成逐词高亮。识别文字可能与发布者原文不同。"
+    });
+    const actions = this.contentEl.createDiv({ cls: "lingua-study-import-actions" });
+    actions.createEl("button", { cls: "mod-cta", text: "本地识别并逐词高亮" })
+      .addEventListener("click", () => this.finish("whisper"));
+    actions.createEl("button", { text: "使用发布者字幕（整句）" })
+      .addEventListener("click", () => this.finish("publisher"));
+    actions.createEl("button", { text: "取消" })
+      .addEventListener("click", () => this.finish(null));
+  }
+
+  onClose(): void { this.contentEl.empty(); if (!this.resolved) this.finish(null); }
+  private finish(choice: PodcastTranscriptTimingChoice | null): void {
+    if (this.resolved) return;
+    this.resolved = true;
+    this.resolveChoice(choice);
+    this.close();
+  }
+}
+
 export class PodcastImportController {
   constructor(
     private readonly app: App,
@@ -111,6 +140,41 @@ export class PodcastImportController {
     private readonly localWhisper: LocalWhisperService,
     private readonly getSettings: () => LinguaStudySettings
   ) {}
+
+  async regenerateTimedTranscript(sourcePath: string, sourceId: string, transcriptPath: string): Promise<void> {
+    const note = this.app.vault.getAbstractFileByPath(normalizePath(sourcePath));
+    const transcriptFile = this.app.vault.getAbstractFileByPath(normalizePath(transcriptPath));
+    if (!(note instanceof TFile) || !(transcriptFile instanceof TFile)) {
+      throw new Error("找不到播客笔记或字幕文件，请重新打开笔记后再试。");
+    }
+    const original = validateTranscript(JSON.parse(await this.app.vault.read(transcriptFile)) as unknown);
+    if (original.videoId !== sourceId || !/^en(?:[-_]|$)/iu.test(original.language)) {
+      throw new Error("当前字幕不是这集播客的英文字幕。");
+    }
+    const noteText = await this.app.vault.read(note);
+    // 在耗时的本地识别前确认学习块仍指向这份字幕。
+    replacePodcastStudyBlockTranscript(noteText, sourceId, transcriptPath, transcriptPath);
+    const cached = await this.cache.getCachedEpisode(sourceId);
+    if (!cached) throw new Error("找不到已缓存的播客音频，请重新导入该节目。");
+    if (!await this.localWhisper.hasCachedModel() && !await confirmLocalWhisperDownload(this.app)) return;
+
+    const progress = new Notice("正在本地生成播客逐词字幕…", 0);
+    try {
+      const tokens = await this.localWhisper.transcribe(cached, (message) => progress.setMessage(message));
+      const segments = whisperTokensToTranscriptSegments(tokens);
+      const nextPath = await this.saveTranscript({ ...original, segments });
+      await this.app.vault.process(note, (current) =>
+        replacePodcastStudyBlockTranscript(current, sourceId, transcriptPath, nextPath));
+      for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+        if (leaf.view instanceof MarkdownView && leaf.view.file?.path === sourcePath) {
+          leaf.view.previewMode.rerender(true);
+        }
+      }
+      new Notice("已生成逐词字幕，原字幕文件已保留。", 7_000);
+    } finally {
+      progress.hide();
+    }
+  }
 
   async importFromEditor(editor: Editor, view: MarkdownView): Promise<void> {
     const url = await new Promise<string | null>((resolve) => new PodcastUrlModal(this.app, resolve).open());
@@ -123,8 +187,7 @@ export class PodcastImportController {
       let feedUrl: string;
       if (source.kind === "spotify") {
         progress.setMessage("正在识别 Spotify 播客并查找公开音频源…");
-        const metadata = await this.getCatalogResponse(buildSpotifyOEmbedUrl(source), "Spotify 节目信息");
-        const spotify = parseSpotifyOEmbed(metadata);
+        const spotify = await readSpotifyPodcastMetadata(source, (url, label) => this.getCatalogResponse(url, label));
         const search = await this.getCatalogResponse(
           buildApplePodcastSearchUrl(spotify.title, source.entity), "Apple Podcasts 搜索结果");
         const candidates = parseApplePodcastCandidates(search, spotify.title, source.entity);
@@ -197,7 +260,13 @@ export class PodcastImportController {
       await log.write("cache", cached.reused ? "复用已有音频缓存" : "音频缓存完成");
       const segments = await this.resolveTranscript(episode, cached.cached, (message) => progress.setMessage(message), log);
       progress.setMessage("正在保存英文字幕…");
-      const transcriptPath = await this.saveTranscript(episode, segments);
+      const transcriptPath = await this.saveTranscript({
+        version: 1,
+        videoId: episode.sourceId,
+        sourceUrl: episode.enclosureUrl,
+        language: "en",
+        segments
+      });
       await log.write("transcript", `已保存 ${transcriptPath}，共 ${segments.length} 条`);
       editor.replaceRange(
         `${editor.getCursor().ch === 0 ? "" : "\n"}${addStudyBlockExitLine(buildPodcastStudyBlock({ sourceId: episode.sourceId, transcriptPath }))}`,
@@ -249,10 +318,17 @@ export class PodcastImportController {
         const parsed = groupTranscriptSegmentsIntoSentences(parseSubtitleFile(response.text));
         if (parsed.length > 0) {
           await log.write("publisher-transcript", `读取成功，共 ${parsed.length} 条`);
-          return parsed;
+          if (parsed.every((segment) => segment.words?.length)) return parsed;
+          onProgress("发布者字幕只有整句时间，请选择字幕方式…");
+          const choice = await new Promise<PodcastTranscriptTimingChoice | null>((resolve) =>
+            new PodcastTranscriptTimingModal(this.app, resolve).open());
+          if (choice === "publisher") return parsed;
+          if (!choice) throw new Error("已取消播客导入。");
+          await log.write("publisher-transcript", "选择本地 Whisper 生成逐词字幕");
         }
+      } else {
+        new Notice("发布者英文字幕不可用，已改用本地 Whisper。", 6_000);
       }
-      new Notice("发布者英文字幕不可用，已改用本地 Whisper。", 6_000);
     }
     if (!await this.localWhisper.hasCachedModel() && !await confirmLocalWhisperDownload(this.app)) {
       throw new Error("尚未下载本地 Whisper 模型，已取消播客导入。");
@@ -265,13 +341,13 @@ export class PodcastImportController {
     return whisperTokensToTranscriptSegments(tokens);
   }
 
-  private async saveTranscript(episode: PodcastEpisode, segments: TranscriptSegment[]): Promise<string> {
+  private async saveTranscript(transcript: TranscriptFile): Promise<string> {
+    const validated = validateTranscript(transcript);
     const folder = sanitizeTranscriptFolder(this.getSettings().transcriptFolder);
     await this.ensureFolder(folder);
-    const target = chooseAvailableTranscriptPath(folder, episode.sourceId, (candidate) => this.app.vault.getAbstractFileByPath(normalizePath(candidate)) !== null);
+    const target = chooseAvailableTranscriptPath(folder, validated.videoId, (candidate) => this.app.vault.getAbstractFileByPath(normalizePath(candidate)) !== null);
     const path = normalizePath(target.path);
-    const transcript = validateTranscript({ version: 1, videoId: episode.sourceId, sourceUrl: episode.enclosureUrl, language: "en", segments });
-    await this.app.vault.create(path, `${JSON.stringify(transcript, null, 2)}\n`);
+    await this.app.vault.create(path, `${JSON.stringify(validated, null, 2)}\n`);
     return path;
   }
 

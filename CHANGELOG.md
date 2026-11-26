@@ -2,6 +2,22 @@
 
 All notable changes to Lingua Study are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Allow multiple tags per RSS subscription. Preserve existing subscriptions, tags, and imported-note links when upgrading subscription data.
+- Highlight the current word when a transcript has word-level timestamps. For English podcasts, offer local Whisper transcription to generate word-level timestamps and keep the original transcript when regenerating.
+
+### Changed
+
+- Offer 0.5×, 0.75×, 1×, 1.25×, and 1.5× playback speeds.
+
+### Fixed
+
+- Read the show title from the Spotify show page when matching public feeds for subscriptions and imports.
+- Prevent the subscription header from overlapping nearby content in a narrow sidebar.
+
 ## 2.2.1 - 2026-10-27
 
 ### Added

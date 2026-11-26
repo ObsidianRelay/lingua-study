@@ -8,7 +8,8 @@ import {
   parseApplePodcastCandidates,
   parseApplePodcastFeedUrl,
   parsePodcastSourceInput,
-  parseSpotifyOEmbed
+  parseSpotifyOEmbed,
+  readSpotifyPodcastMetadata
 } from "../src/podcast-source-core";
 
 test("Apple Podcasts 分享链接会解析为节目 ID 并构造目录查询", () => {
@@ -79,4 +80,41 @@ test("Spotify 元数据只读取标题，Apple 目录只留下同名候选", () 
     { title: "Renamed episode", guid: "rancho-episode" }
   ], candidates[0]), 1);
   assert.equal(findSpotifyPodcastEpisode([{ title, guid: null }], candidates[0]), 0);
+});
+
+test("Spotify 节目链接用节目页的系列名称匹配 Apple 目录", async () => {
+  const url = "https://open.spotify.com/show/2L3Sw0lVVrHNGkqhsqQEcQ";
+  const source = parsePodcastSourceInput(`${url}?si=ae5a8`);
+  if (source.kind !== "spotify") throw new Error("未识别 Spotify 链接");
+
+  const episodeTitle = "How to Actually Enjoy the Holidays Without Stressing Yourself Out -The Trying Not to Care Holiday Diaries";
+  const { title } = await readSpotifyPodcastMetadata(source, async (requestedUrl) => {
+    assert.equal(requestedUrl, url);
+    return `<script type="application/ld+json">${JSON.stringify({
+      "@type": "PodcastEpisode", name: episodeTitle
+    })}</script><script type="application/ld+json">${JSON.stringify({
+      "@type": "PodcastSeries", url, name: "Trying Not to Care"
+    })}</script>`;
+  });
+
+  const results = JSON.stringify({ results: [{ collectionId: 1606809265, collectionName: "Trying Not to Care" }] });
+  assert.deepEqual(parseApplePodcastCandidates(results, episodeTitle, "show"), []);
+  assert.equal(parseApplePodcastCandidates(results, title, "show")[0]?.collectionId, "1606809265");
+});
+
+test("Spotify 节目页没有对应的系列时提示使用公开 RSS", async () => {
+  await assert.rejects(
+    readSpotifyPodcastMetadata({ kind: "spotify", entity: "show", id: "2L3Sw0lVVrHNGkqhsqQEcQ" }, async () =>
+      '<script type="application/ld+json">{"@type":"PodcastSeries","url":"https://open.spotify.com/show/5EqqB52m2bsr4k1Ii7sStc","name":"Another show"}</script>'),
+    /无法识别 Spotify 节目名称/u
+  );
+});
+
+test("Spotify 单集链接仍读取嵌入信息里的单集标题和视频类型", async () => {
+  const source = { kind: "spotify", entity: "episode", id: "4eQarsSI5sCSPMFMVSXSE0" } as const;
+  const result = await readSpotifyPodcastMetadata(source, async (url) => {
+    assert.equal(url, buildSpotifyOEmbedUrl(source));
+    return JSON.stringify({ provider_name: "Spotify", title: "A video episode", type: "video" });
+  });
+  assert.deepEqual(result, { title: "A video episode", isVideo: true });
 });

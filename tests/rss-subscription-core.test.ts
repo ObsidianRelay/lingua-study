@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   addNewSubscriptionData,
   addSubscriptionCategory,
-  assignSubscriptionCategory,
+  assignSubscriptionCategories,
   buildSubscriptionOverview,
   canonicalFeedUrl,
   countNewSubscriptionItems,
@@ -101,14 +101,14 @@ test("固定视频和播客目录按来源类型列频道，彩色标签只负�
   const video = parseYouTubeSubscription(youtubeXml, youtubeUrl);
   const podcast = parseSubscriptionFeed(`<rss><channel><title>My Podcast</title><item><guid>one</guid><title>Episode 1</title>
     <enclosure url="https://example.test/one.mp3" type="audio/mpeg" /></item></channel></rss>`, "https://example.test/rss.xml");
-  const data = addNewSubscriptionData(emptySubscriptionData(), video, { name: "演讲", color: "red" });
-  const withPodcast = addNewSubscriptionData(data, podcast, { existingId: data.categories[0]!.id });
+  const data = addNewSubscriptionData(emptySubscriptionData(), video, { existingIds: [], name: "演讲", color: "red" });
+  const withPodcast = addNewSubscriptionData(data, podcast, { existingIds: [data.categories[0]!.id] });
   assert.deepEqual(selectSubscriptionSources(withPodcast.feeds, "__all").map((feed) => feed.title), ["English Channel", "My Podcast"]);
   assert.deepEqual(selectSubscriptionSources(withPodcast.feeds, "youtube").map((feed) => feed.title), ["English Channel"]);
   assert.deepEqual(selectSubscriptionSources(withPodcast.feeds, "podcast").map((feed) => feed.title), ["My Podcast"]);
   assert.deepEqual(selectSubscriptionSources(withPodcast.feeds, "youtube", data.categories[0]!.id).map((feed) => feed.title), ["English Channel"]);
   assert.deepEqual(selectSubscriptionSources(withPodcast.feeds, "podcast", "__all", video.id), []);
-  assert.equal(withPodcast.feeds[0]?.categoryId, data.categories[0]!.id);
+  assert.deepEqual(withPodcast.feeds[0]?.categoryIds, [data.categories[0]!.id]);
 });
 
 test("退订保留已导入笔记映射，笔记改名后更新路径", () => {
@@ -144,34 +144,58 @@ test("只接受公开 HTTP(S) URL 和官方 YouTube 频道 RSS", () => {
 test("损坏或未来版本的订阅数据拒绝读取，空文件可初始化", () => {
   assert.deepEqual(parseSubscriptionData(emptySubscriptionData()), emptySubscriptionData());
   assert.throws(() => parseSubscriptionData({ version: 2, feeds: [], imports: {} }), /版本或结构/u);
+  assert.throws(() => parseSubscriptionData({ version: 4, feeds: [], imports: {}, categories: [] }), /版本或结构/u);
   assert.throws(() => parseSubscriptionData({ version: 1, feeds: [{ id: "x" }], imports: {} }), /无效订阅源/u);
   assert.throws(() => parseSubscriptionData({ version: 1, feeds: [], imports: { x: "../outside.md" } }), /无效笔记路径/u);
   const feed = parseYouTubeSubscription(youtubeXml, youtubeUrl);
   const oldFeed = { id: feed.id, kind: feed.kind, url: feed.url, title: feed.title, items: feed.items };
   const migrated = parseSubscriptionData({ version: 1, feeds: [oldFeed], imports: { "youtube:abcdefghijk": "Study/Old.md" } });
-  assert.equal(migrated.version, 2);
-  assert.equal(migrated.feeds[0]?.categoryId, null);
+  assert.equal(migrated.version, 3);
+  assert.deepEqual(migrated.feeds[0]?.categoryIds, []);
   assert.equal(migrated.feeds[0]?.status, "ready");
   assert.equal(migrated.imports["youtube:abcdefghijk"], "Study/Old.md");
   assert.deepEqual(migrated.categories, []);
+  const category = { id: "old-label", name: "旧标签", color: "blue" };
+  const migratedV2 = parseSubscriptionData({ version: 2, feeds: [{ ...oldFeed, categoryId: category.id, status: "ready" }],
+    imports: {}, categories: [category] });
+  assert.deepEqual(migratedV2.feeds[0]?.categoryIds, [category.id]);
+  assert.equal("categoryId" in migratedV2.feeds[0]!, false);
+  const migratedUntagged = parseSubscriptionData({ version: 2,
+    feeds: [{ ...oldFeed, categoryId: null, status: "ready" }], imports: {}, categories: [category] });
+  assert.deepEqual(migratedUntagged.feeds[0]?.categoryIds, []);
+  assert.throws(() => parseSubscriptionData({ ...emptySubscriptionData(),
+    feeds: [{ ...feed, categoryIds: [category.id, category.id] }], categories: [category] }), /无效订阅源/u);
 });
 
-test("分类创建、调整和删除不丢失订阅与导入记录", () => {
+test("多个标签的筛选、刷新和删除不丢失订阅与导入记录", () => {
   const feed = parseYouTubeSubscription(youtubeXml, youtubeUrl);
-  const data = addNewSubscriptionData(emptySubscriptionData(), feed, { name: "演讲", color: "purple" });
+  const data = addNewSubscriptionData(emptySubscriptionData(), feed, { existingIds: [], name: "演讲", color: "purple" });
   const id = data.categories[0]!.id;
-  assert.equal(data.feeds[0]?.categoryId, id);
-  assert.throws(() => addNewSubscriptionData(data, feed, { existingId: id }), /已经添加/u);
-  const withImport = { ...data, imports: { "youtube:abcdefghijk": "Study/Old.md" } };
-  const refreshed = upsertSubscriptionData(withImport, parseYouTubeSubscription(youtubeXml, youtubeUrl));
-  assert.equal(refreshed.feeds[0]?.categoryId, id);
-  const unclassified = assignSubscriptionCategory(refreshed, feed.id, null);
-  assert.equal(unclassified.feeds[0]?.categoryId, null);
-  const recategorized = assignSubscriptionCategory(unclassified, feed.id, id);
-  const removed = removeSubscriptionCategory(recategorized, id);
-  assert.equal(removed.feeds[0]?.categoryId, null);
+  const withSecondCategory = addSubscriptionCategory(data, "英语", "green");
+  const secondId = withSecondCategory.categories[1]!.id;
+  assert.deepEqual(data.feeds[0]?.categoryIds, [id]);
+  assert.throws(() => addNewSubscriptionData(data, feed, { existingIds: [id] }), /已经添加/u);
+  const withImport = { ...withSecondCategory, imports: { "youtube:abcdefghijk": "Study/Old.md" } };
+  const tagged = assignSubscriptionCategories(withImport, feed.id, [id, secondId]);
+  assert.deepEqual(selectSubscriptionSources(tagged.feeds, "__all", id).map((entry) => entry.id), [feed.id]);
+  assert.deepEqual(selectSubscriptionSources(tagged.feeds, "__all", secondId).map((entry) => entry.id), [feed.id]);
+  assert.deepEqual(selectSubscriptionSources(tagged.feeds, "__all").map((entry) => entry.id), [feed.id]);
+  assert.deepEqual(selectSubscriptionSources(tagged.feeds, "__all", ""), []);
+  assert.throws(() => assignSubscriptionCategories(tagged, feed.id, [id, id]), /重复/u);
+  assert.throws(() => assignSubscriptionCategories(tagged, feed.id, ["missing"]), /无效/u);
+  const extraFeed = parseSubscriptionFeed(`<rss><channel><title>Another Podcast</title><item><guid>one</guid><title>Episode 1</title>
+    <enclosure url="https://example.test/one.mp3" type="audio/mpeg" /></item></channel></rss>`, "https://example.test/another.xml");
+  const addedWithNewTag = addNewSubscriptionData(withSecondCategory, extraFeed,
+    { existingIds: [id], name: "播客", color: "blue" });
+  assert.deepEqual(addedWithNewTag.feeds[1]?.categoryIds, [id, addedWithNewTag.categories[2]!.id]);
+  const refreshed = upsertSubscriptionData(tagged, parseYouTubeSubscription(youtubeXml, youtubeUrl));
+  assert.deepEqual(refreshed.feeds[0]?.categoryIds, [id, secondId]);
+  const removed = removeSubscriptionCategory(refreshed, id);
+  assert.deepEqual(removed.feeds[0]?.categoryIds, [secondId]);
   assert.equal(removed.imports["youtube:abcdefghijk"], "Study/Old.md");
   assert.equal(removed.feeds[0]?.items.length, 1);
+  const unclassified = assignSubscriptionCategories(removed, feed.id, []);
+  assert.deepEqual(selectSubscriptionSources(unclassified.feeds, "__all", "").map((entry) => entry.id), [feed.id]);
   assert.throws(() => addSubscriptionCategory(data, "演讲", "blue"), /重名/u);
 });
 

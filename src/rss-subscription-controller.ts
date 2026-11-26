@@ -17,12 +17,11 @@ import {
 import {
   buildApplePodcastLookupUrl,
   buildApplePodcastSearchUrl,
-  buildSpotifyOEmbedUrl,
   findSpotifyPodcastEpisode,
   parseApplePodcastCandidates,
   parseApplePodcastFeedUrl,
   parsePodcastSourceInput,
-  parseSpotifyOEmbed,
+  readSpotifyPodcastMetadata,
   type SpotifyPodcastCandidate
 } from "./podcast-source-core";
 import { parseYouTubeChannelLink, parseYouTubeChannelPage, youtubeFeedUrl } from "./rss-subscription-source-core";
@@ -101,7 +100,7 @@ export class RssSubscriptionController {
     let spotifyCandidate: SpotifyPodcastCandidate | null = null;
     let spotifyIsVideo = false;
     if (source.kind === "spotify") {
-      const spotify = parseSpotifyOEmbed(await this.catalogResponse(buildSpotifyOEmbedUrl(source), "Spotify 节目信息"));
+      const spotify = await readSpotifyPodcastMetadata(source, (url, label) => this.catalogResponse(url, label));
       spotifyIsVideo = spotify.isVideo;
       const candidates = parseApplePodcastCandidates(
         await this.catalogResponse(buildApplePodcastSearchUrl(spotify.title, source.entity), "播客目录搜索结果"),
@@ -123,7 +122,7 @@ export class RssSubscriptionController {
       throw new Error("已找到节目 RSS，但无法确认它包含这集音频。请填写该节目的公开 RSS 地址。");
     }
     const warning = source.kind === "spotify"
-      ? `${source.entity === "episode" ? "已找到该单集所属节目；订阅后会持续接收整档节目的新单集。" : "已找到同名公开节目，请核对节目名称。"}${spotifyIsVideo ? " Spotify 视频画面不会进入播放器；学习时使用公开音频版本。" : ""}`
+      ? `${source.entity === "episode" ? "已找到该单集所属节目；订阅后会持续接收整档节目的新单集。" : "已找到同名公开节目，请核对节目名称。Spotify 视频单集使用公开音频版本。"}${spotifyIsVideo ? " Spotify 视频画面不会进入播放器；学习时使用公开音频版本。" : ""}`
       : null;
     return { feed, warning };
   }
@@ -139,8 +138,8 @@ export class RssSubscriptionController {
     return this.store.addFeed(preview.feed, category);
   }
 
-  setFeedCategory(feedId: string, categoryId: string | null): Promise<RssSubscriptionData> {
-    return this.store.setFeedCategory(feedId, categoryId);
+  setFeedCategories(feedId: string, categoryIds: readonly string[]): Promise<RssSubscriptionData> {
+    return this.store.setFeedCategories(feedId, categoryIds);
   }
 
   dispose(): void { this.disposed = true; }

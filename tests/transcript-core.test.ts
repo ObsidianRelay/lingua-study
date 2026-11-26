@@ -35,6 +35,25 @@ test("手工编辑保留首次原文且不改变时间轴", () => {
   });
 });
 
+test("词级时间能保存，编辑句子后会移除失效的词时间", () => {
+  const timed = validateTranscript({
+    ...transcript,
+    segments: [{
+      start: 0, end: 1, text: "Hello world.",
+      words: [
+        { start: 0, end: 0.4, text: "Hello" },
+        { start: 0.4, end: 1, text: "world." }
+      ]
+    }]
+  });
+  assert.equal(timed.segments[0]?.words?.[1]?.text, "world.");
+  assert.equal(updateTranscriptSegmentText(timed, 0, "Hello there.").segments[0]?.words, undefined);
+  assert.throws(() => validateTranscript({
+    ...timed,
+    segments: [{ ...timed.segments[0], words: [{ start: 0.8, end: 1.2, text: "world" }] }]
+  }), /词时间或文字无效/u);
+});
+
 test("字幕校验接受插件生成的本地视频来源但拒绝任意协议", () => {
   const local = validateTranscript({
     ...transcript,

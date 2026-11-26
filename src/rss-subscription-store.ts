@@ -2,7 +2,7 @@ import { App, normalizePath, TFile, TFolder } from "obsidian";
 import {
   addNewSubscriptionData,
   addSubscriptionCategory,
-  assignSubscriptionCategory,
+  assignSubscriptionCategories,
   emptySubscriptionData,
   parseSubscriptionData,
   removeSubscriptionData,
@@ -67,8 +67,8 @@ export class RssSubscriptionStore {
     return this.update((data) => removeSubscriptionCategory(data, id));
   }
 
-  setFeedCategory(feedId: string, categoryId: string | null): Promise<RssSubscriptionData> {
-    return this.update((data) => assignSubscriptionCategory(data, feedId, categoryId));
+  setFeedCategories(feedId: string, categoryIds: readonly string[]): Promise<RssSubscriptionData> {
+    return this.update((data) => assignSubscriptionCategories(data, feedId, categoryIds));
   }
 
   async removeFeed(id: string): Promise<RssSubscriptionData> {
@@ -98,7 +98,8 @@ export class RssSubscriptionStore {
         const parsed = JSON.parse(original) as unknown;
         parseSubscriptionData(parsed);
         if (original !== text) {
-          if ((parsed as { version?: unknown }).version === 1) await this.backupLegacyData(original);
+          const previousVersion = (parsed as { version?: unknown }).version;
+          if (previousVersion === 1 || previousVersion === 2) await this.backupLegacyData(original, previousVersion);
           await this.app.vault.modify(node, text);
         }
       }
@@ -112,10 +113,10 @@ export class RssSubscriptionStore {
     return result;
   }
 
-  private async backupLegacyData(original: string): Promise<void> {
+  private async backupLegacyData(original: string, version: 1 | 2): Promise<void> {
     const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
     for (let suffix = 0; suffix < 100; suffix++) {
-      const path = `Lingua Study/Subscriptions/subscriptions.v1.backup-${stamp}${suffix ? `-${suffix}` : ""}.json`;
+      const path = `Lingua Study/Subscriptions/subscriptions.v${version}.backup-${stamp}${suffix ? `-${suffix}` : ""}.json`;
       if (this.app.vault.getAbstractFileByPath(path) !== null) continue;
       await this.app.vault.create(path, original);
       return;

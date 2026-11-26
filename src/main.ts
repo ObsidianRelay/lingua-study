@@ -86,6 +86,7 @@ import {
   type TranscriptFile,
   type TranscriptSegment
 } from "./transcript-core";
+import { matchTimedWordsToText } from "./word-follow-core";
 import { AsyncKeyedQueue } from "./async-keyed-queue";
 import {
   calculateAlignedScrollTop,
@@ -342,7 +343,7 @@ interface TranscriptSegmentIdentity {
   end: number;
 }
 
-const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5] as const;
 
 function createHighlightPenCursor(color: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(35 12 12)"><rect x="7" y="1" width="10" height="16" rx="2" fill="#fff" stroke="#211e1a" stroke-width="1.5"/><path d="M7 12h10v5H7z" fill="${color}"/><path d="M8 17h8l-2 6h-4z" fill="${color}" stroke="#211e1a" stroke-width="1.5" stroke-linejoin="round"/></g></svg>`;
@@ -716,6 +717,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private playbackRate = 1;
   private lastTimeUpdateAt = Date.now();
   private activeSegmentIndex = -1;
+  private activeWordIndex = -1;
+  private activeWordSegmentIndex = -1;
   private transcriptListEl: HTMLElement | null = null;
   private transcriptEndSpacerEl: HTMLElement | null = null;
   private transcriptViewportWindow: Window | null = null;
@@ -727,6 +730,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
   private transcriptProgrammaticScrollUntil = 0;
   private transcriptResizeObserver: ResizeObserver | null = null;
   private segmentRows: HTMLElement[] = [];
+  private segmentWordEls: HTMLElement[][][] = [];
   private timestampButtons: HTMLButtonElement[] = [];
   private controlButtons: HTMLButtonElement[] = [];
   private speedSliderEl: HTMLInputElement | null = null;
@@ -826,6 +830,8 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
 
   onunload(): void {
     this.destroyed = true;
+    this.clearActiveWord();
+    this.segmentWordEls = [];
     if (this.highlightClickTimer !== null) {
       window.clearTimeout(this.highlightClickTimer);
       this.highlightClickTimer = null;
@@ -2030,6 +2036,20 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.createSeekButton(primaryControls, "前进 5 秒", "rotate-cw", () => this.seekBy(5));
     this.createSpeedControls(toolbar);
     this.createSentenceLoopButton(toolbar);
+    if (transcriptData.transcript.language === "en" &&
+        transcriptData.transcript.segments.some((segment) => !segment.words?.length)) {
+      const regenerateButton = toolbar.createEl("button", { cls: "evs-button evs-icon-button" });
+      regenerateButton.type = "button";
+      this.setControlIcon(regenerateButton, "audio-lines", "本地识别并生成播客逐词字幕（耗时较长）");
+      regenerateButton.addEventListener("click", () => {
+        regenerateButton.disabled = true;
+        void this.plugin.regeneratePodcastTimedTranscript(
+          this.sourcePath, asset.sourceId, transcriptData.transcriptPath
+        ).catch((error: unknown) => {
+          new Notice(error instanceof Error ? error.message : "播客逐词字幕生成失败。", 8_000);
+        }).finally(() => { regenerateButton.disabled = false; });
+      });
+    }
     this.statusEl = root.createDiv({ cls: "evs-status evs-local-status" });
     this.statusEl.setAttribute("role", "status");
     this.runtimeErrorEl = root.createDiv({ cls: "evs-runtime-error" });
@@ -2819,7 +2839,76 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
       cursor = slice.endOffset;
     }
     this.appendDictionaryText(textEl, text.slice(cursor), segmentIndex);
+    this.renderTimedWords(textEl, segmentIndex);
     this.registerSelectionTranslation(textEl, segmentIndex);
+  }
+
+  /** 在现有查词和手工高亮结构内标记词，不改动文字内容和选区位置。 */
+  private renderTimedWords(textEl: HTMLElement, segmentIndex: number): void {
+    if (this.activeWordSegmentIndex === segmentIndex) this.clearActiveWord();
+    this.segmentWordEls[segmentIndex] = [];
+    const segment = this.transcript?.segments[segmentIndex];
+    if (!segment?.words?.length) return;
+    const ranges = matchTimedWordsToText(segment.text, segment.words);
+    if (!ranges) return;
+
+    const viewDocument = textEl.ownerDocument;
+    const walker = viewDocument.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+    let globalOffset = 0;
+    for (const node of textNodes) {
+      const content = node.data;
+      const nodeStart = globalOffset;
+      const nodeEnd = nodeStart + content.length;
+      globalOffset = nodeEnd;
+      if (!node.parentNode) continue;
+      const overlapping = ranges.flatMap((range, wordIndex) => {
+        const start = Math.max(nodeStart, range.startOffset);
+        const end = Math.min(nodeEnd, range.endOffset);
+        return end > start ? [{ start: start - nodeStart, end: end - nodeStart, wordIndex }] : [];
+      });
+      if (overlapping.length === 0) continue;
+      const fragment = viewDocument.createDocumentFragment();
+      let cursor = 0;
+      for (const part of overlapping) {
+        if (part.start > cursor) fragment.append(content.slice(cursor, part.start));
+        const wordEl = fragment.createSpan({
+          cls: "evs-playback-word",
+          text: content.slice(part.start, part.end)
+        });
+        (this.segmentWordEls[segmentIndex][part.wordIndex] ??= []).push(wordEl);
+        cursor = part.end;
+      }
+      if (cursor < content.length) fragment.append(content.slice(cursor));
+      node.parentNode.replaceChild(fragment, node);
+    }
+    if (this.activeSegmentIndex === segmentIndex) {
+      this.updateActiveWord(this.getEstimatedCurrentTime());
+    }
+  }
+
+  private clearActiveWord(): void {
+    if (this.activeWordSegmentIndex >= 0 && this.activeWordIndex >= 0) {
+      this.segmentWordEls[this.activeWordSegmentIndex]?.[this.activeWordIndex]
+        ?.forEach((wordEl) => wordEl.classList.remove("is-current"));
+    }
+    this.activeWordSegmentIndex = -1;
+    this.activeWordIndex = -1;
+  }
+
+  private updateActiveWord(currentTime: number): void {
+    const segmentIndex = this.activeSegmentIndex;
+    const words = this.transcript?.segments[segmentIndex]?.words;
+    const wordIndex = words?.findIndex((word) => currentTime >= word.start && currentTime < word.end) ?? -1;
+    if (this.activeWordSegmentIndex === segmentIndex && this.activeWordIndex === wordIndex) return;
+    this.clearActiveWord();
+    if (segmentIndex < 0 || wordIndex < 0) return;
+    const elements = this.segmentWordEls[segmentIndex]?.[wordIndex];
+    if (!elements?.length) return;
+    elements.forEach((wordEl) => wordEl.classList.add("is-current"));
+    this.activeWordSegmentIndex = segmentIndex;
+    this.activeWordIndex = wordIndex;
   }
 
   private appendDictionaryText(
@@ -6321,7 +6410,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
         min: "0",
         max: String(PLAYBACK_RATES.length - 1),
         step: "1",
-        value: "1",
+        value: String(PLAYBACK_RATES.indexOf(1)),
         "aria-label": "播放速度",
         "aria-valuetext": "1 倍速"
       }
@@ -6464,7 +6553,10 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     this.setStatusText(statusText, hideReadyLocalStatus);
 
     if (this.pollTimer === null) {
-      this.pollTimer = window.setInterval(() => this.updateActiveSegment(), 250);
+      this.pollTimer = window.setInterval(
+        () => this.updateActiveSegment(),
+        this.transcript?.segments.some((segment) => segment.words?.length) ? 100 : 250
+      );
     }
     this.updateDictationActionAvailability();
     this.updateShadowingActionAvailability();
@@ -7014,14 +7106,27 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     if (this.restartSentenceLoopAtBoundary()) return;
 
     const currentTime = this.getEstimatedCurrentTime();
-    const nextIndex = segments.findIndex(
-      (segment) => currentTime >= segment.start && currentTime < segment.end
-    );
+    // 已校验的字幕按时间排序；词级跟随需要更频繁更新，避免每次扫描整篇字幕。
+    let nextIndex = -1;
+    let low = 0;
+    let high = segments.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      const segment = segments[middle];
+      if (currentTime < segment.start) high = middle - 1;
+      else if (currentTime >= segment.end) low = middle + 1;
+      else {
+        nextIndex = middle;
+        break;
+      }
+    }
 
     if (nextIndex === this.activeSegmentIndex) {
+      this.updateActiveWord(currentTime);
       return;
     }
 
+    this.clearActiveWord();
     if (this.activeSegmentIndex >= 0) {
       const previousRow = this.segmentRows[this.activeSegmentIndex];
       previousRow?.classList.remove("is-active");
@@ -7029,6 +7134,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
 
     this.activeSegmentIndex = nextIndex;
+    this.updateActiveWord(currentTime);
     if (nextIndex >= 0) {
       const activeRow = this.segmentRows[nextIndex];
       activeRow?.classList.add("is-active");
@@ -7295,6 +7401,7 @@ class LinguaStudyRenderChild extends MarkdownRenderChild {
     }
 
     if (this.activeSegmentIndex >= 0) {
+      this.clearActiveWord();
       const activeRow = this.segmentRows[this.activeSegmentIndex];
       activeRow?.classList.remove("is-active");
       activeRow?.removeAttribute("aria-current");
@@ -9481,6 +9588,10 @@ export default class LinguaStudyPlugin extends Plugin {
 
   getCachedPodcastEpisode(sourceId: string): Promise<CachedPodcastEpisode | null> {
     return this.podcastCacheService?.getCachedEpisode(sourceId) ?? Promise.resolve(null);
+  }
+
+  regeneratePodcastTimedTranscript(sourcePath: string, sourceId: string, transcriptPath: string): Promise<void> {
+    return this.getPodcastImporter().regenerateTimedTranscript(sourcePath, sourceId, transcriptPath);
   }
 
   getLocalVideoPlaybackAsset(

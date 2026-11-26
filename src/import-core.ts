@@ -1,4 +1,5 @@
 import type { TranscriptSegment } from "./transcript-core";
+import { matchTimedWordsToText } from "./word-follow-core";
 
 export const DEFAULT_TRANSCRIPT_FOLDER = "Lingua Study/Transcripts";
 
@@ -202,6 +203,20 @@ export function buildPodcastStudyBlock(config: PodcastStudyBlock): string {
     `transcript: ${config.transcriptPath}`,
     "```"
   ].join("\n");
+}
+
+/** 仅替换匹配的播客学习块；旧字幕文件留在磁盘上作为可恢复版本。 */
+export function replacePodcastStudyBlockTranscript(
+  markdown: string,
+  sourceId: string,
+  previousPath: string,
+  nextPath: string
+): string {
+  const previous = buildPodcastStudyBlock({ sourceId, transcriptPath: previousPath });
+  if (markdown.split(previous).length !== 2) {
+    throw new Error("笔记中的播客学习块已经变化，请重新打开笔记后再试。");
+  }
+  return markdown.replace(previous, () => buildPodcastStudyBlock({ sourceId, transcriptPath: nextPath }));
 }
 
 function parsePositivePage(value: string | null): number {
@@ -714,10 +729,14 @@ function createSentenceGroup(segments: readonly TranscriptSegment[]): Transcript
   const originalText = hasOriginalText
     ? joinSubtitleParts(segments.map((segment) => segment.originalText ?? segment.text))
     : undefined;
+  const words = segments.every((segment) => segment.words?.length)
+    ? segments.flatMap((segment) => segment.words ?? [])
+    : undefined;
   return {
     start: first.start,
     end: last.end,
     text,
+    ...(words ? { words } : {}),
     ...(originalText && originalText !== text ? { originalText } : {})
   };
 }
@@ -825,23 +844,76 @@ export function parseJson3Captions(text: string): TranscriptSegment[] {
   }
 
   const raw: RawTranscriptSegment[] = [];
+  const timedEvents = new Map<number, Array<{
+    text: string;
+    parts: Array<{ text: string; start: number }>;
+  }>>();
   for (const event of parsed.events) {
     if (!isRecord(event) || !Array.isArray(event.segs)) {
       continue;
     }
-    const textParts = event.segs
-      .filter(isRecord)
-      .map((segment) => typeof segment.utf8 === "string" ? segment.utf8 : "");
+    const captionParts = event.segs.filter(isRecord);
+    const textParts = captionParts.map((segment) => typeof segment.utf8 === "string" ? segment.utf8 : "");
     const startMs = typeof event.tStartMs === "number" ? event.tStartMs : 0;
     const durationMs = typeof event.dDurationMs === "number" ? event.dDurationMs : 0;
-    raw.push({ start: startMs / 1000, duration: durationMs / 1000, text: textParts.join("") });
+    const start = roundMilliseconds(startMs / 1000);
+    const captionText = cleanSubtitleText(textParts.join(""));
+    raw.push({ start, duration: durationMs / 1000, text: textParts.join("") });
+
+    // JSON3 自动字幕可在每个片段中给出 tOffsetMs。只在每个非空片段
+    // 都能对应一个词且偏移单调时保留，绝不按句长推算词时间。
+    const parts: Array<{ text: string; start: number }> = [];
+    let timed = captionText !== "" && typeof event.tStartMs === "number" &&
+      Number.isFinite(startMs) && startMs >= 0 &&
+      typeof event.dDurationMs === "number" && Number.isFinite(durationMs) && durationMs > 0;
+    for (const part of captionParts) {
+      const word = typeof part.utf8 === "string" ? cleanSubtitleText(part.utf8) : "";
+      if (!word) continue;
+      const offsetMs = part.tOffsetMs === undefined && parts.length === 0
+        ? 0
+        : part.tOffsetMs;
+      if (
+        typeof offsetMs !== "number" || !Number.isFinite(offsetMs) || offsetMs < 0 ||
+        /\s/u.test(word)
+      ) {
+        timed = false;
+        break;
+      }
+      const wordStart = roundMilliseconds((startMs + offsetMs) / 1000);
+      if (parts.length > 0 && wordStart <= parts[parts.length - 1].start) {
+        timed = false;
+        break;
+      }
+      parts.push({ text: word, start: wordStart });
+    }
+    if (timed && parts.length > 0) {
+      const atStart = timedEvents.get(start) ?? [];
+      atStart.push({ text: captionText, parts });
+      timedEvents.set(start, atStart);
+    }
   }
 
   const segments = normalizeTranscriptSegments(raw);
   if (segments.length === 0) {
     throw new Error("YouTube 返回的字幕内容为空。");
   }
-  return segments;
+  return segments.map((segment) => {
+    const matches = (timedEvents.get(segment.start) ?? []).filter((event) =>
+      event.text === segment.text
+    );
+    if (matches.length !== 1) return segment;
+    const parts = matches[0].parts;
+    const words = parts.map((part, index) => ({
+      text: part.text,
+      start: part.start,
+      end: Math.min(parts[index + 1]?.start ?? segment.end, segment.end)
+    }));
+    if (
+      words.some((word) => word.start < segment.start || word.end <= word.start) ||
+      !matchTimedWordsToText(segment.text, words)
+    ) return segment;
+    return { ...segment, words };
+  });
 }
 
 function readXmlAttribute(attributes: string, name: string): number | null {
@@ -901,6 +973,7 @@ export function parseSubtitleFile(text: string): TranscriptSegment[] {
     .replace(/^WEBVTT[^\n]*\n?/iu, "")
     .trim();
   const raw: RawTranscriptSegment[] = [];
+  const timedWords = new Map<string, number>();
 
   for (const block of normalized.split(/\n{2,}/u)) {
     const lines = block.split("\n").map((line) => line.trim());
@@ -920,18 +993,31 @@ export function parseSubtitleFile(text: string): TranscriptSegment[] {
     if (start === null || end === null || end <= start) {
       continue;
     }
+    const cueText = lines.slice(timingIndex + 1).join(" ");
     raw.push({
       start,
       duration: end - start,
-      text: lines.slice(timingIndex + 1).join(" ")
+      text: cueText
     });
+    // 有些 SRT/VTT 每个 cue 就是一个词；直接使用 cue 的真实起止时间。
+    // 整句 cue 不拆词，也不根据句长猜测词的位置。
+    const word = cleanSubtitleText(cueText);
+    if (word && /^[\p{Script=Latin}\p{N}\p{P}]+$/u.test(word) &&
+      /[\p{Script=Latin}\p{N}]/u.test(word)) {
+      const key = `${roundMilliseconds(start)}\u0000${roundMilliseconds(end)}\u0000${word}`;
+      timedWords.set(key, (timedWords.get(key) ?? 0) + 1);
+    }
   }
 
   const segments = normalizeTranscriptSegments(raw);
   if (segments.length === 0) {
     throw new Error("没有识别到有效的 SRT 或 VTT 时间轴字幕。");
   }
-  return segments;
+  return segments.map((segment) => {
+    const key = `${segment.start}\u0000${segment.end}\u0000${segment.text}`;
+    if (timedWords.get(key) !== 1) return segment;
+    return { ...segment, words: [{ text: segment.text, start: segment.start, end: segment.end }] };
+  });
 }
 
 export function buildStudyBlock(transcriptPath: string): string {

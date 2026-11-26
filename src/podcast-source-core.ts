@@ -3,6 +3,8 @@ export type PodcastSourceInput =
   | { kind: "apple"; collectionId: string }
   | { kind: "spotify"; entity: "show" | "episode"; id: string };
 
+type SpotifyPodcastSource = Extract<PodcastSourceInput, { kind: "spotify" }>;
+
 export interface SpotifyPodcastCandidate {
   collectionId: string;
   collectionName: string;
@@ -45,7 +47,7 @@ export function parsePodcastSourceInput(value: string): PodcastSourceInput {
     : { kind: "feed", feedUrl: url.toString() };
 }
 
-export function buildSpotifyOEmbedUrl(source: Extract<PodcastSourceInput, { kind: "spotify" }>): string {
+export function buildSpotifyOEmbedUrl(source: SpotifyPodcastSource): string {
   const spotifyUrl = `https://open.spotify.com/${source.entity}/${source.id}`;
   return `https://open.spotify.com/oembed?url=${encodeURIComponent(spotifyUrl)}`;
 }
@@ -59,6 +61,29 @@ export function parseSpotifyOEmbed(value: string): { title: string; isVideo: boo
     throw new Error("无法识别 Spotify 播客标题，请改用公开 RSS 地址。");
   }
   return { title, isVideo: record.type === "video" };
+}
+
+export async function readSpotifyPodcastMetadata(
+  source: SpotifyPodcastSource,
+  readResponse: (url: string, label: string) => Promise<string>
+): Promise<{ title: string; isVideo: boolean }> {
+  if (source.entity === "episode") {
+    return parseSpotifyOEmbed(await readResponse(buildSpotifyOEmbedUrl(source), "Spotify 单集信息"));
+  }
+
+  // Spotify oEmbed may describe the latest episode even when the URL points to the whole show.
+  const url = `https://open.spotify.com/show/${source.id}`;
+  const html = await readResponse(url, "Spotify 节目页面");
+  for (const [, schema] of html.matchAll(/<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/giu)) {
+    let data: unknown;
+    try { data = JSON.parse(schema); } catch { continue; }
+    if (!data || typeof data !== "object") continue;
+    const record = data as Record<string, unknown>;
+    if (record["@type"] !== "PodcastSeries" || record.url !== url || typeof record.name !== "string") continue;
+    const title = record.name.trim();
+    if (title && title.length <= 300) return { title, isVideo: false };
+  }
+  throw new Error("无法识别 Spotify 节目名称，请改用该节目的公开 RSS 地址。");
 }
 
 export function buildApplePodcastSearchUrl(title: string, entity: "show" | "episode"): string {
